@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Heart, Lock, Mail, User, ArrowRight, Sparkles, CheckCircle2, FileSpreadsheet, MessageSquare, ShieldCheck, Sun, Moon, Eye, EyeOff } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function Login({ onLoginSuccess }) {
     const [isRegister, setIsRegister] = useState(false);
@@ -28,22 +29,15 @@ export default function Login({ onLoginSuccess }) {
             : { username, password, remember };
 
         try {
-            const res = await fetch(endpoint, {
+            const { ok, json } = await apiFetch(endpoint, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-                },
                 body: JSON.stringify(payload)
             });
 
-            const json = await res.json();
-
-            if (res.ok) {
+            if (ok && json?.user) {
                 onLoginSuccess(json.user);
             } else {
-                setError(json.message || json.errors?.username?.[0] || json.errors?.email?.[0] || 'Error de autenticación');
+                setError(json?.message || json?.errors?.username?.[0] || json?.errors?.email?.[0] || 'Error de autenticación');
             }
         } catch (err) {
             console.error(err);
@@ -61,12 +55,8 @@ export default function Login({ onLoginSuccess }) {
         setError(null);
 
         try {
-            const res = await fetch('/api/auth/login', {
+            const { ok, json } = await apiFetch('/api/auth/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
                 body: JSON.stringify({
                     username: targetUser,
                     password: 'password123',
@@ -74,11 +64,10 @@ export default function Login({ onLoginSuccess }) {
                 })
             });
 
-            const json = await res.json();
-            if (res.ok) {
+            if (ok && json?.user) {
                 onLoginSuccess(json.user);
             } else {
-                setError(json.message || 'Error al iniciar como demo.');
+                setError(json?.message || 'Error al iniciar como demo.');
             }
         } catch (err) {
             console.error(err);

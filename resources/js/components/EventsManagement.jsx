@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Heart, MapPin, User, Plus, Edit2, CheckCircle2, ShieldCheck, RefreshCw, Trash2, Eye } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
+import { apiFetch } from '../api';
 
 export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onEditEvent, onDeleteEvent }) {
     const [events, setEvents] = useState([]);
@@ -20,14 +21,12 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
         setLoading(true);
         try {
             const [resEvents, resPlanners] = await Promise.all([
-                fetch('/api/event'),
-                fetch('/api/planners')
+                apiFetch('/api/event'),
+                apiFetch('/api/planners')
             ]);
-            const dataEvents = await resEvents.json();
-            const dataPlanners = await resPlanners.json();
 
-            setEvents(dataEvents.events || []);
-            setPlanners(dataPlanners || []);
+            setEvents(resEvents.json?.events || []);
+            setPlanners(resPlanners.json || []);
         } catch (err) {
             console.error(err);
         } finally {
@@ -39,13 +38,12 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
         setUpdatingId(eventId);
         setErrorMsg(null);
         try {
-            const res = await fetch(`/api/event/${eventId}`, {
+            const { ok } = await apiFetch(`/api/event/${eventId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: newUserId })
             });
 
-            if (res.ok) {
+            if (ok) {
                 setSuccessMsg('Asignación de Wedding Planner actualizada correctamente.');
                 loadData();
             } else {
@@ -71,14 +69,13 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                 setDeletingId(ev.id);
                 setErrorMsg(null);
                 try {
-                    const res = await fetch(`/api/event/${ev.id}`, { method: 'DELETE' });
-                    if (res.ok) {
+                    const { ok, json } = await apiFetch(`/api/event/${ev.id}`, { method: 'DELETE' });
+                    if (ok) {
                         setSuccessMsg(`Evento "${ev.title}" eliminado correctamente.`);
                         if (onDeleteEvent) onDeleteEvent(ev.id);
                         loadData();
                     } else {
-                        const json = await res.json();
-                        setErrorMsg(json.message || 'Error al eliminar el evento.');
+                        setErrorMsg(json?.message || 'Error al eliminar el evento.');
                     }
                 } catch (err) {
                     console.error(err);
@@ -94,13 +91,12 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
         setUpdatingId(ev.id);
         setErrorMsg(null);
         try {
-            const res = await fetch(`/api/event/${ev.id}`, {
+            const { ok } = await apiFetch(`/api/event/${ev.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_enabled: !ev.is_enabled })
             });
 
-            if (res.ok) {
+            if (ok) {
                 setSuccessMsg(`Estado del evento "${ev.title}" actualizado.`);
                 loadData();
             } else {

@@ -1,6 +1,7 @@
 import './bootstrap';
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { apiFetch } from './api';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import StatsCards from './components/StatsCards';
@@ -69,9 +70,8 @@ function Dashboard({ user, onLogout }) {
     const loadEvents = async (selectedId = null) => {
         setLoading(true);
         try {
-            const res = await fetch('/api/event');
-            const data = await res.json();
-            const loadedEvents = data.events || [];
+            const { ok, json } = await apiFetch('/api/event');
+            const loadedEvents = (ok && json?.events) ? json.events : [];
             setEvents(loadedEvents);
 
             let selected = null;
@@ -98,10 +98,11 @@ function Dashboard({ user, onLogout }) {
 
     const loadGuests = async (eventId) => {
         try {
-            const res = await fetch(`/api/events/${eventId}/guests`);
-            const data = await res.json();
-            setGuests(data.guests || []);
-            setStats(data.stats || null);
+            const { ok, json } = await apiFetch(`/api/events/${eventId}/guests`);
+            if (ok && json) {
+                setGuests(json.guests || []);
+                setStats(json.stats || null);
+            }
         } catch (err) {
             console.error(err);
         }
@@ -114,13 +115,11 @@ function Dashboard({ user, onLogout }) {
 
     const handleSaveEvent = async (id, updatedFields) => {
         try {
-            const res = await fetch(`/api/event/${id}`, {
+            const { ok, json } = await apiFetch(`/api/event/${id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updatedFields)
             });
-            const json = await res.json();
-            if (res.ok) {
+            if (ok && json?.event) {
                 setActiveEvent(json.event);
                 loadEvents(id);
                 showToast('Configuración del evento guardada con éxito.');
@@ -132,12 +131,11 @@ function Dashboard({ user, onLogout }) {
 
     const handleUpdateGuest = async (guestId, fields) => {
         try {
-            const res = await fetch(`/api/guests/${guestId}`, {
+            const { ok } = await apiFetch(`/api/guests/${guestId}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(fields)
             });
-            if (res.ok && activeEvent) {
+            if (ok && activeEvent) {
                 loadGuests(activeEvent.id);
                 showToast('Invitado actualizado correctamente.');
             }
@@ -148,8 +146,8 @@ function Dashboard({ user, onLogout }) {
 
     const handleMarkSent = async (guestId) => {
         try {
-            const res = await fetch(`/api/guests/${guestId}/sent`, { method: 'POST' });
-            if (res.ok) {
+            const { ok } = await apiFetch(`/api/guests/${guestId}/sent`, { method: 'POST' });
+            if (ok) {
                 setGuests(prev => prev.map(g => g.id === guestId ? { ...g, whatsapp_status: 'sent' } : g));
             }
         } catch (err) {
@@ -167,8 +165,8 @@ function Dashboard({ user, onLogout }) {
             onConfirm: async () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
                 try {
-                    const res = await fetch(`/api/guests/${guestId}`, { method: 'DELETE' });
-                    if (res.ok && activeEvent) {
+                    const { ok } = await apiFetch(`/api/guests/${guestId}`, { method: 'DELETE' });
+                    if (ok && activeEvent) {
                         loadGuests(activeEvent.id);
                         showToast('Invitado eliminado.');
                     }
@@ -190,8 +188,8 @@ function Dashboard({ user, onLogout }) {
             onConfirm: async () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
                 try {
-                    const res = await fetch(`/api/events/${activeEvent.id}/guests/clear`, { method: 'DELETE' });
-                    if (res.ok) {
+                    const { ok } = await apiFetch(`/api/events/${activeEvent.id}/guests/clear`, { method: 'DELETE' });
+                    if (ok) {
                         loadGuests(activeEvent.id);
                         showToast('Lista de invitados vaciada.');
                     }
@@ -450,15 +448,15 @@ function App() {
 
     const checkAuth = async () => {
         try {
-            const res = await fetch('/api/auth/user');
-            const json = await res.json();
-            if (res.ok && json.authenticated) {
+            const { ok, json } = await apiFetch('/api/auth/user');
+            if (ok && json?.authenticated) {
                 setUser(json.user);
             } else {
                 setUser(null);
             }
         } catch (err) {
             console.error(err);
+            setUser(null);
         } finally {
             setAuthChecked(true);
         }
@@ -466,7 +464,7 @@ function App() {
 
     const handleLogout = async () => {
         try {
-            await fetch('/api/auth/logout', { method: 'POST' });
+            await apiFetch('/api/auth/logout', { method: 'POST' });
             setUser(null);
         } catch (err) {
             console.error(err);

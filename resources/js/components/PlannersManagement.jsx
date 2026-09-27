@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus, Users, Heart, Mail, Lock, Shield, Calendar, Trash2, Plus, Sparkles, CheckCircle2, User, Award, ExternalLink, Search, Edit3, ShieldAlert, KeyRound, Filter, Check, X } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
+import { apiFetch } from '../api';
 
 export default function PlannersManagement({ onOpenCreateEvent }) {
     const [users, setUsers] = useState([]);
@@ -30,9 +31,10 @@ export default function PlannersManagement({ onOpenCreateEvent }) {
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const res = await fetch('/api/planners/full');
-            const data = await res.json();
-            setUsers(data.users || data.planners || []);
+            const { ok, json } = await apiFetch('/api/planners/full');
+            if (ok && json) {
+                setUsers(json.users || json.planners || []);
+            }
         } catch (err) {
             console.error(err);
         } finally {
@@ -84,22 +86,19 @@ export default function PlannersManagement({ onOpenCreateEvent }) {
         }
 
         try {
-            const res = await fetch(url, {
+            const { ok, json } = await apiFetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
 
-            const json = await res.json();
-
-            if (res.ok) {
+            if (ok) {
                 const roleLabel = role === 'admin' ? 'Administrador' : 'Wedding Planner';
                 setSuccessMsg(isEditing ? `Usuario '${name}' actualizado.` : `¡Nuevo usuario '${name}' (${roleLabel}) registrado!`);
                 setIsModalOpen(false);
                 fetchUsers();
                 setTimeout(() => setSuccessMsg(null), 4000);
             } else {
-                setError(json.message || (json.errors ? Object.values(json.errors).flat().join(', ') : 'Error al guardar'));
+                setError(json?.message || (json?.errors ? Object.values(json.errors).flat().join(', ') : 'Error al guardar'));
             }
         } catch (err) {
             console.error(err);
@@ -119,14 +118,13 @@ export default function PlannersManagement({ onOpenCreateEvent }) {
             onConfirm: async () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
                 try {
-                    const res = await fetch(`/api/planners/${userItem.id}`, { method: 'DELETE' });
-                    const json = await res.json();
-                    if (res.ok) {
+                    const { ok, json } = await apiFetch(`/api/planners/${userItem.id}`, { method: 'DELETE' });
+                    if (ok) {
                         setSuccessMsg(`Usuario ${userItem.name} eliminado.`);
                         fetchUsers();
                         setTimeout(() => setSuccessMsg(null), 4000);
                     } else {
-                        alert(json.message || 'No se pudo eliminar el usuario.');
+                        alert(json?.message || 'No se pudo eliminar el usuario.');
                     }
                 } catch (err) {
                     console.error(err);

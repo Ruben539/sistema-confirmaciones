@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Pencil, X, User, Phone, Users, FileText } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, onGuestAdded, onGuestUpdated }) {
     const [name, setName] = useState('');
@@ -50,12 +51,8 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
         const children = category === 'child' ? 1 : 0;
 
         try {
-            const res = await fetch(url, {
+            const { ok, json } = await apiFetch(url, {
                 method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
                 body: JSON.stringify({
                     name,
                     phone,
@@ -69,22 +66,15 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                 })
             });
 
-            let json;
-            try {
-                json = await res.json();
-            } catch (parseErr) {
-                json = {};
-            }
-
-            if (res.ok) {
+            if (ok) {
                 if (isEditing) {
-                    if (onGuestUpdated) onGuestUpdated(json.guest || { ...guestToEdit, name, phone, table_number: tableNumber, adults, youth, children, notes, passes: 1 });
+                    if (onGuestUpdated) onGuestUpdated(json?.guest || { ...guestToEdit, name, phone, table_number: tableNumber, adults, youth, children, notes, passes: 1 });
                 } else {
-                    if (onGuestAdded) onGuestAdded(json.guest);
+                    if (onGuestAdded) onGuestAdded(json?.guest);
                 }
                 onClose();
             } else {
-                setError(json.message || `Error al ${isEditing ? 'actualizar' : 'agregar'} el invitado`);
+                setError(json?.message || `Error al ${isEditing ? 'actualizar' : 'agregar'} el invitado`);
             }
         } catch (err) {
             console.error(err);

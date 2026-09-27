@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Save, X, Sparkles, MessageSquare, Heart, Calendar, MapPin, User, ShieldCheck } from 'lucide-react';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import { apiFetch } from '../api';
 
 export default function EventSettingsModal({ isOpen, onClose, event, user, onSave }) {
     const [formData, setFormData] = useState({
@@ -34,9 +35,10 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
 
     const fetchPlanners = async () => {
         try {
-            const res = await fetch('/api/planners');
-            const data = await res.json();
-            setPlanners(data);
+            const { ok, json } = await apiFetch('/api/planners');
+            if (ok && json) {
+                setPlanners(json);
+            }
         } catch (err) {
             console.error(err);
         }

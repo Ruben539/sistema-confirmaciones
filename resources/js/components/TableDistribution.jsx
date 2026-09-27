@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Edit2, Users, AlertCircle, CheckCircle2, RefreshCw, UserCheck, ArrowRightLeft, Sparkles, X, LayoutGrid, FileSpreadsheet, Search, List, Grid, Maximize2, Minimize2, ChevronDown, ChevronUp, Box } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import Visual3DTableMap from './Visual3DTableMap';
+import { apiFetch } from '../api';
 
 export default function TableDistribution({ eventId, eventTitle, showToast }) {
     const [data, setData] = useState({ tables: [], unassigned_guests: [], stats: {} });
@@ -43,9 +44,8 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
     const fetchTables = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/events/${eventId}/tables`);
-            const json = await res.json();
-            if (res.ok) {
+            const { ok, json } = await apiFetch(`/api/events/${eventId}/tables`);
+            if (ok && json) {
                 setData(json);
             }
         } catch (err) {
@@ -64,9 +64,8 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
         const method = isEditing ? 'PUT' : 'POST';
 
         try {
-            const res = await fetch(url, {
+            const { ok, json } = await apiFetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: tableName,
                     capacity: parseInt(tableCapacity, 10) || 10,
@@ -74,15 +73,13 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
                 })
             });
 
-            const json = await res.json();
-
-            if (res.ok) {
+            if (ok) {
                 if (showToast) showToast(isEditing ? 'Mesa actualizada' : 'Mesa creada');
                 setIsTableModalOpen(false);
                 setTableToEdit(null);
                 fetchTables();
             } else {
-                alert(json.message || 'Error al guardar la mesa.');
+                alert(json?.message || 'Error al guardar la mesa.');
             }
         } catch (err) {
             console.error(err);
@@ -101,8 +98,8 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
             onConfirm: async () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
                 try {
-                    const res = await fetch(`/api/tables/${table.id}`, { method: 'DELETE' });
-                    if (res.ok) {
+                    const { ok } = await apiFetch(`/api/tables/${table.id}`, { method: 'DELETE' });
+                    if (ok) {
                         if (showToast) showToast(`Mesa '${table.name}' eliminada.`);
                         fetchTables();
                     }
@@ -115,10 +112,9 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
 
     const handleAutoCreateTables = async () => {
         try {
-            const res = await fetch(`/api/events/${eventId}/tables/auto-create`, { method: 'POST' });
-            const json = await res.json();
-            if (res.ok) {
-                if (showToast) showToast(json.message);
+            const { ok, json } = await apiFetch(`/api/events/${eventId}/tables/auto-create`, { method: 'POST' });
+            if (ok) {
+                if (showToast) showToast(json?.message || 'Mesas automáticas creadas');
                 fetchTables();
             }
         } catch (err) {
@@ -128,16 +124,15 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
 
     const handleAssignGuest = async (guestId, targetTableName) => {
         try {
-            const res = await fetch(`/api/tables/assign`, {
+            const { ok } = await apiFetch(`/api/tables/assign`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     guest_id: guestId,
                     table_name: targetTableName
                 })
             });
 
-            if (res.ok) {
+            if (ok) {
                 fetchTables();
             }
         } catch (err) {

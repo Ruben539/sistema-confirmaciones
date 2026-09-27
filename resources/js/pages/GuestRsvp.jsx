@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Calendar, MapPin, CheckCircle2, XCircle, Utensils, Send, Sparkles, AlertCircle, Sun, Moon } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function GuestRsvp({ token }) {
     const [data, setData] = useState(null);
@@ -26,10 +27,9 @@ export default function GuestRsvp({ token }) {
 
     const fetchRsvp = async () => {
         try {
-            const res = await fetch(`/api/rsvp/${token}`);
-            const json = await res.json();
+            const { ok, json } = await apiFetch(`/api/rsvp/${token}`);
 
-            if (res.ok) {
+            if (ok && json) {
                 setData(json);
                 if (json.guest) {
                     setStatus(json.guest.status === 'declined' ? 'declined' : 'confirmed');
@@ -56,9 +56,8 @@ export default function GuestRsvp({ token }) {
         setError(null);
 
         try {
-            const res = await fetch(`/api/rsvp/${token}`, {
+            const { ok, json } = await apiFetch(`/api/rsvp/${token}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     status,
                     confirmed_adults: status === 'confirmed' ? confirmedAdults : 0,
@@ -70,12 +69,10 @@ export default function GuestRsvp({ token }) {
                 })
             });
 
-            const json = await res.json();
-
-            if (res.ok) {
+            if (ok) {
                 setSubmitted(true);
             } else {
-                setError(json.message || 'Error al guardar la respuesta.');
+                setError(json?.message || 'Error al guardar la respuesta.');
             }
         } catch (err) {
             console.error(err);

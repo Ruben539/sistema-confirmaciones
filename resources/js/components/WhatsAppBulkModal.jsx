@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { MessageSquare, ExternalLink, Copy, Check, X, Filter, Send, Sparkles, CheckCircle2, Play, Square, ShieldAlert, Clock } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
+import { apiFetch } from '../api';
 
 export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMarkSent }) {
     const [copiedId, setCopiedId] = useState(null);
@@ -63,12 +64,11 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         setSendingAutoId(guest.id);
         setErrorMessage(null);
         try {
-            const res = await fetch(`/api/guests/${guest.id}/send-auto`, { method: 'POST' });
-            const json = await res.json();
-            if (res.ok) {
+            const { ok, json } = await apiFetch(`/api/guests/${guest.id}/send-auto`, { method: 'POST' });
+            if (ok) {
                 onMarkSent(guest.id);
             } else {
-                setErrorMessage(json.message || 'No se pudo enviar el mensaje.');
+                setErrorMessage(json?.message || 'No se pudo enviar el mensaje.');
             }
         } catch (err) {
             console.error(err);
@@ -147,21 +147,18 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
 
         try {
             const guestIds = pending.map(g => g.id);
-            const res = await fetch(`/api/events/${event.id}/send-bulk-queue`, {
+            const { ok, json } = await apiFetch(`/api/events/${event.id}/send-bulk-queue`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     mode: messageMode,
                     guest_ids: guestIds
                 })
             });
 
-            const json = await res.json();
-
-            if (res.ok) {
-                setQueueSuccessMessage(json.message);
+            if (ok) {
+                setQueueSuccessMessage(json?.message || 'Cola iniciada');
             } else {
-                setErrorMessage(json.message || 'No se pudo iniciar la cola en segundo plano.');
+                setErrorMessage(json?.message || 'No se pudo iniciar la cola en segundo plano.');
             }
         } catch (err) {
             console.error(err);

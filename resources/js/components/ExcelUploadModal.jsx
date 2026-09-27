@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Users } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuccess }) {
     const [file, setFile] = useState(null);
@@ -177,9 +178,8 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
         setError(null);
 
         try {
-            const res = await fetch(`/api/events/${eventId}/guests/import`, {
+            const { ok, json } = await apiFetch(`/api/events/${eventId}/guests/import`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     guests: validGuests.map(g => ({
                         name: g.name,
@@ -194,13 +194,11 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
                 })
             });
 
-            const json = await res.json();
-
-            if (res.ok) {
-                onImportSuccess(json.message);
+            if (ok) {
+                onImportSuccess(json?.message || 'Invitados importados con éxito');
                 onClose();
             } else {
-                setError(json.message || 'Error al guardar la lista de invitados');
+                setError(json?.message || 'Error al guardar la lista de invitados');
             }
         } catch (err) {
             console.error(err);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Heart, Calendar, MapPin, User, X, Save, Edit3 } from 'lucide-react';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import { apiFetch } from '../api';
 
 export default function CreateEventModal({ isOpen, onClose, onEventCreated, eventToEdit = null }) {
     const [title, setTitle] = useState('');
@@ -49,11 +50,12 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
 
     const fetchPlanners = async () => {
         try {
-            const res = await fetch('/api/planners');
-            const data = await res.json();
-            setPlanners(data);
-            if (!eventToEdit && data.length > 0) {
-                setPlannerId(data[0].id);
+            const { ok, json } = await apiFetch('/api/planners');
+            if (ok && json) {
+                setPlanners(json);
+                if (!eventToEdit && json.length > 0) {
+                    setPlannerId(json[0].id);
+                }
             }
         } catch (err) {
             console.error(err);
@@ -71,12 +73,8 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
         const method = eventToEdit ? 'PUT' : 'POST';
 
         try {
-            const res = await fetch(url, {
+            const { ok, json } = await apiFetch(url, {
                 method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
                 body: JSON.stringify({
                     title,
                     event_type: eventType,
@@ -91,18 +89,11 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                 })
             });
 
-            let json;
-            try {
-                json = await res.json();
-            } catch (parseErr) {
-                json = {};
-            }
-
-            if (res.ok) {
+            if (ok && json?.event) {
                 onEventCreated(json.event);
                 onClose();
             } else {
-                setError(json.message || 'Error al guardar el evento. Verifica que tenés permisos de administrador.');
+                setError(json?.message || 'Error al guardar el evento. Verifica que tenés permisos de administrador.');
             }
         } catch (err) {
             console.error(err);
