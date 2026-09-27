@@ -425,4 +425,47 @@ class GuestController extends Controller
             'table_number' => $guest->table_number ?? 'Sin mesa asignada',
         ]);
     }
+
+    public function sendBulkQueue(Request $request, $eventId)
+    {
+        $event = Event::findOrFail($eventId);
+
+        if (!$event->is_enabled) {
+            return response()->json([
+                'message' => 'Este evento se encuentra deshabilitado. No se pueden programar envíos de WhatsApp.'
+            ], 403);
+        }
+
+        $mode = $request->input('mode', 'invitation');
+        $guestIds = $request->input('guest_ids');
+
+        $query = Guest::where('event_id', $eventId);
+        if (!empty($guestIds) && is_array($guestIds)) {
+            $query->whereIn('id', $guestIds);
+        } else {
+            $query->where('whatsapp_status', 'not_sent');
+        }
+
+        $guests = $query->get();
+
+        if ($guests->isEmpty()) {
+            return response()->json([
+                'message' => 'No hay invitados pendientes seleccionados para programar el envío.'
+            ], 422);
+        }
+
+        $delayCount = 0;
+        foreach ($guests as $guest) {
+            \App\Jobs\SendWhatsAppMessageJob::dispatch($guest->id, $mode)->delay(now()->addSeconds($delayCount * 12));
+            $delayCount++;
+        }
+
+        $estimatedMins = ceil(($delayCount * 12) / 60);
+
+        return response()->json([
+            'message' => "⚡ ¡Envío masivo programado con éxito para {$guests->count()} invitados! Los mensajes se enviarán en segundo plano con retardo anti-spam (1 por cada 10-15s). Podés cerrar la página o apagar la laptop sin problemas.",
+            'count' => $guests->count(),
+            'estimated_minutes' => $estimatedMins
+        ]);
+    }
 }

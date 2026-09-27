@@ -131,6 +131,46 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     };
 
 
+    const [queueSuccessMessage, setQueueSuccessMessage] = useState(null);
+    const [isQueueStarting, setIsQueueStarting] = useState(false);
+
+    const handleStartBackgroundQueue = async () => {
+        const pending = filteredGuests.filter(g => g.whatsapp_status === 'not_sent');
+        if (pending.length === 0) {
+            setErrorMessage('No hay invitados pendientes en la lista filtrada.');
+            return;
+        }
+
+        setIsQueueStarting(true);
+        setErrorMessage(null);
+        setQueueSuccessMessage(null);
+
+        try {
+            const guestIds = pending.map(g => g.id);
+            const res = await fetch(`/api/events/${event.id}/send-bulk-queue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mode: messageMode,
+                    guest_ids: guestIds
+                })
+            });
+
+            const json = await res.json();
+
+            if (res.ok) {
+                setQueueSuccessMessage(json.message);
+            } else {
+                setErrorMessage(json.message || 'No se pudo iniciar la cola en segundo plano.');
+            }
+        } catch (err) {
+            console.error(err);
+            setErrorMessage('Error conectando con el servidor.');
+        } finally {
+            setIsQueueStarting(false);
+        }
+    };
+
     const stopBulkQueue = () => {
         cancelBulkRef.current = true;
         setIsBulkSending(false);
@@ -147,7 +187,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                         </div>
                         <div>
                             <h2 className="text-xl font-black text-zinc-900 dark:text-white">Envío Masivo de Invitaciones</h2>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Enviá automáticamente por Bot Baileys con protección anti-spam o abrí WhatsApp Web.</p>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Enviá automáticamente por Bot Baileys con protección anti-spam en segundo plano o en tiempo real.</p>
                         </div>
                     </div>
 
@@ -159,6 +199,19 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                         <X className="w-5 h-5" />
                     </button>
                 </div>
+
+                {/* Queue Success Banner */}
+                {queueSuccessMessage && (
+                    <div className="p-4 bg-emerald-500/10 border-b border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-5 h-5 shrink-0" />
+                            <span>{queueSuccessMessage}</span>
+                        </div>
+                        <button onClick={() => setQueueSuccessMessage(null)} className="text-emerald-500 hover:text-emerald-700">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
 
                 {/* Bulk Auto-Sending Queue Status Card */}
                 {isBulkSending ? (
@@ -191,16 +244,27 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                     <div className="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                             <ShieldAlert className="w-4 h-4 text-emerald-500" />
-                            <span>Protección Anti-Spam (Delay obligatorio de 15 segundos entre envíos)</span>
+                            <span>Protección Anti-Spam & Spintax Activa (10-15s entre mensajes)</span>
                         </div>
 
-                        <button
-                            onClick={startBulkQueue}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white text-xs font-extrabold shadow-lg shadow-green-500/20 transition-all active:scale-95"
-                        >
-                            <Play className="w-4 h-4 fill-white" />
-                            <span>Enviar Todo Masivo (Bot Baileys)</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleStartBackgroundQueue}
+                                disabled={isQueueStarting}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-extrabold shadow-lg transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                <span>{isQueueStarting ? 'Programando...' : '⚡ Programar en Segundo Plano (300+)'}</span>
+                            </button>
+
+                            <button
+                                onClick={startBulkQueue}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white text-xs font-extrabold shadow-lg shadow-green-500/20 transition-all active:scale-95"
+                            >
+                                <Play className="w-4 h-4 fill-white" />
+                                <span>Enviar en Pantalla</span>
+                            </button>
+                        </div>
                     </div>
                 )}
 
