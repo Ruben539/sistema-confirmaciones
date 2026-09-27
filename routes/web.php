@@ -23,9 +23,10 @@ Route::prefix('api')->group(function () {
     Route::delete('/event/{id}', [EventController::class, 'destroy']);
     Route::get('/planners', [EventController::class, 'planners']);
     
-    // Planners Administration
+    // Planners / User Administration
     Route::get('/planners/full', [PlannerController::class, 'index']);
     Route::post('/planners', [PlannerController::class, 'store']);
+    Route::put('/planners/{id}', [PlannerController::class, 'update']);
     Route::delete('/planners/{id}', [PlannerController::class, 'destroy']);
 
     // Guests Routes

@@ -17,20 +17,21 @@ class PlannerController extends Controller
 
         if (!$user || $user->role !== 'admin') {
             return response()->json([
-                'message' => 'Acceso denegado. Solo administradores pueden gestionar Wedding Planners.'
+                'message' => 'Acceso denegado. Solo administradores pueden gestionar usuarios.'
             ], 403);
         }
 
-        $planners = User::whereIn('role', ['planner', 'admin'])
-            ->withCount('events')
+        $users = User::withCount('events')
             ->with(['events' => function ($query) {
                 $query->select('id', 'user_id', 'title', 'couple_names', 'event_date', 'status');
             }])
+            ->orderBy('role', 'asc')
             ->orderBy('name', 'asc')
             ->get();
 
         return response()->json([
-            'planners' => $planners
+            'planners' => $users,
+            'users' => $users
         ]);
     }
 
@@ -40,27 +41,72 @@ class PlannerController extends Controller
 
         if (!$user || $user->role !== 'admin') {
             return response()->json([
-                'message' => 'Acceso denegado. Solo administradores pueden registrar Wedding Planners.'
+                'message' => 'Acceso denegado. Solo administradores pueden registrar nuevos usuarios.'
             ], 403);
         }
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
+            'username' => 'nullable|string|max:255|unique:users',
             'password' => 'required|string|min:6',
+            'role' => 'required|string|in:admin,planner',
         ]);
 
-        $planner = User::create([
+        $newUser = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'username' => $validated['username'] ?? null,
             'password' => Hash::make($validated['password']),
-            'role' => 'planner',
+            'role' => $validated['role'],
         ]);
 
+        $roleTitle = $newUser->role === 'admin' ? 'Administrador' : 'Wedding Planner';
+
         return response()->json([
-            'message' => 'Wedding Planner registrado con éxito.',
-            'planner' => $planner
+            'message' => "Usuario '{$newUser->name}' ({$roleTitle}) registrado con éxito.",
+            'planner' => $newUser,
+            'user' => $newUser
         ], 201);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $admin = Auth::user();
+
+        if (!$admin || $admin->role !== 'admin') {
+            return response()->json([
+                'message' => 'Acceso denegado.'
+            ], 403);
+        }
+
+        $targetUser = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($targetUser->id)],
+            'username' => ['nullable', 'string', 'max:255', Rule::unique('users')->ignore($targetUser->id)],
+            'role' => 'required|string|in:admin,planner',
+            'password' => 'nullable|string|min:6',
+        ]);
+
+        $updateData = [
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'username' => $validated['username'] ?? null,
+            'role' => $validated['role'],
+        ];
+
+        if (!empty($validated['password'])) {
+            $updateData['password'] = Hash::make($validated['password']);
+        }
+
+        $targetUser->update($updateData);
+
+        return response()->json([
+            'message' => "Usuario '{$targetUser->name}' actualizado exitosamente.",
+            'user' => $targetUser->fresh()
+        ]);
     }
 
     public function destroy($id)
@@ -81,13 +127,13 @@ class PlannerController extends Controller
 
         $target = User::findOrFail($id);
 
-        // Reassign events to current admin or null before deleting
+        // Reassign events to current admin before deleting
         Event::where('user_id', $target->id)->update(['user_id' => $user->id]);
 
         $target->delete();
 
         return response()->json([
-            'message' => 'Wedding Planner eliminado y sus bodas han sido reasignadas al administrador.'
+            'message' => "Usuario '{$target->name}' eliminado y sus bodas han sido reasignadas al administrador."
         ]);
     }
 }
