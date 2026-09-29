@@ -219,14 +219,31 @@ class PlanRequestController extends Controller
             ], 403);
         }
 
-        $planRequest = PlanRequest::findOrFail($id);
+        $planRequest = PlanRequest::with(['event', 'planner'])->findOrFail($id);
+        $adminNotes = $request->input('admin_notes', 'Rechazado por el administrador');
 
         $planRequest->update([
             'status' => 'rejected',
-            'admin_notes' => $request->input('admin_notes', 'Rechazado por el administrador'),
+            'admin_notes' => $adminNotes,
             'reviewed_by' => $user->id,
             'reviewed_at' => now(),
         ]);
+
+        // Optional: Notify the Wedding Planner by WhatsApp
+        $planner = $planRequest->planner;
+        if ($planner && !empty($planner->phone)) {
+            $cleanPlannerPhone = $this->formatParaguayPhone($planner->phone);
+            $eventTitle = $planRequest->event ? ($planRequest->event->couple_names ?? $planRequest->event->title) : 'tu evento';
+            $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
+            try {
+                Http::timeout(8)->post($botUrl, [
+                    'phone' => preg_replace('/[^\d]/', '', $cleanPlannerPhone),
+                    'message' => "ℹ️ Hola {$planner->name}. Tu solicitud de ampliación de plan para el evento '{$eventTitle}' no fue autorizada en esta ocasión.\n\nMotivo: \"{$adminNotes}\"\n\nPodés comunicarte con la administración ante cualquier duda."
+                ]);
+            } catch (\Exception $e) {
+                Log::warning("Error notificando rechazo a planner: " . $e->getMessage());
+            }
+        }
 
         return response()->json([
             'message' => 'Solicitud rechazada.',

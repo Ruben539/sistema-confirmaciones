@@ -42,4 +42,15 @@ class Event extends Model
     {
         return $this->hasMany(Guest::class);
     }
+
+    public function planRequests()
+    {
+        return $this->hasMany(PlanRequest::class);
+    }
+
+    public function pendingPlanRequest()
+    {
+        return $this->hasOne(PlanRequest::class)->where('status', 'pending')->latestOfMany();
+    }
 }
+

@@ -23,15 +23,22 @@ class PlannerController extends Controller
 
         $users = User::withCount('events')
             ->with(['events' => function ($query) {
-                $query->select('id', 'user_id', 'title', 'couple_names', 'event_date', 'status');
+                $query->select('id', 'user_id', 'title', 'couple_names', 'event_date', 'status', 'plan_type', 'max_guests')
+                    ->withCount('guests')
+                    ->with(['planRequests' => function ($q) {
+                        $q->orderBy('created_at', 'desc');
+                    }]);
             }])
             ->orderBy('role', 'asc')
             ->orderBy('name', 'asc')
             ->get();
 
+        $pendingRequestsCount = \App\Models\PlanRequest::where('status', 'pending')->count();
+
         return response()->json([
             'planners' => $users,
-            'users' => $users
+            'users' => $users,
+            'pending_requests_count' => $pendingRequestsCount,
         ]);
     }
 

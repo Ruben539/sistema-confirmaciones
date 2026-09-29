@@ -39,4 +39,10 @@ class User extends Authenticatable
     {
         return $this->hasMany(Event::class);
     }
+
+    public function planRequests()
+    {
+        return $this->hasMany(PlanRequest::class);
+    }
 }
+

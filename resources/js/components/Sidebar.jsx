@@ -13,7 +13,8 @@ export default function Sidebar({
     onOpenUpgradeBot,
     onLogout,
     theme,
-    onToggleTheme
+    onToggleTheme,
+    pendingRequestsCount = 0
 }) {
     const [collapsed, setCollapsed] = useState(false);
     const [showEventsList, setShowEventsList] = useState(false);
@@ -118,10 +119,17 @@ export default function Sidebar({
                             )}
                             <button
                                 onClick={() => setActiveTab('planners')}
-                                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'planners' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'planners' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
                             >
-                                <UserCheck className={`w-4 h-4 shrink-0 ${activeTab === 'planners' ? 'text-white' : 'text-amber-500'}`} />
-                                {!collapsed && <span>Wedding Planners</span>}
+                                <div className="flex items-center gap-3">
+                                    <UserCheck className={`w-4 h-4 shrink-0 ${activeTab === 'planners' ? 'text-white' : 'text-amber-500'}`} />
+                                    {!collapsed && <span>Planners & Planes</span>}
+                                </div>
+                                {!collapsed && pendingRequestsCount > 0 && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse shadow-sm">
+                                        {pendingRequestsCount}
+                                    </span>
+                                )}
                             </button>
 
                             <button

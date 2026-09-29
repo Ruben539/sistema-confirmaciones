@@ -29,6 +29,7 @@ function Dashboard({ user, onLogout }) {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [toastMessage, setToastMessage] = useState(null);
     const [preselectedPlannerId, setPreselectedPlannerId] = useState(null);
+    const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
     // Modals
     const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -62,7 +63,21 @@ function Dashboard({ user, onLogout }) {
 
     useEffect(() => {
         loadEvents();
-    }, []);
+        if (user?.role === 'admin') {
+            fetchPendingRequests();
+        }
+    }, [user]);
+
+    const fetchPendingRequests = async () => {
+        try {
+            const { ok, json } = await apiFetch('/api/plan-requests');
+            if (ok && json && typeof json.pending_count === 'number') {
+                setPendingRequestsCount(json.pending_count);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     const showToast = (msg) => {
         setToastMessage(msg);
@@ -229,6 +244,7 @@ function Dashboard({ user, onLogout }) {
                 onLogout={onLogout}
                 theme={theme}
                 onToggleTheme={handleToggleTheme}
+                pendingRequestsCount={pendingRequestsCount}
             />
 
             {/* Main Area */}
@@ -262,6 +278,7 @@ function Dashboard({ user, onLogout }) {
                                 setPreselectedPlannerId(plannerId);
                                 setIsCreateEventModalOpen(true);
                             }}
+                            onRequestsCountChange={setPendingRequestsCount}
                         />
                     ) : activeTab === 'events_admin' && user?.role === 'admin' ? (
                         <EventsManagement
@@ -317,10 +334,15 @@ function Dashboard({ user, onLogout }) {
                                     <div className="flex items-center gap-2">
                                         <button
                                             onClick={() => setActiveTab('planners')}
-                                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 hover:bg-amber-200 font-bold transition-all text-xs"
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200 hover:bg-amber-200 font-bold transition-all text-xs"
                                         >
                                             <UserCheck className="w-3.5 h-3.5" />
-                                            <span>Planners</span>
+                                            <span>Planners & Planes</span>
+                                            {pendingRequestsCount > 0 && (
+                                                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-600 text-white animate-pulse">
+                                                    {pendingRequestsCount}
+                                                </span>
+                                            )}
                                         </button>
                                         <button
                                             onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
