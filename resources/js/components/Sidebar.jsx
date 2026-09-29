@@ -205,13 +205,17 @@ export default function Sidebar({
                         </button>
                     )}
 
-                    <button
-                        onClick={onOpenSettings}
-                        className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60 transition-all"
-                    >
-                        <Settings className="w-4 h-4 shrink-0" />
-                        {!collapsed && <span>Configurar Mensaje</span>}
-                    </button>
+                    {/* Admin Action: Configurar Evento */}
+                    {isAdmin && activeEvent && (
+                        <button
+                            onClick={onOpenSettings}
+                            className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60 transition-all"
+                            title="Configurar detalles del evento"
+                        >
+                            <Settings className="w-4 h-4 shrink-0 text-amber-500" />
+                            {!collapsed && <span>Configurar Evento</span>}
+                        </button>
+                    )}
 
                     <button
                         onClick={onToggleTheme}

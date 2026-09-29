@@ -243,7 +243,7 @@ function Dashboard({ user, onLogout }) {
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 onOpenCreateEvent={() => setIsCreateEventModalOpen(true)}
-                onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenSettings={user?.role === 'admin' ? () => setIsSettingsModalOpen(true) : null}
                 onOpenUpgradeBot={() => setIsChatbotUpgradeOpen(true)}
                 onLogout={onLogout}
                 theme={theme}
@@ -257,7 +257,7 @@ function Dashboard({ user, onLogout }) {
                 <Navbar
                     event={activeEvent}
                     user={user}
-                    onOpenSettings={() => setIsSettingsModalOpen(true)}
+                    onOpenSettings={user?.role === 'admin' ? () => setIsSettingsModalOpen(true) : null}
                     onRefresh={() => activeEvent && loadGuests(activeEvent.id)}
                     onLogout={onLogout}
                     theme={theme}
@@ -493,13 +493,15 @@ function Dashboard({ user, onLogout }) {
                 onGuestUpdated={(guest) => { showToast(`Invitado ${guest.name} actualizado`); activeEvent && loadGuests(activeEvent.id); }}
             />
 
-            <EventSettingsModal
-                isOpen={isSettingsModalOpen}
-                onClose={() => setIsSettingsModalOpen(false)}
-                event={activeEvent}
-                user={user}
-                onSave={handleSaveEvent}
-            />
+            {user?.role === 'admin' && activeEvent && (
+                <EventSettingsModal
+                    isOpen={isSettingsModalOpen}
+                    onClose={() => setIsSettingsModalOpen(false)}
+                    event={activeEvent}
+                    user={user}
+                    onSave={handleSaveEvent}
+                />
+            )}
 
             <WhatsAppBulkModal
                 isOpen={isWhatsAppModalOpen}
