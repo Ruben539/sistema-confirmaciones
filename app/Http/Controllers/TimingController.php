@@ -16,11 +16,17 @@ class TimingController extends Controller
         $this->parser = $parser;
     }
 
-    private function authorizeEvent(Event $event)
+    private function authorizeEvent(Event $event, bool $requireActive = false)
     {
         $user = Auth::user();
-        if ($user && $user->role === 'planner' && $event->user_id !== $user->id) {
-            abort(403, 'Acceso denegado: No tenés permisos sobre este evento.');
+        if ($user && $user->role === 'planner') {
+            if ($event->user_id !== $user->id) {
+                abort(403, 'Acceso denegado: No tenés permisos sobre este evento.');
+            }
+
+            if ($requireActive && !$event->isActive()) {
+                abort(403, 'Acceso denegado: Este evento se encuentra inactivo, pausado o ya ha finalizado.');
+            }
         }
     }
 
@@ -51,7 +57,7 @@ class TimingController extends Controller
     public function save(Request $request, $eventId)
     {
         $event = Event::findOrFail($eventId);
-        $this->authorizeEvent($event);
+        $this->authorizeEvent($event, true);
 
         $validated = $request->validate([
             'timing' => 'nullable|array',
@@ -78,7 +84,7 @@ class TimingController extends Controller
     public function upload(Request $request, $eventId)
     {
         $event = Event::findOrFail($eventId);
-        $this->authorizeEvent($event);
+        $this->authorizeEvent($event, true);
 
         if ($request->hasFile('file')) {
             $request->validate([
@@ -120,7 +126,7 @@ class TimingController extends Controller
     public function toggleItem(Request $request, $eventId, $itemId)
     {
         $event = Event::findOrFail($eventId);
-        $this->authorizeEvent($event);
+        $this->authorizeEvent($event, true);
 
         $timing = $event->timing ?? [];
         $updated = false;

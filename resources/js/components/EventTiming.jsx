@@ -330,8 +330,45 @@ export default function EventTiming({ eventId, event, showToast, user }) {
     const completedCount = items.filter(it => it.completed).length;
     const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
+    if (!eventId) {
+        return (
+            <div className="p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in font-sans">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 text-[#2d4a3e] dark:text-emerald-400 flex items-center justify-center mx-auto border border-emerald-100 dark:border-emerald-900/40">
+                    <Clock className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                    <h3 className="text-lg font-black text-zinc-900 dark:text-white">
+                        Sin Evento Seleccionado
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto leading-relaxed">
+                        Para cargar o visualizar el cronograma (timing) minuto a minuto, primero debés tener un evento activo asignado por el Administrador.
+                    </p>
+                </div>
+                {user?.role === 'admin' && (
+                    <div className="pt-2">
+                        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                            Creá o asigná un evento desde el panel superior para comenzar.
+                        </p>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    const isEventActive = event ? (event.is_active !== false) : true;
+    const canEdit = user?.role === 'admin' || isEventActive;
+
     return (
         <div className="space-y-6 animate-fade-in font-sans pb-16">
+            {!isEventActive && user?.role === 'planner' && (
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 text-amber-800 dark:text-amber-200 p-4 rounded-2xl flex items-center gap-3 text-xs font-medium print:hidden">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>
+                        <strong>Evento inactivo o finalizado:</strong> Este evento se encuentra en modo sólo lectura. No podés subir nuevos archivos ni modificar el timing.
+                    </span>
+                </div>
+            )}
+
             {/* Header & Control Bar */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm print:hidden">
                 <div className="space-y-1">
@@ -350,31 +387,35 @@ export default function EventTiming({ eventId, event, showToast, user }) {
 
                 {/* Main Action Buttons */}
                 <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                        onClick={() => setUploadModalOpen(true)}
-                        className="px-3.5 py-2 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
-                        title="Subir archivo Word o PDF"
-                    >
-                        <Upload className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        <span>Subir Word / PDF</span>
-                    </button>
+                    {canEdit && (
+                        <>
+                            <button
+                                onClick={() => setUploadModalOpen(true)}
+                                className="px-3.5 py-2 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
+                                title="Subir archivo Word o PDF"
+                            >
+                                <Upload className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>Subir Word / PDF</span>
+                            </button>
 
-                    <button
-                        onClick={() => setPasteModalOpen(true)}
-                        className="px-3.5 py-2 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
-                        title="Pegar texto directo desde WhatsApp o notas"
-                    >
-                        <FileText className="w-4 h-4 text-blue-500" />
-                        <span>Pegar Texto</span>
-                    </button>
+                            <button
+                                onClick={() => setPasteModalOpen(true)}
+                                className="px-3.5 py-2 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
+                                title="Pegar texto directo desde WhatsApp o notas"
+                            >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                <span>Pegar Texto</span>
+                            </button>
 
-                    <button
-                        onClick={() => openItemModal()}
-                        className="px-3.5 py-2 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
-                    >
-                        <Plus className="w-4 h-4 text-amber-500" />
-                        <span>+ Agregar Hito</span>
-                    </button>
+                            <button
+                                onClick={() => openItemModal()}
+                                className="px-3.5 py-2 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
+                            >
+                                <Plus className="w-4 h-4 text-amber-500" />
+                                <span>+ Agregar Hito</span>
+                            </button>
+                        </>
+                    )}
 
                     <button
                         onClick={() => window.print()}
@@ -384,7 +425,7 @@ export default function EventTiming({ eventId, event, showToast, user }) {
                         <Printer className="w-4 h-4" />
                     </button>
 
-                    {dirty && (
+                    {dirty && canEdit && (
                         <button
                             onClick={() => handleSave()}
                             disabled={saving}
@@ -464,22 +505,28 @@ export default function EventTiming({ eventId, event, showToast, user }) {
                         </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-                        <button
-                            onClick={() => setUploadModalOpen(true)}
-                            className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-[#2d4a3e] hover:from-emerald-700 hover:to-[#22382f] text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 active:scale-95 transition-all inline-flex items-center justify-center gap-2"
-                        >
-                            <Upload className="w-4 h-4" />
-                            <span>Subir Word / PDF</span>
-                        </button>
-                        <button
-                            onClick={loadExampleLiam}
-                            className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center justify-center gap-2"
-                        >
-                            <Sparkles className="w-4 h-4 text-amber-500" />
-                            <span>Cargar Ejemplo (Liam)</span>
-                        </button>
-                    </div>
+                    {canEdit ? (
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                            <button
+                                onClick={() => setUploadModalOpen(true)}
+                                className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-[#2d4a3e] hover:from-emerald-700 hover:to-[#22382f] text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 active:scale-95 transition-all inline-flex items-center justify-center gap-2"
+                            >
+                                <Upload className="w-4 h-4" />
+                                <span>Subir Word / PDF</span>
+                            </button>
+                            <button
+                                onClick={loadExampleLiam}
+                                className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold transition-all inline-flex items-center justify-center gap-2"
+                            >
+                                <Sparkles className="w-4 h-4 text-amber-500" />
+                                <span>Cargar Ejemplo (Liam)</span>
+                            </button>
+                        </div>
+                    ) : (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold pt-2">
+                            Este evento está inactivo o finalizado (modo sólo lectura).
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -525,9 +572,9 @@ export default function EventTiming({ eventId, event, showToast, user }) {
                                     {/* Left: Time Badge (Exact dark green pill from screenshot) */}
                                     <div className="shrink-0 pt-0.5">
                                         <div 
-                                            onClick={() => handleToggleComplete(item.id)}
-                                            className="bg-[#2d4a3e] hover:bg-[#233a30] text-white px-3.5 py-1.5 rounded-full text-xs font-black tracking-wider text-center min-w-[100px] shadow-sm flex items-center justify-center cursor-pointer transition-all active:scale-95"
-                                            title="Click para marcar completado/pendiente"
+                                            onClick={canEdit ? () => handleToggleComplete(item.id) : undefined}
+                                            className={`bg-[#2d4a3e] text-white px-3.5 py-1.5 rounded-full text-xs font-black tracking-wider text-center min-w-[100px] shadow-sm flex items-center justify-center transition-all ${canEdit ? 'hover:bg-[#233a30] cursor-pointer active:scale-95' : 'cursor-default'}`}
+                                            title={canEdit ? "Click para marcar completado/pendiente" : item.time}
                                         >
                                             {isCompleted && <Check className="w-3 h-3 mr-1 text-emerald-300" />}
                                             <span>{item.time}</span>
@@ -547,38 +594,40 @@ export default function EventTiming({ eventId, event, showToast, user }) {
                                     </div>
 
                                     {/* Right: Quick Action Controls (Hidden on Print) */}
-                                    <div className="hidden group-hover:flex items-center gap-1 shrink-0 print:hidden transition-all animate-fade-in">
-                                        <button
-                                            onClick={() => handleMove(index, 'up')}
-                                            disabled={index === 0}
-                                            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-white disabled:opacity-30"
-                                            title="Subir"
-                                        >
-                                            <ArrowUp className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleMove(index, 'down')}
-                                            disabled={index === items.length - 1}
-                                            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-white disabled:opacity-30"
-                                            title="Bajar"
-                                        >
-                                            <ArrowDown className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                            onClick={() => openItemModal(item)}
-                                            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
-                                            title="Editar"
-                                        >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteItem(item.id)}
-                                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600"
-                                            title="Eliminar"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
+                                    {canEdit && (
+                                        <div className="hidden group-hover:flex items-center gap-1 shrink-0 print:hidden transition-all animate-fade-in">
+                                            <button
+                                                onClick={() => handleMove(index, 'up')}
+                                                disabled={index === 0}
+                                                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-white disabled:opacity-30"
+                                                title="Subir"
+                                            >
+                                                <ArrowUp className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleMove(index, 'down')}
+                                                disabled={index === items.length - 1}
+                                                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-white disabled:opacity-30"
+                                                title="Bajar"
+                                            >
+                                                <ArrowDown className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => openItemModal(item)}
+                                                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                                                title="Editar"
+                                            >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteItem(item.id)}
+                                                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600"
+                                                title="Eliminar"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
