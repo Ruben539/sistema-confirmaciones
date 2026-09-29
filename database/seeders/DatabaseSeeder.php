@@ -8,17 +8,22 @@ use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
+    /**
+     * Seed the application's database.
+     */
     public function run(): void
     {
-        // 1. Usuario Administrador General
-        User::firstOrCreate(
+        // Usuario Administrador General
+        User::updateOrCreate(
             ['email' => 'admin@gmail.com'],
             [
                 'name' => 'Administrador General',
                 'username' => 'admin',
+                'phone' => env('ADMIN_WHATSAPP_PHONE', '595972495723'),
                 'password' => Hash::make('password123'),
                 'role' => 'admin',
             ]
         );
     }
 }
+
