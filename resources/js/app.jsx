@@ -167,11 +167,9 @@ function Dashboard({ user, onLogout }) {
     };
 
     const handleMarkSent = async (guestId) => {
+        setGuests(prev => prev.map(g => g.id === guestId ? { ...g, whatsapp_status: 'sent' } : g));
         try {
-            const { ok } = await apiFetch(`/api/guests/${guestId}/sent`, { method: 'POST' });
-            if (ok) {
-                setGuests(prev => prev.map(g => g.id === guestId ? { ...g, whatsapp_status: 'sent' } : g));
-            }
+            await apiFetch(`/api/guests/${guestId}/sent`, { method: 'POST' });
         } catch (err) {
             console.error(err);
         }

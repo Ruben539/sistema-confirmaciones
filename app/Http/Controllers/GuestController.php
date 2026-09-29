@@ -466,11 +466,35 @@ class GuestController extends Controller
             return $denied;
         }
 
-        $template = $event->message_template ?? "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+        // Prevenir reenvío si ya figura como enviado
+        if ($guest->whatsapp_status === 'sent' && !$request->boolean('force', false)) {
+            return response()->json([
+                'message' => "El mensaje ya fue enviado previamente a {$guest->name}.",
+                'guest' => $guest
+            ], 400);
+        }
 
+        $rawLocation = $event->location ?? 'Por confirmar';
+        if ($rawLocation !== 'Por confirmar' && !str_starts_with($rawLocation, 'http')) {
+            $formattedLocation = $rawLocation . "\n🗺️ Ver en Google Maps: https://maps.google.com/?q=" . urlencode($rawLocation);
+        } else {
+            $formattedLocation = $rawLocation;
+        }
+
+        $mode = $request->input('mode', 'invitation');
+        if ($mode === 'reminder') {
+            $template = "¡Hola {nombre}! ⏰ Recordatorio: Te recordamos que la fecha límite para confirmar tu asistencia al evento de {pareja} vence pronto.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+        } else {
+            $template = $event->message_template ?? "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+            if (!str_contains($template, '{nombre}')) {
+                $template = "¡Hola {nombre}!\n" . $template;
+            }
+        }
+
+        $rsvpUrl = url('/confirmar/' . $guest->token);
         $message = str_replace(
-            ['{nombre}', '{pareja}', '{lugar}'],
-            [$guest->name, $event->couple_names ?? $event->title, $event->location ?? 'Por confirmar'],
+            ['{nombre}', '{pareja}', '{lugar}', '{link}'],
+            [$guest->name, $event->couple_names ?? $event->title, $formattedLocation, $rsvpUrl],
             $template
         );
 
@@ -479,7 +503,8 @@ class GuestController extends Controller
         try {
             $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
                 'phone' => preg_replace('/[^\d]/', '', $guest->phone),
-                'message' => $message
+                'message' => $message,
+                'session_id' => $event->user_id ? "planner_{$event->user_id}" : "default"
             ]);
 
             if ($response->successful()) {
@@ -493,8 +518,12 @@ class GuestController extends Controller
                     'guest' => $guest
                 ]);
             }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::warning('Error conectando con el bot de WhatsApp: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            try {
+                \Illuminate\Support\Facades\Log::warning('Error conectando con el bot de WhatsApp: ' . $e->getMessage());
+            } catch (\Throwable $logError) {
+                // Ignore storage log permission issues
+            }
         }
 
         return response()->json([
@@ -612,11 +641,9 @@ class GuestController extends Controller
         $mode = $request->input('mode', 'invitation');
         $guestIds = $request->input('guest_ids');
 
-        $query = Guest::where('event_id', $eventId);
+        $query = Guest::where('event_id', $eventId)->where('whatsapp_status', 'not_sent');
         if (!empty($guestIds) && is_array($guestIds)) {
             $query->whereIn('id', $guestIds);
-        } else {
-            $query->where('whatsapp_status', 'not_sent');
         }
 
         $guests = $query->get();

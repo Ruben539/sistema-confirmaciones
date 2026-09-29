@@ -43,6 +43,11 @@ class SendWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
+        if ($guest->whatsapp_status === 'sent' && $this->messageMode === 'invitation') {
+            Log::info("WhatsApp Job: Guest {$guest->name} already marked as sent. Skipping.");
+            return;
+        }
+
         // Apply Spintax Anti-Spam Greeting Variations
         $greetings = [
             "¡Hola {nombre}! 👋",
@@ -61,9 +66,16 @@ class SendWhatsAppMessageJob implements ShouldQueue
             }
         }
 
+        $rawLocation = $event->location ?? 'Por confirmar';
+        if ($rawLocation !== 'Por confirmar' && !str_starts_with($rawLocation, 'http')) {
+            $formattedLocation = $rawLocation . "\n🗺️ Ver en Google Maps: https://maps.google.com/?q=" . urlencode($rawLocation);
+        } else {
+            $formattedLocation = $rawLocation;
+        }
+
         $message = str_replace(
             ['{nombre}', '{pareja}', '{lugar}'],
-            [$guest->name, $event->couple_names ?? $event->title, $event->location ?? 'Por confirmar'],
+            [$guest->name, $event->couple_names ?? $event->title, $formattedLocation],
             $rawTemplate
         );
 

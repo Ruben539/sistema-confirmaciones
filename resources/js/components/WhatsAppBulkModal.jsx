@@ -15,16 +15,24 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     const [isBulkSending, setIsBulkSending] = useState(false);
     const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, currentGuest: null, delayCountdown: 0 });
     const cancelBulkRef = useRef(false);
-    const [queueSuccessMessage, setQueueSuccessMessage] = useState(null);
-    const [isQueueStarting, setIsQueueStarting] = useState(false);
 
     if (!isOpen) return null;
+
+    const pendingGuestsCount = guests.filter(g => g.whatsapp_status === 'not_sent').length;
+    const sentGuestsCount = guests.filter(g => g.whatsapp_status === 'sent').length;
 
     const filteredGuests = guests.filter(g => {
         if (sentStatusFilter === 'not_sent') return g.whatsapp_status === 'not_sent';
         if (sentStatusFilter === 'sent') return g.whatsapp_status === 'sent';
         return true;
     });
+
+    const formatLocation = (loc) => {
+        if (!loc || loc === 'Por confirmar') return 'Por confirmar';
+        if (loc.startsWith('http://') || loc.startsWith('https://')) return loc;
+        const mapsUrl = `https://maps.google.com/?q=${encodeURIComponent(loc)}`;
+        return `${loc}\n🗺️ Ver en Google Maps: ${mapsUrl}`;
+    };
 
     const formatMessage = (guest) => {
         let template;
@@ -35,11 +43,12 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
             template = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
         }
         const rsvpUrl = `${window.location.origin}/confirmar/${guest.token}`;
+        const formattedLocation = formatLocation(event?.location);
 
         return template
             .replace(/\{nombre\}/g, guest.name)
             .replace(/\{pareja\}/g, event?.couple_names || event?.title || 'nosotros')
-            .replace(/\{lugar\}/g, event?.location || 'Por confirmar')
+            .replace(/\{lugar\}/g, formattedLocation)
             .replace(/\{link\}/g, rsvpUrl);
     };
 
@@ -50,6 +59,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     };
 
     const handleSendClick = (guest) => {
+        if (guest.whatsapp_status === 'sent') return;
         const url = getWhatsAppUrl(guest);
         window.open(url, '_blank');
         onMarkSent(guest.id);
@@ -63,10 +73,16 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     };
 
     const handleAutoSend = async (guest) => {
+        if (guest.whatsapp_status === 'sent') return;
+
         setSendingAutoId(guest.id);
         setErrorMessage(null);
         try {
-            const { ok, json } = await apiFetch(`/api/guests/${guest.id}/send-auto`, { method: 'POST' });
+            const { ok, json } = await apiFetch(`/api/guests/${guest.id}/send-auto`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: messageMode })
+            });
             if (ok) {
                 onMarkSent(guest.id);
             } else {
@@ -80,26 +96,31 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         }
     };
 
-    const processBulkQueue = async (pendingGuests) => {
+    const processBulkQueue = async (pendingList) => {
         setIsBulkSending(true);
         cancelBulkRef.current = false;
         setErrorMessage(null);
 
-        for (let i = 0; i < pendingGuests.length; i++) {
+        // Strict filter to only process guests that are not sent
+        const listToSend = pendingList.filter(g => g.whatsapp_status === 'not_sent');
+
+        for (let i = 0; i < listToSend.length; i++) {
             if (cancelBulkRef.current) break;
 
-            const guest = pendingGuests[i];
+            const guest = listToSend[i];
+            if (guest.whatsapp_status === 'sent') continue;
+
             setBulkProgress({
                 current: i + 1,
-                total: pendingGuests.length,
+                total: listToSend.length,
                 currentGuest: guest.name,
                 delayCountdown: 0
             });
 
             await handleAutoSend(guest);
 
-            if (i < pendingGuests.length - 1 && !cancelBulkRef.current) {
-                for (let secondsLeft = 15; secondsLeft > 0; secondsLeft--) {
+            if (i < listToSend.length - 1 && !cancelBulkRef.current) {
+                for (let secondsLeft = 12; secondsLeft > 0; secondsLeft--) {
                     if (cancelBulkRef.current) break;
                     setBulkProgress(prev => ({ ...prev, delayCountdown: secondsLeft }));
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -111,59 +132,25 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         setBulkProgress({ current: 0, total: 0, currentGuest: null, delayCountdown: 0 });
     };
 
-    // Bulk auto-sending queue with 15 second anti-spam delay
+    // Bulk auto-sending queue with anti-spam delay strictly for pending guests
     const startBulkQueue = () => {
         const pendingGuests = guests.filter(g => g.whatsapp_status === 'not_sent');
         if (pendingGuests.length === 0) {
-            setErrorMessage('No hay invitados pendientes de envío en esta lista.');
+            setErrorMessage('Todos los invitados ya tienen el mensaje enviado. No hay pendientes.');
             return;
         }
 
         setConfirmModal({
             isOpen: true,
-            title: 'Iniciar Envío Masivo por WhatsApp',
-            message: `¿Iniciar envío automático a ${pendingGuests.length} invitados con un intervalo de seguridad de 15 segundos entre cada número para evitar baneos?`,
-            confirmText: 'Sí, Iniciar Envío',
+            title: 'Enviar Mensajes por WhatsApp',
+            message: `¿Deseas enviar las invitaciones a los ${pendingGuests.length} invitados pendientes? El sistema enviará automáticamente con intervalos anti-spam y no reenviará a quienes ya lo recibieron.`,
+            confirmText: `Sí, Enviar (${pendingGuests.length})`,
             variant: 'info',
             onConfirm: () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
                 processBulkQueue(pendingGuests);
             }
         });
-    };
-
-    const handleStartBackgroundQueue = async () => {
-        const pending = filteredGuests.filter(g => g.whatsapp_status === 'not_sent');
-        if (pending.length === 0) {
-            setErrorMessage('No hay invitados pendientes en la lista filtrada.');
-            return;
-        }
-
-        setIsQueueStarting(true);
-        setErrorMessage(null);
-        setQueueSuccessMessage(null);
-
-        try {
-            const guestIds = pending.map(g => g.id);
-            const { ok, json } = await apiFetch(`/api/events/${event.id}/send-bulk-queue`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    mode: messageMode,
-                    guest_ids: guestIds
-                })
-            });
-
-            if (ok) {
-                setQueueSuccessMessage(json?.message || 'Cola iniciada');
-            } else {
-                setErrorMessage(json?.message || 'No se pudo iniciar la cola en segundo plano.');
-            }
-        } catch (err) {
-            console.error(err);
-            setErrorMessage('Error conectando con el servidor.');
-        } finally {
-            setIsQueueStarting(false);
-        }
     };
 
     const stopBulkQueue = () => {
@@ -182,7 +169,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                         </div>
                         <div>
                             <h2 className="text-xl font-black text-zinc-900 dark:text-white">Envío Masivo de Invitaciones</h2>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Enviá automáticamente por Bot Baileys con protección anti-spam en segundo plano o en tiempo real.</p>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">Enviá automáticamente las invitaciones por WhatsApp con protección anti-spam inteligente.</p>
                         </div>
                     </div>
 
@@ -194,19 +181,6 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                         <X className="w-5 h-5" />
                     </button>
                 </div>
-
-                {/* Queue Success Banner */}
-                {queueSuccessMessage && (
-                    <div className="p-4 bg-emerald-500/10 border-b border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-5 h-5 shrink-0" />
-                            <span>{queueSuccessMessage}</span>
-                        </div>
-                        <button onClick={() => setQueueSuccessMessage(null)} className="text-emerald-500 hover:text-emerald-700">
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
-                )}
 
                 {/* Bulk Auto-Sending Queue Status Card */}
                 {isBulkSending ? (
@@ -222,7 +196,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                         <Clock className="w-3.5 h-3.5" /> Pausa Anti-Spam: Enviando próximo en {bulkProgress.delayCountdown}s...
                                     </span>
                                 ) : (
-                                    <span>Enviando mensaje a: <strong>{bulkProgress.currentGuest?.name}</strong></span>
+                                    <span>Enviando mensaje a: <strong>{bulkProgress.currentGuest}</strong></span>
                                 )}
                             </p>
                         </div>
@@ -239,27 +213,24 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                     <div className="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                             <ShieldAlert className="w-4 h-4 text-emerald-500" />
-                            <span>Protección Anti-Spam & Spintax Activa (10-15s entre mensajes)</span>
+                            <span>Protección Anti-Spam Activa (intervalo inteligente de 10-15s)</span>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={handleStartBackgroundQueue}
-                                disabled={isQueueStarting}
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-extrabold shadow-lg transition-all active:scale-95 disabled:opacity-50"
-                            >
-                                <Sparkles className="w-4 h-4" />
-                                <span>{isQueueStarting ? 'Programando...' : '⚡ Programar en Segundo Plano (300+)'}</span>
-                            </button>
-
+                        {pendingGuestsCount > 0 ? (
                             <button
                                 onClick={startBulkQueue}
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white text-xs font-extrabold shadow-lg shadow-green-500/20 transition-all active:scale-95"
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white text-xs font-black shadow-lg shadow-green-500/20 transition-all active:scale-95"
+                                title={`Enviar automáticamente a los ${pendingGuestsCount} invitados pendientes`}
                             >
                                 <Play className="w-4 h-4 fill-white" />
-                                <span>Enviar en Pantalla</span>
+                                <span>Enviar Mensajes ({pendingGuestsCount})</span>
                             </button>
-                        </div>
+                        ) : (
+                            <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                <span>Todos los mensajes han sido enviados ({sentGuestsCount})</span>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -275,13 +246,13 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                     onClick={() => setSentStatusFilter('not_sent')}
                                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${sentStatusFilter === 'not_sent' ? 'bg-green-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                                 >
-                                    Pendientes ({guests.filter(g => g.whatsapp_status === 'not_sent').length})
+                                    Pendientes ({pendingGuestsCount})
                                 </button>
                                 <button
                                     onClick={() => setSentStatusFilter('sent')}
                                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${sentStatusFilter === 'sent' ? 'bg-green-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
                                 >
-                                    Enviados ({guests.filter(g => g.whatsapp_status === 'sent').length})
+                                    Enviados ({sentGuestsCount})
                                 </button>
                                 <button
                                     onClick={() => setSentStatusFilter('all')}
@@ -352,44 +323,72 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                     </div>
 
                                     {/* Right: Actions */}
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <button
-                                            onClick={() => handleAutoSend(guest)}
-                                            disabled={isAutoSending || isBulkSending}
-                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all shadow-sm active:scale-95 disabled:opacity-50"
-                                            title="Enviar automáticamente a través de la API Baileys"
-                                        >
-                                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                                            <span>{isAutoSending ? 'Enviando...' : 'Bot Baileys'}</span>
-                                        </button>
+                                    {isSent ? (
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 text-xs font-bold shadow-sm">
+                                                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                                <span>Enviado</span>
+                                            </span>
 
-                                        <button
-                                            onClick={() => handleCopyClick(guest)}
-                                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                            title="Copiar texto del mensaje"
-                                        >
-                                            {copiedId === guest.id ? (
-                                                <>
-                                                    <Check className="w-4 h-4 text-emerald-500" />
-                                                    <span className="text-emerald-600 dark:text-emerald-400">Copiado</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Copy className="w-4 h-4" />
-                                                    <span>Copiar</span>
-                                                </>
-                                            )}
-                                        </button>
+                                            <button
+                                                onClick={() => handleCopyClick(guest)}
+                                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                                title="Copiar texto del mensaje"
+                                            >
+                                                {copiedId === guest.id ? (
+                                                    <>
+                                                        <Check className="w-4 h-4 text-emerald-500" />
+                                                        <span className="text-emerald-600 dark:text-emerald-400">Copiado</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy className="w-4 h-4" />
+                                                        <span>Copiar</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                                onClick={() => handleAutoSend(guest)}
+                                                disabled={isAutoSending || isBulkSending}
+                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold transition-all shadow-sm active:scale-95 disabled:opacity-50"
+                                                title="Enviar automáticamente a través de la API Baileys"
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                                <span>{isAutoSending ? 'Enviando...' : 'Bot Baileys'}</span>
+                                            </button>
 
-                                        <button
-                                            onClick={() => handleSendClick(guest)}
-                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-zinc-800 dark:bg-zinc-700 hover:bg-zinc-900 text-white text-xs font-bold transition-all shadow-md active:scale-95"
-                                        >
-                                            <Send className="w-3.5 h-3.5" />
-                                            <span>Abrir Web</span>
-                                            <ExternalLink className="w-3 h-3 opacity-70" />
-                                        </button>
-                                    </div>
+                                            <button
+                                                onClick={() => handleCopyClick(guest)}
+                                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                                title="Copiar texto del mensaje"
+                                            >
+                                                {copiedId === guest.id ? (
+                                                    <>
+                                                        <Check className="w-4 h-4 text-emerald-500" />
+                                                        <span className="text-emerald-600 dark:text-emerald-400">Copiado</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Copy className="w-4 h-4" />
+                                                        <span>Copiar</span>
+                                                    </>
+                                                )}
+                                            </button>
+
+                                            <button
+                                                onClick={() => handleSendClick(guest)}
+                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-zinc-800 dark:bg-zinc-700 hover:bg-zinc-900 text-white text-xs font-bold transition-all shadow-md active:scale-95"
+                                                title="Abrir WhatsApp Web manualmente"
+                                            >
+                                                <Send className="w-3.5 h-3.5" />
+                                                <span>Abrir Web</span>
+                                                <ExternalLink className="w-3 h-3 opacity-70" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })
