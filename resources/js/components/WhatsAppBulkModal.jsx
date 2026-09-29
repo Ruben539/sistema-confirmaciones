@@ -254,6 +254,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                     Todos ({guests.length})
                                 </button>
                             </div>
+                        </div>
                     </div>
 
                     <span className="text-xs text-zinc-500 font-medium">
