@@ -220,7 +220,11 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
             });
 
             if (ok) {
-                showToast(isEditing ? `Usuario '${name}' actualizado.` : `¡Wedding Planner '${name}' registrada con éxito!`);
+                if (json?.whatsapp_sent) {
+                    showToast(`¡Wedding Planner '${name}' registrada! Se enviaron sus credenciales de acceso por WhatsApp.`);
+                } else {
+                    showToast(isEditing ? `Usuario '${name}' actualizado.` : `¡Wedding Planner '${name}' registrada con éxito!`);
+                }
                 setIsUserModalOpen(false);
                 fetchUsers();
             } else {

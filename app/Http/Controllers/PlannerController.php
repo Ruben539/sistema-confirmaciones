@@ -7,6 +7,8 @@ use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
 class PlannerController extends Controller
@@ -71,12 +73,80 @@ class PlannerController extends Controller
         ]);
 
         $roleTitle = $newUser->role === 'admin' ? 'Administrador' : 'Wedding Planner';
+        $whatsappSent = false;
+        $directWhatsAppUrl = null;
+
+        // Send Welcome WhatsApp Message if phone is provided
+        if (!empty($newUser->phone)) {
+            $cleanPhone = $this->formatPhone($newUser->phone);
+            $appUrl = config('app.url', url('/'));
+
+            $welcomeMessage = "✨ *¡HOLA {$newUser->name}, BIENVENIDA A TU NUEVO ESPACIO!* 🥂🎉\n\n"
+                . "Sabemos que lo que hacés no es simplemente organizar eventos: *creás momentos inolvidables, transformás sueños en realidad y dejás huellas imborrables en los días más importantes en la vida de las personas.* 💫\n\n"
+                . "Ya sea una **boda de ensueño**, unos **15 años mágicos**, un **aniversario inolvidable** o una **gran gala corporativa**, esta plataforma fue diseñada para ser tu aliada detrás de escena y permitir que tu talento brille sin límites.\n\n"
+                . "━━━━━━━━━━━━━━━━━━━━\n"
+                . "🔐 *TUS DATOS DE ACCESO:*\n"
+                . "🌐 *Plataforma:* {$appUrl}\n"
+                . "📧 *Email:* {$newUser->email}\n"
+                . ($newUser->username ? "👤 *Usuario:* @{$newUser->username}\n" : "")
+                . "🔑 *Contraseña:* {$validated['password']}\n"
+                . "━━━━━━━━━━━━━━━━━━━━\n\n"
+                . "✨ *DESDE TU PANEL PODRÁS:*\n"
+                . "📋 Gestionar cada una de tus celebraciones y cupos con total control.\n"
+                . "💬 Automatizar invitaciones y confirmaciones por WhatsApp con pases QR.\n"
+                . "🪑 Diseñar la distribución de mesas y asientos en plano visual.\n"
+                . "🚀 Solicitar ampliación de plan cuando tus eventos crezcan.\n\n"
+                . "Estamos felices de acompañarte a seguir creando momentos extraordinarios. ¡Muchos éxitos en cada una de tus producciones! 🌟🥂";
+
+            $encodedText = urlencode($welcomeMessage);
+            $directWhatsAppUrl = "https://api.whatsapp.com/send?phone=" . preg_replace('/[^\d]/', '', $cleanPhone) . "&text={$encodedText}";
+
+            $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
+            try {
+                $res = Http::timeout(8)->post($botUrl, [
+                    'phone' => preg_replace('/[^\d]/', '', $cleanPhone),
+                    'message' => $welcomeMessage
+                ]);
+                if ($res->successful()) {
+                    $whatsappSent = true;
+                }
+            } catch (\Exception $e) {
+                Log::warning("Error enviando WhatsApp de bienvenida a planner {$newUser->name}: " . $e->getMessage());
+            }
+        }
 
         return response()->json([
-            'message' => "Usuario '{$newUser->name}' ({$roleTitle}) registrado con éxito.",
+            'message' => $whatsappSent 
+                ? "¡Usuario '{$newUser->name}' ({$roleTitle}) registrado! Se enviaron las credenciales de acceso por WhatsApp."
+                : "Usuario '{$newUser->name}' ({$roleTitle}) registrado con éxito.",
             'planner' => $newUser,
-            'user' => $newUser
+            'user' => $newUser,
+            'whatsapp_sent' => $whatsappSent,
+            'direct_whatsapp_url' => $directWhatsAppUrl,
         ], 201);
+    }
+
+    private function formatPhone($phone)
+    {
+        $digits = preg_replace('/[^\d]/', '', $phone);
+        if (empty($digits)) return '';
+
+        if (str_starts_with($digits, '09') && strlen($digits) === 10) {
+            return '595' . substr($digits, 1);
+        }
+        if (str_starts_with($digits, '9') && strlen($digits) === 9) {
+            return '595' . $digits;
+        }
+        if (str_starts_with($digits, '595')) {
+            return $digits;
+        }
+        if (strlen($digits) >= 9) {
+            $last9 = substr($digits, -9);
+            if (str_starts_with($last9, '9')) {
+                return '595' . $last9;
+            }
+        }
+        return $digits;
     }
 
     public function update(Request $request, $id)
