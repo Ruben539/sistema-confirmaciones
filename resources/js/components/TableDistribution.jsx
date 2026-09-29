@@ -360,6 +360,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                     tables={tables} 
                     unassignedGuests={unassigned}
                     onAssignGuest={handleAssignGuest}
+                    onMoveGuest={handleAssignGuest}
                 />
             ) : (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
