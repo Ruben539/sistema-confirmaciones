@@ -18,7 +18,7 @@ import TableDistribution from './components/TableDistribution';
 import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
-import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck } from 'lucide-react';
+import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users } from 'lucide-react';
 
 function Dashboard({ user, onLogout }) {
     const [events, setEvents] = useState([]);
