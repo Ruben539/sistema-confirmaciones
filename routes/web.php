@@ -9,6 +9,7 @@ use App\Http\Controllers\PlannerController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\PlanRequestController;
 use App\Http\Controllers\TimingController;
+use App\Http\Controllers\EventTypeController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -24,6 +25,12 @@ Route::prefix('api')->group(function () {
     Route::put('/event/{id}', [EventController::class, 'update']);
     Route::delete('/event/{id}', [EventController::class, 'destroy']);
     Route::get('/planners', [EventController::class, 'planners']);
+
+    // Event Types Management
+    Route::get('/event-types', [EventTypeController::class, 'index']);
+    Route::post('/event-types', [EventTypeController::class, 'store']);
+    Route::put('/event-types/{id}', [EventTypeController::class, 'update']);
+    Route::delete('/event-types/{id}', [EventTypeController::class, 'destroy']);
     
     // Planners / User Administration
     Route::get('/planners/full', [PlannerController::class, 'index']);

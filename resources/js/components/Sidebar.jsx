@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag } from 'lucide-react';
 
 export default function Sidebar({
     user,
@@ -149,6 +149,14 @@ export default function Sidebar({
                             >
                                 <Calendar className={`w-4 h-4 shrink-0 ${activeTab === 'events_admin' ? 'text-white' : 'text-amber-500'}`} />
                                 {!collapsed && <span>Eventos & Asignaciones</span>}
+                            </button>
+
+                            <button
+                                onClick={() => setActiveTab('event_types')}
+                                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'event_types' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                            >
+                                <Tag className={`w-4 h-4 shrink-0 ${activeTab === 'event_types' ? 'text-white' : 'text-amber-500'}`} />
+                                {!collapsed && <span>Tipos de Eventos</span>}
                             </button>
                         </div>
                     )}

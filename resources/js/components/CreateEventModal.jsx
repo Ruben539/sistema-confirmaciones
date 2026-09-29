@@ -3,6 +3,17 @@ import { PlusCircle, Heart, Calendar, MapPin, User, X, Save, Edit3 } from 'lucid
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { apiFetch } from '../api';
 
+export const EVENT_TYPES = [
+    { value: 'boda', label: '💍 Boda / Casamiento' },
+    { value: 'xv_anos', label: '👑 15 Años / Fiesta de XV' },
+    { value: 'cumpleanos', label: '🎂 Cumpleaños' },
+    { value: 'aniversario', label: '❤️ Aniversario' },
+    { value: 'corporativo', label: '🏢 Evento Corporativo' },
+    { value: 'graduacion', label: '🎓 Graduación / Colación' },
+    { value: 'baby_shower', label: '🎈 Baby Shower / Fiesta' },
+    { value: 'otro', label: '🎉 Otro Evento Especial' },
+];
+
 export default function CreateEventModal({ isOpen, onClose, onEventCreated, eventToEdit = null }) {
     const [title, setTitle] = useState('');
     const [eventType, setEventType] = useState('boda');
@@ -19,9 +30,12 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
     const [rsvpDeadlineDays, setRsvpDeadlineDays] = useState(7);
     const [autoDeclineExpired, setAutoDeclineExpired] = useState(true);
 
+    const [availableTypes, setAvailableTypes] = useState(EVENT_TYPES);
+
     useEffect(() => {
         if (isOpen) {
             fetchPlanners();
+            fetchEventTypes();
             if (eventToEdit) {
                 setTitle(eventToEdit.title || '');
                 setEventType(eventToEdit.event_type || 'boda');
@@ -48,13 +62,30 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
         }
     }, [isOpen, eventToEdit]);
 
+    const fetchEventTypes = async () => {
+        try {
+            const { ok, json } = await apiFetch('/api/event-types');
+            if (ok && Array.isArray(json) && json.length > 0) {
+                const mapped = json.map(t => ({
+                    value: t.slug,
+                    label: `${t.icon || '🎉'} ${t.name}`,
+                }));
+                setAvailableTypes(mapped);
+            }
+        } catch (err) {
+            console.error('Error fetching event types:', err);
+        }
+    };
+
     const fetchPlanners = async () => {
         try {
             const { ok, json } = await apiFetch('/api/planners');
             if (ok && json) {
-                setPlanners(json);
-                if (!eventToEdit && json.length > 0) {
-                    setPlannerId(json[0].id);
+                // Ensure only users with role 'planner' are shown
+                const onlyPlanners = json.filter(p => p.role === 'planner');
+                setPlanners(onlyPlanners);
+                if (!eventToEdit && onlyPlanners.length > 0) {
+                    setPlannerId(onlyPlanners[0].id);
                 }
             }
         } catch (err) {
@@ -153,10 +184,15 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                             <option value="">-- Seleccionar Wedding Planner --</option>
                             {planners.map(p => (
                                 <option key={p.id} value={p.id}>
-                                    {p.name} ({p.email}) - {p.role === 'admin' ? 'Administrador' : 'Planner'}
+                                    {p.name} ({p.email})
                                 </option>
                             ))}
                         </select>
+                        {planners.length === 0 && (
+                            <p className="text-[11px] text-rose-500 font-semibold mt-1">
+                                No hay Wedding Planners con rol "planner" registradas. Creá una primero desde la pestaña "Planners".
+                            </p>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -169,14 +205,11 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                                 onChange={(e) => setEventType(e.target.value)}
                                 className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-bold focus:ring-2 focus:ring-amber-500 outline-none"
                             >
-                                <option value="boda">💍 Boda / Casamiento</option>
-                                <option value="xv_anos">👑 15 Años / Fiesta de XV</option>
-                                <option value="cumpleanos">🎂 Cumpleaños</option>
-                                <option value="aniversario">❤️ Aniversario</option>
-                                <option value="corporativo">🏢 Evento Corporativo</option>
-                                <option value="graduacion">🎓 Graduación / Colación</option>
-                                <option value="baby_shower">🎈 Baby Shower / Fiesta</option>
-                                <option value="otro">🎉 Otro Evento Especial</option>
+                                {availableTypes.map(type => (
+                                    <option key={type.value} value={type.value}>
+                                        {type.label}
+                                    </option>
+                                ))}
                             </select>
                         </div>
 

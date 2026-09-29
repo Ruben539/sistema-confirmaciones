@@ -17,6 +17,7 @@ import ConfirmModal from './components/ConfirmModal';
 import TableDistribution from './components/TableDistribution';
 import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import EventTiming from './components/EventTiming';
+import EventTypesManagement from './components/EventTypesManagement';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
 import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users } from 'lucide-react';
@@ -293,6 +294,10 @@ function Dashboard({ user, onLogout }) {
                                 handleSelectEvent(ev);
                                 setActiveTab('dashboard');
                             }}
+                        />
+                    ) : activeTab === 'event_types' && user?.role === 'admin' ? (
+                        <EventTypesManagement
+                            showToast={showToast}
                         />
                     ) : activeTab === 'tables' ? (
                         <TableDistribution

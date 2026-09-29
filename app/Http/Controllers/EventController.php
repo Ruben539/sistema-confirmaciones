@@ -46,6 +46,7 @@ class EventController extends Controller
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
+            'event_type' => 'nullable|string|max:50',
             'couple_names' => 'required|string|max:255',
             'event_date' => 'nullable|date',
             'location' => 'nullable|string|max:255',
@@ -68,6 +69,7 @@ class EventController extends Controller
 
         $event = Event::create([
             'title' => $validated['title'],
+            'event_type' => $validated['event_type'] ?? 'boda',
             'couple_names' => $validated['couple_names'],
             'event_date' => $validated['event_date'] ?? null,
             'location' => $validated['location'] ?? null,
@@ -102,6 +104,7 @@ class EventController extends Controller
 
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
+            'event_type' => 'nullable|string|max:50',
             'couple_names' => 'nullable|string|max:255',
             'event_date' => 'nullable|date',
             'location' => 'nullable|string|max:255',
@@ -170,7 +173,7 @@ class EventController extends Controller
             ], 403);
         }
 
-        $planners = User::whereIn('role', ['planner', 'admin'])->select('id', 'name', 'email', 'role')->get();
+        $planners = User::where('role', 'planner')->select('id', 'name', 'email', 'role')->orderBy('name')->get();
 
         return response()->json($planners);
     }

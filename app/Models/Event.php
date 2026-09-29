@@ -9,6 +9,17 @@ class Event extends Model
 {
     use HasFactory;
 
+    public const EVENT_TYPES = [
+        'boda' => '💍 Boda / Casamiento',
+        'xv_anos' => '👑 15 Años / Fiesta de XV',
+        'cumpleanos' => '🎂 Cumpleaños',
+        'aniversario' => '❤️ Aniversario',
+        'corporativo' => '🏢 Evento Corporativo',
+        'graduacion' => '🎓 Graduación / Colación',
+        'baby_shower' => '🎈 Baby Shower / Fiesta',
+        'otro' => '🎉 Otro Evento Especial',
+    ];
+
     protected $fillable = [
         'user_id',
         'title',
