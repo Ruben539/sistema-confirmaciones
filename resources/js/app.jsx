@@ -15,6 +15,7 @@ import PlannersManagement from './components/PlannersManagement';
 import EventsManagement from './components/EventsManagement';
 import ConfirmModal from './components/ConfirmModal';
 import TableDistribution from './components/TableDistribution';
+import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
 import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck } from 'lucide-react';
@@ -35,6 +36,7 @@ function Dashboard({ user, onLogout }) {
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
     const [isCreateEventModalOpen, setIsCreateEventModalOpen] = useState(false);
+    const [isChatbotUpgradeOpen, setIsChatbotUpgradeOpen] = useState(false);
     const [editingEvent, setEditingEvent] = useState(null);
     const [editingGuest, setEditingGuest] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, variant: 'danger', confirmText: 'Confirmar' });
@@ -223,6 +225,7 @@ function Dashboard({ user, onLogout }) {
                 setActiveTab={setActiveTab}
                 onOpenCreateEvent={() => setIsCreateEventModalOpen(true)}
                 onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenUpgradeBot={() => setIsChatbotUpgradeOpen(true)}
                 onLogout={onLogout}
                 theme={theme}
                 onToggleTheme={handleToggleTheme}
@@ -239,6 +242,7 @@ function Dashboard({ user, onLogout }) {
                     onLogout={onLogout}
                     theme={theme}
                     onToggleTheme={handleToggleTheme}
+                    onOpenUpgradeBot={() => setIsChatbotUpgradeOpen(true)}
                 />
 
                 {/* Main Content */}
@@ -378,8 +382,10 @@ function Dashboard({ user, onLogout }) {
             <ExcelUploadModal
                 isOpen={isExcelModalOpen}
                 onClose={() => setIsExcelModalOpen(false)}
-                eventId={activeEvent?.id}
+                event={activeEvent}
+                currentGuestsCount={guests.length}
                 onImportSuccess={(msg) => { showToast(msg); activeEvent && loadGuests(activeEvent.id); }}
+                onOpenUpgradeBot={() => { setIsExcelModalOpen(false); setIsChatbotUpgradeOpen(true); }}
             />
 
             <AddGuestModal
@@ -425,6 +431,18 @@ function Dashboard({ user, onLogout }) {
                 message={confirmModal.message}
                 confirmText={confirmModal.confirmText}
                 variant={confirmModal.variant}
+            />
+
+            <PlanUpgradeChatbotModal
+                isOpen={isChatbotUpgradeOpen}
+                onClose={() => setIsChatbotUpgradeOpen(false)}
+                event={activeEvent}
+                currentGuestsCount={guests.length}
+                user={user}
+                onRequestSent={() => {
+                    showToast('¡Solicitud de plan enviada con éxito!');
+                    if (activeEvent) loadEvents(activeEvent.id);
+                }}
             />
         </div>
     );

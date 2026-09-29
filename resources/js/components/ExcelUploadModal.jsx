@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Users } from 'lucide-react';
+import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Users, ShieldCheck, Bot } from 'lucide-react';
 import { apiFetch } from '../api';
 
-export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuccess }) {
+export default function ExcelUploadModal({ isOpen, onClose, event, eventId, currentGuestsCount = 0, onImportSuccess, onOpenUpgradeBot }) {
     const [file, setFile] = useState(null);
     const [parsedData, setParsedData] = useState([]);
     const [rawRows, setRawRows] = useState([]);
@@ -12,6 +12,13 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const fileInputRef = useRef(null);
+
+    const activeEventId = event?.id || eventId;
+    const maxGuests = event?.max_guests || 100;
+    const planType = event?.plan_type || 'initial';
+    const planName = planType === 'medium' ? 'Plan Medio (150)' : planType === 'premium' ? 'Plan Premium (+150)' : 'Plan Inicial (100)';
+    const availableSlots = Math.max(0, maxGuests - currentGuestsCount);
+    const capacityPercent = Math.min(100, Math.round((currentGuestsCount / maxGuests) * 100));
 
     if (!isOpen) return null;
 
@@ -178,7 +185,7 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
         setError(null);
 
         try {
-            const { ok, json } = await apiFetch(`/api/events/${eventId}/guests/import`, {
+            const { ok, json } = await apiFetch(`/api/events/${activeEventId}/guests/import`, {
                 method: 'POST',
                 body: JSON.stringify({
                     guests: validGuests.map(g => ({
@@ -233,6 +240,35 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
 
                 {/* Modal Content */}
                 <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                    {/* Event Plan & Capacity Header */}
+                    <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-zinc-900 dark:text-white">
+                                    {event?.couple_names || event?.title || 'Evento Seleccionado'}
+                                </span>
+                                <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/50">
+                                    {planName}
+                                </span>
+                            </div>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                Cupo actual: <strong>{currentGuestsCount}</strong> de <strong>{maxGuests}</strong> invitados registrados.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="text-left sm:text-right">
+                                <div className={`text-sm font-black ${availableSlots > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                    {availableSlots > 0 ? `${availableSlots} cupos libres` : 'Sin cupos libres'}
+                                </div>
+                                <div className="text-[10px] text-zinc-400">Capacidad ocupada: {capacityPercent}%</div>
+                            </div>
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 ${availableSlots > 0 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'}`}>
+                                {capacityPercent}%
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Error Alert */}
                     {error && (
                         <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center gap-3">
@@ -240,6 +276,34 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
                             <span>{error}</span>
                         </div>
                     )}
+
+                    {/* Plan Limit Reached Alert */}
+                    {availableSlots <= 0 && (
+                        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-800 dark:text-rose-300 text-xs font-semibold flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+                                <div>
+                                    <strong>Límite del plan alcanzado:</strong> Este evento ya cuenta con {currentGuestsCount} de los {maxGuests} invitados permitidos por su {planName}.
+                                </div>
+                            </div>
+                            {onOpenUpgradeBot && (
+                                <button
+                                    type="button"
+                                    onClick={onOpenUpgradeBot}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition-all whitespace-nowrap shrink-0"
+                                >
+                                    <Bot className="w-4 h-4" />
+                                    <span>Solicitar Plan con Bot</span>
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Anti-duplicate banner */}
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-300 text-xs font-medium flex items-center gap-2.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span><strong>Protección anti-duplicados activa:</strong> Si subís un archivo con números de teléfono ya registrados, el sistema actualizará sus datos o los omitirá automáticamente sin duplicar registros ni restar cupos a tu plan.</span>
+                    </div>
 
                     {/* Step 1: Upload or Dropzone */}
                     {!file ? (
@@ -299,6 +363,28 @@ export default function ExcelUploadModal({ isOpen, onClose, eventId, onImportSuc
                                     Cambiar archivo
                                 </button>
                             </div>
+
+                            {/* Capacity Warning if file exceeds available slots */}
+                            {parsedData.filter(g => g.isValid).length > availableSlots && (
+                                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-300 text-xs font-semibold flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                                        <div>
+                                            <strong>Atención de Capacidad:</strong> El archivo contiene {parsedData.filter(g => g.isValid).length} invitados, pero quedan solo <strong>{availableSlots} {availableSlots === 1 ? 'cupo libre' : 'cupos libres'}</strong> en el {planName} ({maxGuests} máx).
+                                        </div>
+                                    </div>
+                                    {onOpenUpgradeBot && (
+                                        <button
+                                            type="button"
+                                            onClick={onOpenUpgradeBot}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition-all whitespace-nowrap shrink-0"
+                                        >
+                                            <Bot className="w-4 h-4" />
+                                            <span>Ampliar con Bot</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Column Mapping Selector */}
                             <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-4">

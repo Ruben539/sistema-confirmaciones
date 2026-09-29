@@ -48,6 +48,7 @@ class PlannerController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
+            'phone' => 'nullable|string|max:50',
             'username' => 'nullable|string|max:255|unique:users',
             'password' => 'required|string|min:6',
             'role' => 'required|string|in:admin,planner',
@@ -56,6 +57,7 @@ class PlannerController extends Controller
         $newUser = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
             'username' => $validated['username'] ?? null,
             'password' => Hash::make($validated['password']),
             'role' => $validated['role'],
@@ -85,6 +87,7 @@ class PlannerController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($targetUser->id)],
+            'phone' => 'nullable|string|max:50',
             'username' => ['nullable', 'string', 'max:255', Rule::unique('users')->ignore($targetUser->id)],
             'role' => 'required|string|in:admin,planner',
             'password' => 'nullable|string|min:6',
@@ -93,6 +96,7 @@ class PlannerController extends Controller
         $updateData = [
             'name' => $validated['name'],
             'email' => $validated['email'],
+            'phone' => $validated['phone'] ?? null,
             'username' => $validated['username'] ?? null,
             'role' => $validated['role'],
         ];

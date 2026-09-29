@@ -125,6 +125,23 @@ class GuestController extends Controller
         ]);
 
         $formattedPhone = $this->formatParaguayPhone($validated['phone']);
+        $cleanDigits = preg_replace('/[^\d]/', '', $formattedPhone);
+        $phoneKey = strlen($cleanDigits) >= 9 ? substr($cleanDigits, -9) : $cleanDigits;
+
+        // Anti-duplicate protection: check if phone already exists in this event
+        $existing = Guest::where('event_id', $eventId)
+            ->where(function ($q) use ($formattedPhone, $phoneKey) {
+                $q->where('phone', $formattedPhone)
+                  ->orWhere('phone', 'LIKE', "%{$phoneKey}%");
+            })
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'message' => "Ya existe un invitado registrado con el teléfono {$validated['phone']} ({$existing->name})."
+            ], 422);
+        }
+
         $cat = strtolower($validated['category'] ?? 'adult');
 
         $adults = 1;
@@ -163,12 +180,6 @@ class GuestController extends Controller
         $currentCount = Guest::where('event_id', $eventId)->count();
         $availableSlots = max(0, $event->max_guests - $currentCount);
 
-        if ($availableSlots <= 0) {
-            return response()->json([
-                'message' => "Límite alcanzado: Este evento alcanzó el número máximo de {$event->max_guests} invitados permitido por su plan ('{$event->plan_type}')."
-            ], 422);
-        }
-
         $validated = $request->validate([
             'guests' => 'required|array',
             'guests.*.name' => 'required|string',
@@ -181,20 +192,39 @@ class GuestController extends Controller
             'guests.*.notes' => 'nullable|string',
         ]);
 
+        // Preload all existing guests for this event into a phone index map
+        $existingGuests = Guest::where('event_id', $eventId)->get();
+        $existingMap = [];
+        foreach ($existingGuests as $eg) {
+            $digits = preg_replace('/[^\d]/', '', $eg->phone);
+            if (!empty($digits)) {
+                $key = strlen($digits) >= 9 ? substr($digits, -9) : $digits;
+                $existingMap[$key] = $eg;
+            }
+        }
+
         $created = 0;
-        $guestsData = [];
+        $updated = 0;
+        $skipped = 0;
         $limitReached = false;
+        $seenInBatch = [];
 
         foreach ($validated['guests'] as $item) {
-            if ($created >= $availableSlots) {
-                $limitReached = true;
-                break;
-            }
-            $name = trim($item['name']);
-            $phone = trim($item['phone']);
+            $name = trim($item['name'] ?? '');
+            $phone = trim($item['phone'] ?? '');
             if (empty($name) || empty($phone)) continue;
 
             $formattedPhone = $this->formatParaguayPhone($phone);
+            $cleanDigits = preg_replace('/[^\d]/', '', $formattedPhone);
+            $phoneKey = strlen($cleanDigits) >= 9 ? substr($cleanDigits, -9) : $cleanDigits;
+
+            // In-batch duplicate check (if the Excel file repeats the same phone number)
+            if (isset($seenInBatch[$phoneKey])) {
+                $skipped++;
+                continue;
+            }
+            $seenInBatch[$phoneKey] = true;
+
             $cat = strtolower(trim($item['category'] ?? 'adult'));
 
             $adults = 1;
@@ -208,8 +238,46 @@ class GuestController extends Controller
             }
 
             $dietary = $item['dietary_restrictions'] ?? $item['restricciones'] ?? $item['dieta'] ?? null;
+            $tableNumber = isset($item['table_number']) && trim($item['table_number']) !== '' ? trim($item['table_number']) : null;
+            $dietaryRestrictions = $dietary && trim($dietary) !== '' ? trim($dietary) : null;
+            $notes = $item['notes'] ?? null;
 
-            $guest = Guest::create([
+            // Anti-duplicate: Guest already exists in this event
+            if (isset($existingMap[$phoneKey])) {
+                $existingGuest = $existingMap[$phoneKey];
+                $updateFields = [];
+
+                if ($tableNumber !== null && $existingGuest->table_number !== $tableNumber) {
+                    $updateFields['table_number'] = $tableNumber;
+                }
+                if ($dietaryRestrictions !== null && $existingGuest->dietary_restrictions !== $dietaryRestrictions) {
+                    $updateFields['dietary_restrictions'] = $dietaryRestrictions;
+                }
+                if ($notes !== null && $existingGuest->notes !== $notes) {
+                    $updateFields['notes'] = $notes;
+                }
+                if ($existingGuest->adults !== $adults || $existingGuest->youth !== $youth || $existingGuest->children !== $children) {
+                    $updateFields['adults'] = $adults;
+                    $updateFields['youth'] = $youth;
+                    $updateFields['children'] = $children;
+                }
+
+                if (!empty($updateFields)) {
+                    $existingGuest->update($updateFields);
+                    $updated++;
+                } else {
+                    $skipped++;
+                }
+                continue;
+            }
+
+            // New guest creation - check plan limit
+            if ($created >= $availableSlots) {
+                $limitReached = true;
+                break;
+            }
+
+            $newGuest = Guest::create([
                 'event_id' => $eventId,
                 'name' => $name,
                 'phone' => $formattedPhone,
@@ -217,25 +285,67 @@ class GuestController extends Controller
                 'youth' => $youth,
                 'children' => $children,
                 'passes' => 1,
-                'table_number' => isset($item['table_number']) && trim($item['table_number']) !== '' ? trim($item['table_number']) : null,
-                'dietary_restrictions' => $dietary && trim($dietary) !== '' ? trim($dietary) : null,
-                'notes' => $item['notes'] ?? null,
+                'table_number' => $tableNumber,
+                'dietary_restrictions' => $dietaryRestrictions,
+                'notes' => $notes,
                 'status' => 'pending',
                 'token' => Str::random(32),
             ]);
 
+            $existingMap[$phoneKey] = $newGuest;
             $created++;
-            $guestsData[] = $guest;
         }
 
-        $message = "Se importaron {$created} invitados correctamente";
+        $summaryParts = [];
+        if ($created > 0) {
+            $summaryParts[] = "{$created} nuevos invitados importados";
+        }
+        if ($updated > 0) {
+            $summaryParts[] = "{$updated} actualizados";
+        }
+        if ($skipped > 0) {
+            $summaryParts[] = "{$skipped} duplicados omitidos";
+        }
+
+        $unimportedDueToLimit = 0;
         if ($limitReached) {
-            $message .= " (Se alcanzó el límite de {$event->max_guests} invitados de tu plan)";
+            $totalInFile = count($validated['guests']);
+            $processedCount = $created + $updated + $skipped;
+            $unimportedDueToLimit = max(0, $totalInFile - $processedCount);
+        }
+
+        if (empty($summaryParts)) {
+            $message = $limitReached
+                ? "Límite alcanzado: Este evento ya cuenta con {$currentCount} de los {$event->max_guests} invitados permitidos por su plan ('{$event->plan_type}'). No es posible registrar nuevos invitados."
+                : "No se encontraron invitados nuevos para importar.";
+
+            return response()->json([
+                'message' => $message,
+                'count' => 0,
+                'created' => 0,
+                'updated' => 0,
+                'skipped' => $skipped,
+                'limit_reached' => true,
+                'unimported_due_to_limit' => $unimportedDueToLimit
+            ], 422);
+        }
+
+        $message = "Operación completada: " . implode(', ', $summaryParts) . '.';
+        if ($limitReached) {
+            $limitWarning = " (Se alcanzó el límite de {$event->max_guests} invitados de tu plan '{$event->plan_type}'";
+            if ($unimportedDueToLimit > 0) {
+                $limitWarning .= "; {$unimportedDueToLimit} no pudieron ingresar por falta de cupo";
+            }
+            $limitWarning .= ")";
+            $message .= $limitWarning;
         }
 
         return response()->json([
             'message' => $message,
             'count' => $created,
+            'created' => $created,
+            'updated' => $updated,
+            'skipped' => $skipped,
             'limit_reached' => $limitReached
         ]);
     }

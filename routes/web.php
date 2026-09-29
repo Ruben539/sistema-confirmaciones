@@ -7,6 +7,7 @@ use App\Http\Controllers\RsvpController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PlannerController;
 use App\Http\Controllers\TableController;
+use App\Http\Controllers\PlanRequestController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -57,6 +58,12 @@ Route::prefix('api')->group(function () {
     // Door Accreditation / Check-In QR Scan Route
     Route::post('/check-in/scan', [GuestController::class, 'scanQrCheckIn']);
     Route::post('/check-in/{token}', [GuestController::class, 'scanQrCheckIn']);
+
+    // Plan Upgrade Requests & Admin Approval Routes
+    Route::get('/plan-requests', [PlanRequestController::class, 'index']);
+    Route::post('/events/{eventId}/plan-request', [PlanRequestController::class, 'store']);
+    Route::post('/plan-requests/{id}/approve', [PlanRequestController::class, 'approve']);
+    Route::post('/plan-requests/{id}/reject', [PlanRequestController::class, 'reject']);
 });
 
 // Fallback SPA renderiza la plantilla de React

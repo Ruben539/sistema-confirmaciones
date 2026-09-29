@@ -1,7 +1,7 @@
 import React from 'react';
-import { Heart, Calendar, MapPin, Sparkles, RefreshCw, LogOut, User, Sun, Moon } from 'lucide-react';
+import { Heart, Calendar, MapPin, Sparkles, RefreshCw, LogOut, User, Sun, Moon, Bot } from 'lucide-react';
 
-export default function Navbar({ event, user, onRefresh, onLogout, theme, onToggleTheme }) {
+export default function Navbar({ event, user, onRefresh, onLogout, theme, onToggleTheme, onOpenUpgradeBot }) {
     return (
         <header className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800 sticky top-0 z-30 px-3 sm:px-6 py-2.5 transition-colors shadow-sm w-full overflow-hidden">
             <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
@@ -17,9 +17,17 @@ export default function Navbar({ event, user, onRefresh, onLogout, theme, onTogg
                         <h1 className="text-sm sm:text-base font-black tracking-tight text-zinc-900 dark:text-white truncate max-w-[140px] sm:max-w-[220px] md:max-w-xs xl:max-w-md" title={event?.couple_names || event?.title}>
                             {event?.couple_names || event?.title || 'Sistema de Eventos'}
                         </h1>
-                        <span className="hidden 2xl:inline-flex items-center gap-1 text-[10px] font-extrabold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 shrink-0">
-                            <Sparkles className="w-3 h-3 text-rose-500" /> Event Planner Pro
-                        </span>
+                        {event && (
+                            <button
+                                type="button"
+                                onClick={onOpenUpgradeBot}
+                                className="hidden sm:inline-flex items-center gap-1.5 text-[10px] font-extrabold tracking-wider uppercase px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-500/10 to-amber-500/10 hover:from-rose-500/20 hover:to-amber-500/20 text-rose-600 dark:text-rose-300 border border-rose-300/80 dark:border-rose-800/80 transition-all shrink-0 cursor-pointer shadow-sm hover:scale-[1.02]"
+                                title="Cambiar o solicitar ampliación de plan con el Bot de Soporte"
+                            >
+                                <Bot className="w-3.5 h-3.5 text-rose-500" />
+                                <span>{event.plan_type === 'medium' ? 'Plan Medio' : event.plan_type === 'premium' ? 'Plan Premium' : 'Plan Inicial'} ({event.max_guests} máx)</span>
+                            </button>
+                        )}
                     </div>
                 </div>
 

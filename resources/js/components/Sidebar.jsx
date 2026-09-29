@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot } from 'lucide-react';
 
 export default function Sidebar({
     user,
@@ -10,6 +10,7 @@ export default function Sidebar({
     setActiveTab,
     onOpenCreateEvent,
     onOpenSettings,
+    onOpenUpgradeBot,
     onLogout,
     theme,
     onToggleTheme
@@ -160,6 +161,17 @@ export default function Sidebar({
                                 })}
                             </div>
                         </div>
+                    )}
+
+                    {activeEvent && (
+                        <button
+                            onClick={onOpenUpgradeBot}
+                            className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-all border border-amber-200/60 dark:border-amber-900/50"
+                            title="Solicitar ampliación o cambio de plan al bot"
+                        >
+                            <Bot className="w-4 h-4 shrink-0 text-amber-500" />
+                            {!collapsed && <span>Solicitar Cambio de Plan</span>}
+                        </button>
                     )}
 
                     <button

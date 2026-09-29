@@ -109,6 +109,48 @@ class RsvpController extends Controller
             return response()->json(['processed' => false, 'reason' => 'Empty phone or message']);
         }
 
+        // 0. Administrator Chatbot Commands (e.g. "APROBAR 1" or "RECHAZAR 1")
+        if (preg_match('/^(aprobar|autorizar|rechazar)\s+(\d+)$/i', $message, $matches)) {
+            $action = strtolower($matches[1]);
+            $reqId = (int)$matches[2];
+            $planReq = \App\Models\PlanRequest::with(['event', 'planner'])->find($reqId);
+
+            if ($planReq) {
+                if (in_array($action, ['aprobar', 'autorizar'])) {
+                    $planReq->event->update([
+                        'plan_type' => $planReq->requested_plan,
+                        'max_guests' => $planReq->requested_guests,
+                    ]);
+                    $planReq->update([
+                        'status' => 'approved',
+                        'admin_notes' => 'Aprobado vía WhatsApp Bot',
+                        'reviewed_at' => now(),
+                    ]);
+
+                    $eventTitle = $planReq->event->couple_names ?? $planReq->event->title;
+                    $reply = "✅ *SOLICITUD #{$reqId} APROBADA EXITOSAMENTE*\n\nEl evento '{$eventTitle}' ahora cuenta con el *{$planReq->requested_plan}* y una capacidad de *{$planReq->requested_guests} invitados máx*.\nLa Wedding Planner ya puede continuar cargando su lista.";
+
+                    return response()->json([
+                        'processed' => true,
+                        'reason' => 'Admin plan request approved via WhatsApp',
+                        'reply' => $reply
+                    ]);
+                } else if ($action === 'rechazar') {
+                    $planReq->update([
+                        'status' => 'rejected',
+                        'admin_notes' => 'Rechazado vía WhatsApp Bot',
+                        'reviewed_at' => now(),
+                    ]);
+
+                    return response()->json([
+                        'processed' => true,
+                        'reason' => 'Admin plan request rejected via WhatsApp',
+                        'reply' => "❌ La solicitud de ampliación #{$reqId} ha sido rechazada."
+                    ]);
+                }
+            }
+        }
+
         // Use last 9 digits to match phone numbers regardless of country code (595, +54) or leading zeros
         $cleanPhone = strlen($rawDigits) >= 9 ? substr($rawDigits, -9) : $rawDigits;
 
