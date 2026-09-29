@@ -6,7 +6,6 @@ import { apiFetch } from '../api';
 export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMarkSent }) {
     const [copiedId, setCopiedId] = useState(null);
     const [sentStatusFilter, setSentStatusFilter] = useState('not_sent'); // 'not_sent', 'all', 'sent'
-    const [messageMode, setMessageMode] = useState('invitation'); // 'invitation' or 'reminder'
     const [sendingAutoId, setSendingAutoId] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, variant: 'info', confirmText: 'Confirmar' });
@@ -35,13 +34,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     };
 
     const formatMessage = (guest) => {
-        let template;
-        if (messageMode === 'reminder') {
-            const days = event?.rsvp_deadline_days || 7;
-            template = `¡Hola {nombre}! ⏰ Recordatorio: Te recordamos que la fecha límite para confirmar tu asistencia al evento de {pareja} vence pronto.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir`;
-        } else {
-            template = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
-        }
+        const template = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
         const rsvpUrl = `${window.location.origin}/confirmar/${guest.token}`;
         const formattedLocation = formatLocation(event?.location);
 
@@ -81,7 +74,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
             const { ok, json } = await apiFetch(`/api/guests/${guest.id}/send-auto`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: messageMode })
+                body: JSON.stringify({ mode: 'invitation' })
             });
             if (ok) {
                 onMarkSent(guest.id);
@@ -261,26 +254,6 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                     Todos ({guests.length})
                                 </button>
                             </div>
-                        </div>
-
-                        {/* Template Mode */}
-                        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                            <span>Mensaje:</span>
-                            <div className="flex gap-1 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
-                                <button
-                                    onClick={() => setMessageMode('invitation')}
-                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${messageMode === 'invitation' ? 'bg-amber-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
-                                >
-                                    📩 Invitación Inicial
-                                </button>
-                                <button
-                                    onClick={() => setMessageMode('reminder')}
-                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${messageMode === 'reminder' ? 'bg-blue-600 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
-                                >
-                                    ⏰ Recordatorio Límite
-                                </button>
-                            </div>
-                        </div>
                     </div>
 
                     <span className="text-xs text-zinc-500 font-medium">
