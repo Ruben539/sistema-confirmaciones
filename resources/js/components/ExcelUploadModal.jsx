@@ -71,7 +71,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         autoMapping.name = h;
                     } else if (!autoMapping.phone && (lower.includes('telefono') || lower.includes('teléfono') || lower.includes('celular') || lower.includes('phone') || lower.includes('whatsapp') || lower.includes('movil') || lower.includes('móvil'))) {
                         autoMapping.phone = h;
-                    } else if (!autoMapping.table_number && (lower.includes('mesa') || lower.includes('table') || lower.includes('asiento') || lower.includes('ubicacion') || lower.includes('ubicación') || lower.includes('lugar'))) {
+                    } else if (!autoMapping.table_number && (lower.includes('mesa') || lower.includes('table') || lower.includes('asiento') || lower.includes('ubicacion') || lower.includes('ubicación') || lower.includes('lugar') || lower.includes('seating') || lower.includes('nro') || lower.includes('num'))) {
                         autoMapping.table_number = h;
                     } else if (!autoMapping.category && (lower.includes('tipo') || lower.includes('categoria') || lower.includes('categoría') || lower.includes('edad') || lower.includes('rango') || lower.includes('clasificacion') || lower.includes('clasificación') || lower.includes('joven') || lower.includes('adulto') || lower.includes('niño'))) {
                         autoMapping.category = h;
@@ -109,7 +109,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
             // Clean phone number (remove spaces, hyphens)
             rawPhone = rawPhone.replace(/[\s\-\(\)]/g, '');
 
-            const tableVal = tableIdx !== -1 ? String(row[tableIdx] || '').trim() : '';
+            let tableVal = tableIdx !== -1 ? String(row[tableIdx] || '').trim() : '';
+            if (tableVal && /^\d+$/.test(tableVal)) {
+                tableVal = `Mesa ${tableVal}`;
+            } else if (tableVal && /^mesa\s*(\d+)$/i.test(tableVal)) {
+                const match = tableVal.match(/^mesa\s*(\d+)$/i);
+                tableVal = `Mesa ${match[1]}`;
+            }
             const categoryVal = categoryIdx !== -1 ? String(row[categoryIdx] || '').trim() : '';
             const notesVal = notesIdx !== -1 ? String(row[notesIdx] || '').trim() : '';
 

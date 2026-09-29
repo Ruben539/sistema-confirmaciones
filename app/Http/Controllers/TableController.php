@@ -22,12 +22,68 @@ class TableController extends Controller
     {
         $event = Event::findOrFail($eventId);
         $this->checkEventAccess($event);
+
+        // Auto-sync: If there are guests with table_number whose table doesn't exist yet, auto-create it now!
+        $guestTables = Guest::where('event_id', $eventId)
+            ->whereNotNull('table_number')
+            ->where('table_number', '!=', '')
+            ->get()
+            ->groupBy(fn($g) => trim($g->table_number));
+
+        if ($guestTables->isNotEmpty()) {
+            $existingTables = Table::where('event_id', $eventId)->get();
+            $existingNamesLower = $existingTables->map(fn($t) => mb_strtolower(trim($t->name)))->toArray();
+
+            foreach ($guestTables as $tableName => $assignedGuests) {
+                $trimmedName = trim($tableName);
+                if (empty($trimmedName)) continue;
+
+                $nameLower = mb_strtolower($trimmedName);
+                $hasExact = in_array($nameLower, $existingNamesLower);
+
+                // Check if numeric match already exists (e.g. "Mesa 1" vs "1")
+                $digits = preg_replace('/[^\d]/', '', $nameLower);
+                $hasNumeric = false;
+                if ($digits !== '') {
+                    foreach ($existingNamesLower as $exName) {
+                        $exDigits = preg_replace('/[^\d]/', '', $exName);
+                        if ($exDigits !== '' && $exDigits === $digits) {
+                            $hasNumeric = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!$hasExact && !$hasNumeric) {
+                    $totalPasses = $assignedGuests->sum('passes');
+                    Table::create([
+                        'event_id' => $eventId,
+                        'name' => $trimmedName,
+                        'capacity' => max(10, (int)$totalPasses),
+                    ]);
+                    $existingNamesLower[] = $nameLower;
+                }
+            }
+        }
+
         $tables = Table::where('event_id', $eventId)->orderBy('id', 'asc')->get();
         $guests = Guest::where('event_id', $eventId)->get();
 
         $tableData = $tables->map(function ($table) use ($guests) {
-            $assignedGuests = $guests->filter(function ($g) use ($table) {
-                return trim(mb_strtolower($g->table_number ?? '')) === trim(mb_strtolower($table->name));
+            $tNameLower = trim(mb_strtolower($table->name));
+            $tDigits = preg_replace('/[^\d]/', '', $tNameLower);
+
+            $assignedGuests = $guests->filter(function ($g) use ($tNameLower, $tDigits) {
+                $gTableLower = trim(mb_strtolower($g->table_number ?? ''));
+                if ($gTableLower === '') return false;
+                if ($gTableLower === $tNameLower) return true;
+
+                // Flexible match: e.g. "1" matches "Mesa 1", "01" matches "Mesa 1"
+                $gDigits = preg_replace('/[^\d]/', '', $gTableLower);
+                if ($gDigits !== '' && $gDigits === $tDigits) {
+                    return true;
+                }
+                return false;
             })->values();
 
             $occupiedPasses = $assignedGuests->sum('passes');
@@ -49,11 +105,10 @@ class TableController extends Controller
             ];
         });
 
-        // Unassigned guests (no table_number or table_number doesn't match any table)
-        $tableNames = $tables->pluck('name')->map(fn($n) => trim(mb_strtolower($n)))->toArray();
-        $unassignedGuests = $guests->filter(function ($g) use ($tableNames) {
-            if (!$g->table_number || trim($g->table_number) === '') return true;
-            return !in_array(trim(mb_strtolower($g->table_number)), $tableNames);
+        // Unassigned guests (guests not assigned to any table)
+        $allAssignedGuestIds = $tableData->flatMap(fn($t) => $t['guests']->pluck('id'))->toArray();
+        $unassignedGuests = $guests->filter(function ($g) use ($allAssignedGuestIds) {
+            return !in_array($g->id, $allAssignedGuestIds);
         })->values();
 
         $totalCapacity = $tables->sum('capacity');

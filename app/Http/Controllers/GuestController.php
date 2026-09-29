@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\Guest;
+use App\Models\Table;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
@@ -287,6 +288,13 @@ class GuestController extends Controller
 
             $dietary = $item['dietary_restrictions'] ?? $item['restricciones'] ?? $item['dieta'] ?? null;
             $tableNumber = isset($item['table_number']) && trim($item['table_number']) !== '' ? trim($item['table_number']) : null;
+            if ($tableNumber !== null) {
+                if (ctype_digit($tableNumber)) {
+                    $tableNumber = 'Mesa ' . $tableNumber;
+                } elseif (preg_match('/^mesa\s*(\d+)$/i', $tableNumber, $m)) {
+                    $tableNumber = 'Mesa ' . $m[1];
+                }
+            }
             $dietaryRestrictions = $dietary && trim($dietary) !== '' ? trim($dietary) : null;
             $notes = $item['notes'] ?? null;
 
@@ -353,6 +361,61 @@ class GuestController extends Controller
         }
         if ($skipped > 0) {
             $summaryParts[] = "{$skipped} duplicados omitidos";
+        }
+
+        // Auto-create/sync tables in database from guests' table_number
+        $guestTables = Guest::where('event_id', $eventId)
+            ->whereNotNull('table_number')
+            ->where('table_number', '!=', '')
+            ->get()
+            ->groupBy(fn($g) => trim($g->table_number));
+
+        $createdTablesCount = 0;
+        if ($guestTables->isNotEmpty()) {
+            $existingTables = Table::where('event_id', $eventId)->get();
+            $existingNamesLower = $existingTables->map(fn($t) => mb_strtolower(trim($t->name)))->toArray();
+
+            foreach ($guestTables as $tableName => $assignedGuests) {
+                $trimmedName = trim($tableName);
+                if (empty($trimmedName)) continue;
+
+                $nameLower = mb_strtolower($trimmedName);
+                $hasExact = in_array($nameLower, $existingNamesLower);
+                $digits = preg_replace('/[^\d]/', '', $nameLower);
+                $hasNumeric = false;
+                if ($digits !== '') {
+                    foreach ($existingNamesLower as $exName) {
+                        $exDigits = preg_replace('/[^\d]/', '', $exName);
+                        if ($exDigits !== '' && $exDigits === $digits) {
+                            $hasNumeric = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!$hasExact && !$hasNumeric) {
+                    $totalPasses = $assignedGuests->sum('passes');
+                    Table::create([
+                        'event_id' => $eventId,
+                        'name' => $trimmedName,
+                        'capacity' => max(10, (int)$totalPasses),
+                    ]);
+                    $existingNamesLower[] = $nameLower;
+                    $createdTablesCount++;
+                } else {
+                    $totalPasses = $assignedGuests->sum('passes');
+                    $tableRecord = Table::where('event_id', $eventId)
+                        ->whereRaw('LOWER(TRIM(name)) = ?', [$nameLower])
+                        ->first();
+                    if ($tableRecord && $tableRecord->capacity < $totalPasses) {
+                        $tableRecord->update(['capacity' => $totalPasses]);
+                    }
+                }
+            }
+        }
+
+        if ($createdTablesCount > 0) {
+            $summaryParts[] = "{$createdTablesCount} mesas creadas en distribución de salón";
         }
 
         $unimportedDueToLimit = 0;
