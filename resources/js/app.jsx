@@ -295,32 +295,56 @@ function Dashboard({ user, onLogout }) {
                             eventId={activeEvent?.id}
                             eventTitle={activeEvent?.couple_names || activeEvent?.title}
                             showToast={showToast}
+                            onOpenCreateEvent={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
                         />
                     ) : activeTab === 'guests' ? (
-                        <div className="space-y-6 animate-fade-in">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800/80 p-6 rounded-3xl shadow-xl">
+                        !activeEvent ? (
+                            <div className="p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in font-sans">
+                                <div className="w-16 h-16 rounded-3xl bg-rose-50 dark:bg-rose-950/40 text-rose-500 flex items-center justify-center mx-auto border border-rose-100 dark:border-rose-900/40">
+                                    <Users className="w-8 h-8" />
+                                </div>
                                 <div className="space-y-1">
-                                    <h2 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight">
-                                        Lista de Invitados — <span className="text-rose-500">{activeEvent?.couple_names || activeEvent?.title || 'Sin Evento Seleccionado'}</span>
-                                    </h2>
-                                    <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                                        {guests.length} {guests.length === 1 ? 'invitado registrado' : 'invitados registrados'} para este evento.
+                                    <h3 className="text-lg font-black text-zinc-900 dark:text-white">
+                                        Sin Evento Seleccionado
+                                    </h3>
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
+                                        Para gestionar invitados, importar listas y enviar confirmaciones por WhatsApp, primero debés seleccionar o registrar un evento.
                                     </p>
                                 </div>
+                                <button
+                                    onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
+                                    className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    <span>Crear Primer Evento</span>
+                                </button>
                             </div>
+                        ) : (
+                            <div className="space-y-6 animate-fade-in">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800/80 p-6 rounded-3xl shadow-xl">
+                                    <div className="space-y-1">
+                                        <h2 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight">
+                                            Lista de Invitados — <span className="text-rose-500">{activeEvent?.couple_names || activeEvent?.title}</span>
+                                        </h2>
+                                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                                            {guests.length} {guests.length === 1 ? 'invitado registrado' : 'invitados registrados'} para este evento.
+                                        </p>
+                                    </div>
+                                </div>
 
-                            <GuestList
-                                guests={guests}
-                                onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
-                                onOpenExcelModal={() => setIsExcelModalOpen(true)}
-                                onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
-                                onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
-                                onUpdateGuest={handleUpdateGuest}
-                                onDeleteGuest={handleDeleteGuest}
-                                onClearAll={handleClearAll}
-                                onMarkSent={handleMarkSent}
-                            />
-                        </div>
+                                <GuestList
+                                    guests={guests}
+                                    onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
+                                    onOpenExcelModal={() => setIsExcelModalOpen(true)}
+                                    onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
+                                    onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
+                                    onUpdateGuest={handleUpdateGuest}
+                                    onDeleteGuest={handleDeleteGuest}
+                                    onClearAll={handleClearAll}
+                                    onMarkSent={handleMarkSent}
+                                />
+                            </div>
+                        )
                     ) : (
                         <>
                             {/* Role Banner / Admin Notification */}
@@ -355,46 +379,71 @@ function Dashboard({ user, onLogout }) {
                                 </div>
                             )}
 
-                            {/* Hero Banner for Empty State */}
-                            {guests.length === 0 && activeEvent && (
-                                <div className="p-8 rounded-3xl bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
-                                    <div className="space-y-2 max-w-xl z-10">
-                                        <span className="inline-flex items-center gap-1 text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md">
-                                            {activeEvent.couple_names || activeEvent.title}
-                                        </span>
-                                        <h2 className="text-2xl sm:text-3xl font-black">¡Comenzá a gestionar la lista de invitados!</h2>
-                                        <p className="text-xs sm:text-sm font-medium opacity-90 leading-relaxed">
-                                            Subí tu archivo Excel con los nombres y teléfonos para automatizar los mensajes de WhatsApp y la confirmación de asistencia.
+                            {!activeEvent ? (
+                                <div className="p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in font-sans">
+                                    <div className="w-16 h-16 rounded-3xl bg-rose-50 dark:bg-rose-950/40 text-rose-500 flex items-center justify-center mx-auto border border-rose-100 dark:border-rose-900/40">
+                                        <Heart className="w-8 h-8 fill-rose-500/20" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <h3 className="text-lg font-black text-zinc-900 dark:text-white">
+                                            ¡Bienvenido a Wedding Planner Pro!
+                                        </h3>
+                                        <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
+                                            Actualmente no hay ningún evento registrado en la plataforma. Creá tu primer evento para comenzar a gestionar invitados, confirmaciones por WhatsApp y mesas.
                                         </p>
                                     </div>
-
-                                    <div className="flex flex-wrap items-center gap-3 shrink-0 z-10">
-                                        <button
-                                            onClick={() => setIsExcelModalOpen(true)}
-                                            className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-white text-zinc-900 font-extrabold text-xs shadow-lg hover:bg-rose-50 transition-all active:scale-95"
-                                        >
-                                            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                                            <span>Subir Archivo Excel</span>
-                                        </button>
-                                    </div>
+                                    <button
+                                        onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
+                                        className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span>Crear Mi Primer Evento</span>
+                                    </button>
                                 </div>
+                            ) : (
+                                <>
+                                    {/* Hero Banner for Empty State */}
+                                    {guests.length === 0 && (
+                                        <div className="p-8 rounded-3xl bg-gradient-to-r from-rose-500 via-pink-500 to-amber-500 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+                                            <div className="space-y-2 max-w-xl z-10">
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md">
+                                                    {activeEvent.couple_names || activeEvent.title}
+                                                </span>
+                                                <h2 className="text-2xl sm:text-3xl font-black">¡Comenzá a gestionar la lista de invitados!</h2>
+                                                <p className="text-xs sm:text-sm font-medium opacity-90 leading-relaxed">
+                                                    Subí tu archivo Excel con los nombres y teléfonos para automatizar los mensajes de WhatsApp y la confirmación de asistencia.
+                                                </p>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-3 shrink-0 z-10">
+                                                <button
+                                                    onClick={() => setIsExcelModalOpen(true)}
+                                                    className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-white text-zinc-900 font-extrabold text-xs shadow-lg hover:bg-rose-50 transition-all active:scale-95"
+                                                >
+                                                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                                                    <span>Subir Archivo Excel</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Metrics Cards */}
+                                    <StatsCards stats={stats} />
+
+                                    {/* Guest List Component */}
+                                    <GuestList
+                                        guests={guests}
+                                        onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
+                                        onOpenExcelModal={() => setIsExcelModalOpen(true)}
+                                        onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
+                                        onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
+                                        onUpdateGuest={handleUpdateGuest}
+                                        onDeleteGuest={handleDeleteGuest}
+                                        onClearAll={handleClearAll}
+                                        onMarkSent={handleMarkSent}
+                                    />
+                                </>
                             )}
-
-                            {/* Metrics Cards */}
-                            <StatsCards stats={stats} />
-
-                            {/* Guest List Component */}
-                            <GuestList
-                                guests={guests}
-                                onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
-                                onOpenExcelModal={() => setIsExcelModalOpen(true)}
-                                onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
-                                onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
-                                onUpdateGuest={handleUpdateGuest}
-                                onDeleteGuest={handleDeleteGuest}
-                                onClearAll={handleClearAll}
-                                onMarkSent={handleMarkSent}
-                            />
                         </>
                     )}
                 </main>

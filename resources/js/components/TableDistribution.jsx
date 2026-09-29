@@ -4,7 +4,7 @@ import ConfirmModal from './ConfirmModal';
 import Visual3DTableMap from './Visual3DTableMap';
 import { apiFetch } from '../api';
 
-export default function TableDistribution({ eventId, eventTitle, showToast }) {
+export default function TableDistribution({ eventId, eventTitle, showToast, onOpenCreateEvent }) {
     const [data, setData] = useState({ tables: [], unassigned_guests: [], stats: {} });
     const [loading, setLoading] = useState(true);
 
@@ -38,6 +38,9 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
     useEffect(() => {
         if (eventId) {
             fetchTables();
+        } else {
+            setData({ tables: [], unassigned_guests: [], stats: {} });
+            setLoading(false);
         }
     }, [eventId]);
 
@@ -223,9 +226,36 @@ export default function TableDistribution({ eventId, eventTitle, showToast }) {
 
     if (loading) {
         return (
-            <div className="p-12 text-center space-y-3">
+            <div className="p-16 text-center space-y-3">
                 <RefreshCw className="w-8 h-8 text-rose-500 animate-spin mx-auto" />
                 <p className="text-xs font-semibold text-zinc-500">Cargando distribución de mesas...</p>
+            </div>
+        );
+    }
+
+    if (!eventId) {
+        return (
+            <div className="p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in font-sans">
+                <div className="w-16 h-16 rounded-3xl bg-rose-50 dark:bg-rose-950/40 text-rose-500 flex items-center justify-center mx-auto border border-rose-100 dark:border-rose-900/40">
+                    <LayoutGrid className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                    <h3 className="text-lg font-black text-zinc-900 dark:text-white">
+                        Sin Evento Seleccionado
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
+                        Para organizar la distribución de mesas y asignar a los invitados en el plano, primero debés seleccionar o registrar un evento.
+                    </p>
+                </div>
+                {onOpenCreateEvent && (
+                    <button
+                        onClick={onOpenCreateEvent}
+                        className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" />
+                        <span>Crear Primer Evento</span>
+                    </button>
+                )}
             </div>
         );
     }
