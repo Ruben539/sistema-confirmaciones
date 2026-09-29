@@ -35,6 +35,30 @@ class Event extends Model
         'milestones_notified' => 'array',
     ];
 
+    protected $appends = ['is_active'];
+
+    public function getIsActiveAttribute(): bool
+    {
+        return $this->isActive();
+    }
+
+    public function isActive(): bool
+    {
+        if (!$this->is_enabled) {
+            return false;
+        }
+
+        if ($this->status && $this->status !== 'active') {
+            return false;
+        }
+
+        if ($this->event_date && \Carbon\Carbon::parse($this->event_date)->endOfDay()->isPast()) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function planner()
     {
         return $this->belongsTo(User::class, 'user_id');

@@ -30,7 +30,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
             const days = event?.rsvp_deadline_days || 7;
             template = `¡Hola {nombre}! ⏰ Recordatorio: Te recordamos que la fecha límite para confirmar tu asistencia al evento de {pareja} vence pronto.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir`;
         } else {
-            template = event?.message_template || "¡Hola {nombre}! Te invitamos a la boda de {pareja} 💍\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+            template = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
         }
         const rsvpUrl = `${window.location.origin}/confirmar/${guest.token}`;
 

@@ -96,7 +96,10 @@ function Dashboard({ user, onLogout }) {
                 selected = loadedEvents.find(e => e.id === selectedId);
             }
             if (!selected && loadedEvents.length > 0) {
-                selected = loadedEvents[0];
+                const today = new Date().toISOString().split('T')[0];
+                selected = loadedEvents.find(e => (e.status === 'active' || !e.status) && (!e.event_date || e.event_date >= today))
+                    || loadedEvents.find(e => e.status === 'active' || !e.status)
+                    || loadedEvents[0];
             }
 
             setActiveEvent(selected);
@@ -295,7 +298,7 @@ function Dashboard({ user, onLogout }) {
                             eventId={activeEvent?.id}
                             eventTitle={activeEvent?.couple_names || activeEvent?.title}
                             showToast={showToast}
-                            onOpenCreateEvent={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
+                            onOpenCreateEvent={user?.role === 'admin' ? () => { setEditingEvent(null); setIsCreateEventModalOpen(true); } : null}
                         />
                     ) : activeTab === 'guests' ? (
                         !activeEvent ? (
@@ -308,16 +311,22 @@ function Dashboard({ user, onLogout }) {
                                         Sin Evento Seleccionado
                                     </h3>
                                     <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
-                                        Para gestionar invitados, importar listas y enviar confirmaciones por WhatsApp, primero debés seleccionar o registrar un evento.
+                                        Para gestionar invitados, importar listas y enviar confirmaciones por WhatsApp, primero debés seleccionar un evento asignado.
                                     </p>
                                 </div>
-                                <button
-                                    onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
-                                    className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
-                                >
-                                    <Plus className="w-4 h-4" />
-                                    <span>Crear Primer Evento</span>
-                                </button>
+                                {user?.role === 'admin' ? (
+                                    <button
+                                        onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
+                                        className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        <span>Crear Primer Evento</span>
+                                    </button>
+                                ) : (
+                                    <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl text-xs text-zinc-500 dark:text-zinc-400 font-medium max-w-sm mx-auto border border-zinc-200/60 dark:border-zinc-700/60">
+                                        Actualmente no tenés ningún evento activo asignado. El Administrador dará de alta y te asignará tus eventos correspondientes según tu plan.
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="space-y-6 animate-fade-in">
@@ -386,19 +395,27 @@ function Dashboard({ user, onLogout }) {
                                     </div>
                                     <div className="space-y-1">
                                         <h3 className="text-lg font-black text-zinc-900 dark:text-white">
-                                            ¡Bienvenido a Wedding Planner Pro!
+                                            ¡Bienvenido al Sistema de Confirmaciones!
                                         </h3>
                                         <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
-                                            Actualmente no hay ningún evento registrado en la plataforma. Creá tu primer evento para comenzar a gestionar invitados, confirmaciones por WhatsApp y mesas.
+                                            {user?.role === 'admin'
+                                                ? 'Actualmente no hay ningún evento registrado en la plataforma. Creá un evento para comenzar a gestionar invitados y confirmaciones.'
+                                                : 'Actualmente no tenés ningún evento activo asignado a tu cuenta.'}
                                         </p>
                                     </div>
-                                    <button
-                                        onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
-                                        className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                        <span>Crear Mi Primer Evento</span>
-                                    </button>
+                                    {user?.role === 'admin' ? (
+                                        <button
+                                            onClick={() => { setEditingEvent(null); setIsCreateEventModalOpen(true); }}
+                                            className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold shadow-md shadow-rose-500/20 active:scale-95 transition-all inline-flex items-center gap-2"
+                                        >
+                                            <Plus className="w-4 h-4" />
+                                            <span>Crear Mi Primer Evento</span>
+                                        </button>
+                                    ) : (
+                                        <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/30 rounded-2xl text-xs text-rose-700 dark:text-rose-300 font-semibold max-w-md mx-auto border border-rose-200/60 dark:border-rose-900/40">
+                                            📌 Tu usuario Planner está activo. El Administrador creará y te habilitará los eventos correspondientes a tu plan.
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <>
@@ -484,15 +501,17 @@ function Dashboard({ user, onLogout }) {
                 onMarkSent={handleMarkSent}
             />
 
-            <CreateEventModal
-                isOpen={isCreateEventModalOpen}
-                eventToEdit={editingEvent}
-                onClose={() => { setIsCreateEventModalOpen(false); setEditingEvent(null); }}
-                onEventCreated={(newEvent) => {
-                    showToast(editingEvent ? `Evento "${newEvent.title}" actualizado` : `Evento "${newEvent.title}" creado`);
-                    loadEvents(newEvent.id);
-                }}
-            />
+            {user?.role === 'admin' && (
+                <CreateEventModal
+                    isOpen={isCreateEventModalOpen}
+                    eventToEdit={editingEvent}
+                    onClose={() => { setIsCreateEventModalOpen(false); setEditingEvent(null); }}
+                    onEventCreated={(newEvent) => {
+                        showToast(editingEvent ? `Evento "${newEvent.title}" actualizado` : `Evento "${newEvent.title}" creado`);
+                        loadEvents(newEvent.id);
+                    }}
+                />
+            )}
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}

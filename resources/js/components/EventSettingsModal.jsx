@@ -24,7 +24,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                 couple_names: event.couple_names || '',
                 event_date: event.event_date || '',
                 location: event.location || '',
-                message_template: event.message_template || "¡Hola {nombre}! Te invitamos a la boda de {pareja} 💍\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
+                message_template: event.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
                 user_id: event.user_id || '',
             });
         }
@@ -71,7 +71,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                             </div>
                             <div>
                                 <h2 className="text-lg font-bold text-zinc-900 dark:text-white">Configuración del Evento</h2>
-                                <p className="text-xs text-zinc-500 dark:text-zinc-400">Personalizá los detalles de la boda y la plantilla del mensaje de WhatsApp.</p>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400">Personalizá los detalles del evento y la plantilla del mensaje de WhatsApp.</p>
                             </div>
                         </div>
 
@@ -124,13 +124,13 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                 value={formData.title}
                                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                                 className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-rose-500 outline-none"
-                                placeholder="Boda de Sofía & Mateo"
+                                placeholder="ej: Evento Anual / Boda Sofía & Mateo / XV de Valentina"
                             />
                         </div>
 
                         <div>
                             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
-                                <Heart className="w-3.5 h-3.5 text-amber-500" /> Nombres de los Novios
+                                <Heart className="w-3.5 h-3.5 text-amber-500" /> Nombres de la Pareja / Anfitriones
                             </label>
                             <input
                                 type="text"

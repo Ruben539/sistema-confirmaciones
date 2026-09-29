@@ -38,8 +38,8 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
         $event = $guest->event;
 
-        if ($event && !$event->is_enabled) {
-            Log::info("WhatsApp Job: Event ID {$event->id} is disabled. Skipping guest {$guest->name}.");
+        if ($event && !$event->isActive()) {
+            Log::info("WhatsApp Job: Event ID {$event->id} is inactive, disabled, or past date. Skipping guest {$guest->name}.");
             return;
         }
 
@@ -55,7 +55,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
         if ($this->messageMode === 'reminder') {
             $rawTemplate = "{$selectedGreeting} ⏰ Recordatorio: Te recordamos que la fecha límite para confirmar tu asistencia al evento de {pareja} vence pronto.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
         } else {
-            $rawTemplate = $event->message_template ?? "{$selectedGreeting} Te invitamos a la boda de {pareja} 💍\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+            $rawTemplate = $event->message_template ?? "{$selectedGreeting} Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
             if (!str_contains($rawTemplate, '{nombre}')) {
                 $rawTemplate = "{$selectedGreeting}\n" . $rawTemplate;
             }

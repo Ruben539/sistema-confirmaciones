@@ -6,12 +6,22 @@ use App\Models\Table;
 use App\Models\Guest;
 use App\Models\Event;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class TableController extends Controller
 {
+    private function checkEventAccess(Event $event)
+    {
+        $user = Auth::user();
+        if ($user && $user->role === 'planner' && $event->user_id !== $user->id) {
+            abort(403, 'Acceso denegado: No tenés permisos sobre este evento.');
+        }
+    }
+
     public function index($eventId)
     {
         $event = Event::findOrFail($eventId);
+        $this->checkEventAccess($event);
         $tables = Table::where('event_id', $eventId)->orderBy('id', 'asc')->get();
         $guests = Guest::where('event_id', $eventId)->get();
 

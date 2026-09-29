@@ -240,8 +240,8 @@ export default function GuestRsvp({ token }) {
                             <a
                                 href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
                                     status === 'confirmed'
-                                        ? `¡Hola! Soy ${guest.name} y confirmo mi asistencia (${confirmedPasses} ${confirmedPasses === 1 ? 'persona' : 'personas'}) a la boda de ${event?.couple_names || event?.title}.`
-                                        : `¡Hola! Soy ${guest.name} y lamentablemente no podré asistir a la boda de ${event?.couple_names || event?.title}.`
+                                        ? `¡Hola! Soy ${guest.name} y confirmo mi asistencia (${confirmedPasses} ${confirmedPasses === 1 ? 'persona' : 'personas'}) al evento de ${event?.couple_names || event?.title}.`
+                                        : `¡Hola! Soy ${guest.name} y lamentablemente no podré asistir al evento de ${event?.couple_names || event?.title}.`
                                 )}`}
                                 target="_blank"
                                 rel="noopener noreferrer"

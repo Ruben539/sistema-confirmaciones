@@ -447,7 +447,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
 
                     <div className="p-3.5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/60 dark:border-indigo-800/40">
                         <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5" /> Bodas Asignadas
+                            <Calendar className="w-3.5 h-3.5" /> Eventos Asignados
                         </div>
                         <div className="text-xl font-black text-indigo-700 dark:text-indigo-300 mt-0.5">
                             {totalEventsCount} <span className="text-xs font-semibold text-indigo-500">eventos</span>
@@ -547,7 +547,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Buscar planner, teléfono, email o boda..."
+                                placeholder="Buscar planner, teléfono, email o evento..."
                                 className="w-full text-xs rounded-xl border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white pl-9 pr-3 py-2.5 font-medium outline-none focus:ring-2 focus:ring-amber-500"
                             />
                         </div>
@@ -573,7 +573,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                     onClick={() => setStatusFilter('with_events')}
                                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${statusFilter === 'with_events' ? 'bg-rose-500 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'}`}
                                 >
-                                    Con Bodas
+                                    Con Eventos
                                 </button>
                             </div>
                         </div>
@@ -685,7 +685,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                                         className="px-3.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold transition-all flex items-center gap-1.5"
                                                     >
                                                         <Plus className="w-3.5 h-3.5 text-rose-500" />
-                                                        <span>Asignar Boda</span>
+                                                        <span>Asignar Evento</span>
                                                     </button>
                                                 )}
 
@@ -712,7 +712,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                             <div className="flex items-center justify-between text-xs">
                                                 <span className="font-black text-zinc-700 dark:text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
                                                     <Calendar className="w-3.5 h-3.5 text-rose-500" />
-                                                    <span>Bodas Asignadas & Planes de Capacidad:</span>
+                                                    <span>Eventos Asignados & Planes de Capacidad:</span>
                                                 </span>
                                                 <span className="font-extrabold text-zinc-500">
                                                     {eventsList.length} {eventsList.length === 1 ? 'evento registrado' : 'eventos registrados'}
@@ -721,7 +721,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
 
                                             {eventsList.length === 0 ? (
                                                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60 text-center text-xs text-zinc-400 italic">
-                                                    Esta organizadora todavía no tiene bodas asignadas.
+                                                    Esta organizadora todavía no tiene eventos asignados.
                                                 </div>
                                             ) : (
                                                 <div className="grid grid-cols-1 gap-3">
@@ -1339,7 +1339,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                         required
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="planner@bodas.com"
+                                        placeholder="planner@eventos.com"
                                         className="w-full text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium outline-none focus:ring-2 focus:ring-amber-500"
                                     />
                                 </div>

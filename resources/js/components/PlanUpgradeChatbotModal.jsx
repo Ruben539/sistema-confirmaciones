@@ -19,7 +19,7 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
             color: 'from-blue-500 to-indigo-600',
             border: 'border-blue-500/40',
             bg: 'bg-blue-50/50 dark:bg-blue-950/30',
-            description: 'Ideal para bodas medianas de hasta 150 personas.'
+            description: 'Ideal para eventos medianos de hasta 150 personas.'
         },
         {
             id: 'premium',

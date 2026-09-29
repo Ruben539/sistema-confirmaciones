@@ -189,7 +189,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                                 required
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
-                                placeholder="ej: Boda de Lucía & Tomas / XV de Sofía"
+                                placeholder="ej: Gala Anual / Boda de Lucía & Tomas / XV de Sofía"
                                 className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-amber-500 outline-none"
                             />
                         </div>

@@ -41,6 +41,23 @@ export default function Navbar({ event, user, onRefresh, onLogout, theme, onTogg
                         </div>
                     )}
 
+                    {/* Status Pill (Activo vs Finalizado) */}
+                    {event && (
+                        (() => {
+                            const isPast = event.event_date && new Date(event.event_date + 'T23:59:59') < new Date();
+                            const isCompleted = event.status === 'completed' || isPast;
+                            return (
+                                <span className={`hidden sm:inline-flex items-center px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border ${
+                                    isCompleted 
+                                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700' 
+                                        : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                                }`}>
+                                    {isCompleted ? '⏳ Finalizado' : '🟢 Activo'}
+                                </span>
+                            );
+                        })()
+                    )}
+
                     {/* Location Pill */}
                     {event?.location && (
                         <div className="hidden xl:flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/80 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold whitespace-nowrap text-[11px]">

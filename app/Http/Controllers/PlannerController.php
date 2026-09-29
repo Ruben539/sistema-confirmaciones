@@ -214,7 +214,7 @@ class PlannerController extends Controller
         $target->delete();
 
         return response()->json([
-            'message' => "Usuario '{$target->name}' eliminado y sus bodas han sido reasignadas al administrador."
+            'message' => "Usuario '{$target->name}' eliminado y sus eventos han sido reasignados al administrador."
         ]);
     }
 }

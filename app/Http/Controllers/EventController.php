@@ -72,7 +72,7 @@ class EventController extends Controller
             'event_date' => $validated['event_date'] ?? null,
             'location' => $validated['location'] ?? null,
             'user_id' => $validated['user_id'],
-            'message_template' => $validated['message_template'] ?? "¡Hola {nombre}! Te invitamos a la boda de {pareja} 💍\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
+            'message_template' => $validated['message_template'] ?? "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
             'status' => 'active',
             'is_enabled' => $validated['is_enabled'] ?? true,
             'plan_type' => $planType,
@@ -116,9 +116,13 @@ class EventController extends Controller
             'auto_decline_expired' => 'nullable|boolean',
         ]);
 
-        // Only admin can reassign event ownership or change payment / enablement
-        if (isset($validated['user_id']) && ($user && $user->role !== 'admin')) {
+        // Only admin can reassign event ownership, change plan capacity, or toggle enablement/payment
+        if ($user && $user->role !== 'admin') {
             unset($validated['user_id']);
+            unset($validated['plan_type']);
+            unset($validated['max_guests']);
+            unset($validated['payment_status']);
+            unset($validated['is_enabled']);
         }
 
         if (isset($validated['plan_type']) && !isset($validated['max_guests'])) {

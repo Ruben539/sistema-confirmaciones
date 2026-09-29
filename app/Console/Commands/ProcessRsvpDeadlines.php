@@ -62,7 +62,7 @@ class ProcessRsvpDeadlines extends Command
                 $coupleNames = $event->couple_names ?? $event->title;
 
                 foreach ($guestsToRemind as $guest) {
-                    $message = "¡Hola {$guest->name}! ⏰ Te recordamos que el plazo para confirmar tu asistencia a la boda de {$coupleNames} vence pronto ({$deadlineDate->format('d/m/Y')}).\n\nPor favor, respondé a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+                    $message = "¡Hola {$guest->name}! ⏰ Te recordamos que el plazo para confirmar tu asistencia al evento de {$coupleNames} vence pronto ({$deadlineDate->format('d/m/Y')}).\n\nPor favor, respondé a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
 
                     try {
                         $response = Http::timeout(10)->post($botUrl, [

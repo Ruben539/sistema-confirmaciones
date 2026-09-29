@@ -114,7 +114,7 @@ export default function Login({ onLoginSuccess }) {
 
                         <div className="pt-4 space-y-3">
                             <h2 className="text-2xl font-black leading-tight">
-                                La plataforma definitiva para coordinar tus bodas y eventos.
+                                La plataforma definitiva para coordinar todos tus eventos.
                             </h2>
                             <p className="text-xs font-medium text-rose-100 leading-relaxed">
                                 Carga de listas por Excel, envíos automatizados por WhatsApp y seguimiento de confirmación en tiempo real.

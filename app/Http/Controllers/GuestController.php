@@ -6,11 +6,52 @@ use App\Models\Event;
 use App\Models\Guest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 
 class GuestController extends Controller
 {
+    /**
+     * Valida permisos del usuario y si el evento está activo.
+     */
+    private function validateEventAccess(Event $event, bool $requireActive = false)
+    {
+        $user = Auth::user();
+
+        // 1. Aislamiento por Planner: solo puede gestionar sus propios eventos asignados
+        if ($user && $user->role === 'planner' && $event->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'Acceso denegado: No tenés permisos para gestionar este evento.'
+            ], 403);
+        }
+
+        // 2. Validación de evento activo para acciones críticas (envío WhatsApp, carga Excel, alta manual)
+        if ($requireActive) {
+            if (!$event->isActive()) {
+                $reason = 'Este evento no está activo.';
+                if (!$event->is_enabled) {
+                    $reason = 'Este evento ha sido deshabilitado por el administrador.';
+                } elseif ($event->status && $event->status !== 'active') {
+                    $reason = 'Este evento ya ha finalizado o está inactivo.';
+                } elseif ($event->event_date && \Carbon\Carbon::parse($event->event_date)->endOfDay()->isPast()) {
+                    $reason = 'La fecha de este evento ya ha transcurrido.';
+                }
+
+                return response()->json([
+                    'message' => "Acceso denegado: {$reason} No se permiten envíos de WhatsApp ni carga de invitados."
+                ], 403);
+            }
+        }
+
+        return null;
+    }
+
     public function index($eventId)
     {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, false)) {
+            return $denied;
+        }
+
         $guests = Guest::where('event_id', $eventId)
             ->orderBy('created_at', 'desc')
             ->get();
@@ -108,6 +149,9 @@ class GuestController extends Controller
     public function store(Request $request, $eventId)
     {
         $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, true)) {
+            return $denied;
+        }
 
         $currentCount = Guest::where('event_id', $eventId)->count();
         if ($currentCount >= $event->max_guests) {
@@ -177,6 +221,10 @@ class GuestController extends Controller
     public function importBatch(Request $request, $eventId)
     {
         $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, true)) {
+            return $denied;
+        }
+
         $currentCount = Guest::where('event_id', $eventId)->count();
         $availableSlots = max(0, $event->max_guests - $currentCount);
 
@@ -352,7 +400,10 @@ class GuestController extends Controller
 
     public function update(Request $request, $id)
     {
-        $guest = Guest::findOrFail($id);
+        $guest = Guest::with('event')->findOrFail($id);
+        if ($guest->event && ($denied = $this->validateEventAccess($guest->event, false))) {
+            return $denied;
+        }
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
@@ -390,7 +441,11 @@ class GuestController extends Controller
 
     public function markSent(Request $request, $id)
     {
-        $guest = Guest::findOrFail($id);
+        $guest = Guest::with('event')->findOrFail($id);
+        if ($guest->event && ($denied = $this->validateEventAccess($guest->event, true))) {
+            return $denied;
+        }
+
         $guest->update([
             'whatsapp_status' => 'sent',
             'last_sent_at' => now(),
@@ -407,13 +462,11 @@ class GuestController extends Controller
         $guest = Guest::with('event')->findOrFail($id);
         $event = $guest->event;
 
-        if ($event && !$event->is_enabled) {
-            return response()->json([
-                'message' => 'Este evento se encuentra deshabilitado. No se pueden enviar mensajes de WhatsApp hasta habilitarlo.'
-            ], 403);
+        if ($event && ($denied = $this->validateEventAccess($event, true))) {
+            return $denied;
         }
 
-        $template = $event->message_template ?? "¡Hola {nombre}! Te invitamos a la boda de {pareja} 💍\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+        $template = $event->message_template ?? "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
 
         $message = str_replace(
             ['{nombre}', '{pareja}', '{lugar}'],
@@ -452,7 +505,11 @@ class GuestController extends Controller
 
     public function destroy($id)
     {
-        $guest = Guest::findOrFail($id);
+        $guest = Guest::with('event')->findOrFail($id);
+        if ($guest->event && ($denied = $this->validateEventAccess($guest->event, false))) {
+            return $denied;
+        }
+
         $guest->delete();
 
         return response()->json(['message' => 'Invitado eliminado']);
@@ -460,6 +517,11 @@ class GuestController extends Controller
 
     public function destroyAll($eventId)
     {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, false)) {
+            return $denied;
+        }
+
         Guest::where('event_id', $eventId)->delete();
 
         return response()->json(['message' => 'Lista de invitados reiniciada']);
@@ -543,11 +605,8 @@ class GuestController extends Controller
     public function sendBulkQueue(Request $request, $eventId)
     {
         $event = Event::findOrFail($eventId);
-
-        if (!$event->is_enabled) {
-            return response()->json([
-                'message' => 'Este evento se encuentra deshabilitado. No se pueden programar envíos de WhatsApp.'
-            ], 403);
+        if ($denied = $this->validateEventAccess($event, true)) {
+            return $denied;
         }
 
         $mode = $request->input('mode', 'invitation');

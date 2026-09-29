@@ -72,7 +72,10 @@ export default function Sidebar({
                             {events.map(ev => {
                                 const plannerCleanName = ev.planner?.name ? ev.planner.name.replace(/\s*\([^)]*\)/g, '').trim() : '';
                                 const titleText = ev.couple_names || ev.title;
-                                const optionLabel = plannerCleanName ? `${titleText} (${plannerCleanName})` : titleText;
+                                const isPast = ev.event_date && new Date(ev.event_date + 'T23:59:59') < new Date();
+                                const isCompleted = ev.status === 'completed' || isPast;
+                                const statusSuffix = isCompleted ? ' (Finalizado)' : '';
+                                const optionLabel = (plannerCleanName ? `${titleText} (${plannerCleanName})` : titleText) + statusSuffix;
                                 return (
                                     <option key={ev.id} value={ev.id} title={optionLabel}>
                                         {optionLabel}
@@ -151,6 +154,9 @@ export default function Sidebar({
                             <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
                                 {events.map(ev => {
                                     const isCurrent = activeEvent?.id === ev.id;
+                                    const isPast = ev.event_date && new Date(ev.event_date + 'T23:59:59') < new Date();
+                                    const isCompleted = ev.status === 'completed' || isPast;
+
                                     return (
                                         <button
                                             key={ev.id}
@@ -159,9 +165,18 @@ export default function Sidebar({
                                         >
                                             <div className="truncate pr-1">
                                                 <div className="truncate">{ev.couple_names || ev.title}</div>
-                                                {ev.event_date && (
-                                                    <div className="text-[10px] text-zinc-400 font-normal">{ev.event_date}</div>
-                                                )}
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                    {ev.event_date && (
+                                                        <span className="text-[10px] text-zinc-400 font-normal">{ev.event_date}</span>
+                                                    )}
+                                                    <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                                                        isCompleted 
+                                                            ? 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300' 
+                                                            : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                                                    }`}>
+                                                        {isCompleted ? 'Finalizado' : 'Activo'}
+                                                    </span>
+                                                </div>
                                             </div>
                                             {isCurrent && <Radio className="w-3.5 h-3.5 text-rose-500 shrink-0" />}
                                         </button>
