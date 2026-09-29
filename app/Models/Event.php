@@ -24,6 +24,7 @@ class Event extends Model
         'payment_status', // 'pending', 'paid'
         'rsvp_deadline_days', // Days before event date (e.g. 7)
         'auto_decline_expired', // Boolean
+        'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
     ];
 
     protected $casts = [
@@ -31,6 +32,7 @@ class Event extends Model
         'auto_decline_expired' => 'boolean',
         'max_guests' => 'integer',
         'rsvp_deadline_days' => 'integer',
+        'milestones_notified' => 'array',
     ];
 
     public function planner()

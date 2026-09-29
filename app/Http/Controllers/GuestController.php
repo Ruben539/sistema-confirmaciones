@@ -378,6 +378,10 @@ class GuestController extends Controller
 
         $guest->update($validated);
 
+        if (isset($validated['status']) && in_array($validated['status'], ['confirmed', 'attended'])) {
+            \App\Services\EventMilestoneService::checkMilestone($guest->event_id);
+        }
+
         return response()->json([
             'message' => 'Invitado actualizado',
             'guest' => $guest

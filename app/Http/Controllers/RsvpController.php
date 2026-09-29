@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Guest;
+use App\Services\EventMilestoneService;
 use Illuminate\Http\Request;
 
 class RsvpController extends Controller
@@ -92,6 +93,10 @@ class RsvpController extends Controller
                 'dietary_restrictions' => $validated['dietary_restrictions'] ?? null,
                 'notes' => $validated['notes'] ?? null,
             ]);
+        }
+
+        if ($validated['status'] === 'confirmed') {
+            EventMilestoneService::checkMilestone($guest->event_id);
         }
 
         return response()->json([
@@ -231,6 +236,8 @@ class RsvpController extends Controller
             ]);
 
             $reply = "¡Excelente {$guest->name}! Confirmamos tu asistencia al evento de {$coupleNames} 🎉{$locationText}\n\n¿Tenés alguna restricción alimentaria o menú especial (ej: celíaco, vegetariano)? Respondé con la restricción o escribí 'Ninguna'.";
+
+            EventMilestoneService::checkMilestone($guest->event_id);
 
             return response()->json([
                 'processed' => true,
