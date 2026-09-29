@@ -16,6 +16,7 @@ import EventsManagement from './components/EventsManagement';
 import ConfirmModal from './components/ConfirmModal';
 import TableDistribution from './components/TableDistribution';
 import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
+import EventTiming from './components/EventTiming';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
 import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users } from 'lucide-react';
@@ -299,6 +300,13 @@ function Dashboard({ user, onLogout }) {
                             eventTitle={activeEvent?.couple_names || activeEvent?.title}
                             showToast={showToast}
                             onOpenCreateEvent={user?.role === 'admin' ? () => { setEditingEvent(null); setIsCreateEventModalOpen(true); } : null}
+                        />
+                    ) : activeTab === 'timing' ? (
+                        <EventTiming
+                            eventId={activeEvent?.id}
+                            event={activeEvent}
+                            showToast={showToast}
+                            user={user}
                         />
                     ) : activeTab === 'guests' ? (
                         !activeEvent ? (

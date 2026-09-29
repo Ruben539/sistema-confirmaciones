@@ -369,13 +369,13 @@ export default function GuestRsvp({ token }) {
                         {/* Warm message */}
                         <div>
                             <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                                Mensaje o felicitaciones para los novios
+                                Mensaje o felicitaciones para los anfitriones
                             </label>
                             <textarea
                                 rows={3}
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
-                                placeholder="¡Les deseamos lo mejor en esta nueva etapa!"
+                                placeholder="¡Les deseamos lo mejor en este gran evento!"
                                 className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-rose-500 outline-none"
                             />
                         </div>
@@ -390,6 +390,40 @@ export default function GuestRsvp({ token }) {
                             <span>{submitting ? 'Enviando...' : 'Confirmar Respuesta'}</span>
                         </button>
                     </form>
+                )}
+
+                {/* Event Timing / Schedule for Guests */}
+                {event?.timing && event.timing.length > 0 && (
+                    <div className="bg-[#fbf9f4] dark:bg-zinc-900 border border-[#e8e4dc] dark:border-zinc-800 rounded-3xl p-6 sm:p-8 space-y-4 shadow-sm animate-fade-in mt-6">
+                        <div className="text-center space-y-1 pb-4 border-b border-[#e2ddd3] dark:border-zinc-800">
+                            <span className="text-[10px] font-black tracking-widest text-[#5c6e65] dark:text-emerald-400 uppercase">
+                                Itinerario del Evento
+                            </span>
+                            <h3 className="text-xl font-black text-[#1e332a] dark:text-white uppercase tracking-tight">
+                                Cronograma & Horarios
+                            </h3>
+                        </div>
+
+                        <div className="space-y-3 pt-2">
+                            {event.timing.map((item, idx) => (
+                                <div key={item.id || idx} className="flex items-start gap-3.5">
+                                    <span className="bg-[#2d4a3e] text-white px-3 py-1 rounded-full text-[11px] font-black tracking-wider text-center shrink-0 min-w-[85px] flex items-center justify-center">
+                                        {item.time}
+                                    </span>
+                                    <div className="pt-0.5">
+                                        <h4 className="text-xs font-black text-[#1e332a] dark:text-white">
+                                            {item.title}
+                                        </h4>
+                                        {item.description && (
+                                            <p className="text-[11px] text-zinc-600 dark:text-zinc-400 font-medium leading-relaxed">
+                                                {item.description}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 )}
             </div>
         </div>

@@ -8,6 +8,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PlannerController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\PlanRequestController;
+use App\Http\Controllers\TimingController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -64,6 +65,12 @@ Route::prefix('api')->group(function () {
     Route::post('/events/{eventId}/plan-request', [PlanRequestController::class, 'store']);
     Route::post('/plan-requests/{id}/approve', [PlanRequestController::class, 'approve']);
     Route::post('/plan-requests/{id}/reject', [PlanRequestController::class, 'reject']);
+
+    // Event Timing / Cronograma Routes
+    Route::get('/events/{eventId}/timing', [TimingController::class, 'show']);
+    Route::post('/events/{eventId}/timing', [TimingController::class, 'save']);
+    Route::post('/events/{eventId}/timing/upload', [TimingController::class, 'upload']);
+    Route::post('/events/{eventId}/timing/items/{itemId}/toggle', [TimingController::class, 'toggleItem']);
 });
 
 // Fallback SPA renderiza la plantilla de React

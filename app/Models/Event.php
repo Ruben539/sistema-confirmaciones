@@ -25,6 +25,7 @@ class Event extends Model
         'rsvp_deadline_days', // Days before event date (e.g. 7)
         'auto_decline_expired', // Boolean
         'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
+        'timing', // JSON Array of timeline items [{time, title, description, completed}]
     ];
 
     protected $casts = [
@@ -33,6 +34,7 @@ class Event extends Model
         'max_guests' => 'integer',
         'rsvp_deadline_days' => 'integer',
         'milestones_notified' => 'array',
+        'timing' => 'array',
     ];
 
     protected $appends = ['is_active'];

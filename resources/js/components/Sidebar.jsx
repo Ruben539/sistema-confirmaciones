@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock } from 'lucide-react';
 
 export default function Sidebar({
     user,
@@ -110,6 +110,14 @@ export default function Sidebar({
                     >
                         <LayoutGrid className="w-4 h-4 shrink-0" />
                         {!collapsed && <span>Distribución de Mesas</span>}
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('timing')}
+                        className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'timing' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                    >
+                        <Clock className="w-4 h-4 shrink-0" />
+                        {!collapsed && <span>Timing del Evento</span>}
                     </button>
 
                     {/* Admin Navigation Options */}
