@@ -3,6 +3,13 @@ import { Bot, Send, Sparkles, X, CheckCircle2, MessageSquare, ArrowRight, Shield
 import { apiFetch } from '../api';
 
 export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, currentGuestsCount = 0, user, onRequestSent }) {
+    const [selectedPlan, setSelectedPlan] = useState('medium');
+    const [customGuests, setCustomGuests] = useState(200);
+    const [notes, setNotes] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [result, setResult] = useState(null);
+    const [error, setError] = useState(null);
+
     if (!isOpen || !event) return null;
 
     const maxGuests = event.max_guests || 100;
@@ -42,13 +49,6 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
             description: 'Define la cantidad exacta de invitados que necesitas.'
         },
     ];
-
-    const [selectedPlan, setSelectedPlan] = useState('medium');
-    const [customGuests, setCustomGuests] = useState(200);
-    const [notes, setNotes] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState(null);
-    const [error, setError] = useState(null);
 
     const handleSendRequest = async () => {
         setLoading(true);

@@ -15,6 +15,8 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     const [isBulkSending, setIsBulkSending] = useState(false);
     const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, currentGuest: null, delayCountdown: 0 });
     const cancelBulkRef = useRef(false);
+    const [queueSuccessMessage, setQueueSuccessMessage] = useState(null);
+    const [isQueueStarting, setIsQueueStarting] = useState(false);
 
     if (!isOpen) return null;
 
@@ -129,10 +131,6 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
             }
         });
     };
-
-
-    const [queueSuccessMessage, setQueueSuccessMessage] = useState(null);
-    const [isQueueStarting, setIsQueueStarting] = useState(false);
 
     const handleStartBackgroundQueue = async () => {
         const pending = filteredGuests.filter(g => g.whatsapp_status === 'not_sent');
