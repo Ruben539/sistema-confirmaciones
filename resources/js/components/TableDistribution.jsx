@@ -44,8 +44,9 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
         }
     }, [eventId]);
 
-    const fetchTables = async () => {
-        setLoading(true);
+    // silent: refresh data in place without the full-screen spinner (after edits, live refresh)
+    const fetchTables = async ({ silent = false } = {}) => {
+        if (!silent) setLoading(true);
         try {
             const { ok, json } = await apiFetch(`/api/events/${eventId}/tables`);
             if (ok && json) {
@@ -80,7 +81,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                 if (showToast) showToast(isEditing ? 'Mesa actualizada' : 'Mesa creada');
                 setIsTableModalOpen(false);
                 setTableToEdit(null);
-                fetchTables();
+                fetchTables({ silent: true });
             } else {
                 alert(json?.message || 'Error al guardar la mesa.');
             }
@@ -104,7 +105,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                     const { ok } = await apiFetch(`/api/tables/${table.id}`, { method: 'DELETE' });
                     if (ok) {
                         if (showToast) showToast(`Mesa '${table.name}' eliminada.`);
-                        fetchTables();
+                        fetchTables({ silent: true });
                     }
                 } catch (err) {
                     console.error(err);
@@ -118,7 +119,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
             const { ok, json } = await apiFetch(`/api/events/${eventId}/tables/auto-create`, { method: 'POST' });
             if (ok) {
                 if (showToast) showToast(json?.message || 'Mesas automáticas creadas');
-                fetchTables();
+                fetchTables({ silent: true });
             }
         } catch (err) {
             console.error(err);
@@ -127,7 +128,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
 
     const handleAssignGuest = async (guestId, targetTableName) => {
         try {
-            const { ok } = await apiFetch(`/api/tables/assign`, {
+            const { ok, json } = await apiFetch(`/api/tables/assign`, {
                 method: 'POST',
                 body: JSON.stringify({
                     guest_id: guestId,
@@ -136,11 +137,32 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
             });
 
             if (ok) {
-                fetchTables();
+                fetchTables({ silent: true });
+            } else if (showToast) {
+                showToast(json?.message || 'No se pudo asignar la mesa.');
             }
         } catch (err) {
             console.error(err);
         }
+    };
+
+    const handleSaveLayout = async (payload) => {
+        try {
+            const { ok, json } = await apiFetch(`/api/events/${eventId}/tables/layout`, {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+            if (ok) {
+                if (showToast) showToast(json?.message || 'Plano del salón guardado');
+                await fetchTables({ silent: true });
+                return true;
+            }
+            if (showToast) showToast(json?.message || 'No se pudo guardar el plano.');
+        } catch (err) {
+            console.error(err);
+            if (showToast) showToast('Error de conexión al guardar el plano.');
+        }
+        return false;
     };
 
     const openAddTableModal = () => {
@@ -356,11 +378,14 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
 
             {/* CONDITIONAL RENDER: 3D VIEW VS GRID VIEW */}
             {viewMode === '3d' ? (
-                <Visual3DTableMap 
-                    tables={tables} 
+                <Visual3DTableMap
+                    tables={tables}
                     unassignedGuests={unassigned}
+                    venueLayout={data.venue_layout}
+                    eventTitle={eventTitle}
                     onAssignGuest={handleAssignGuest}
-                    onMoveGuest={handleAssignGuest}
+                    onSaveLayout={handleSaveLayout}
+                    onRefresh={() => fetchTables({ silent: true })}
                 />
             ) : (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -376,7 +401,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                             <h3 className="text-sm font-black text-zinc-900 dark:text-white">Sin Mesa ({unassigned.length})</h3>
                         </div>
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
-                            {unassigned.reduce((acc, g) => acc + g.passes, 0)} pers.
+                            {unassigned.reduce((acc, g) => acc + (g.seats ?? g.passes), 0)} pers.
                         </span>
                     </div>
 
@@ -438,7 +463,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                                             {guest.name}
                                         </div>
                                         <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400">
-                                            {guest.passes} {guest.passes === 1 ? 'persona' : 'personas'}
+                                            {guest.seats ?? guest.passes} {(guest.seats ?? guest.passes) === 1 ? 'persona' : 'personas'}
                                         </span>
                                     </div>
 
@@ -634,7 +659,7 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
 
                                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                                     <span className="text-[10px] font-bold text-zinc-500 bg-white dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">
-                                                                        {g.passes} pers.
+                                                                        {g.seats ?? g.passes} pers.
                                                                     </span>
                                                                     <button
                                                                         onClick={() => handleAssignGuest(g.id, null)}

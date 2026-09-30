@@ -18,75 +18,43 @@ class TableController extends Controller
         }
     }
 
+    /**
+     * Seats a guest actually takes: what they confirmed if they answered, otherwise what was invited.
+     */
+    private function seatsFor(Guest $guest): int
+    {
+        $answered = in_array($guest->status, ['confirmed', 'attended']) || !empty($guest->attended_at);
+        if ($answered && (int) $guest->confirmed_passes > 0) {
+            return (int) $guest->confirmed_passes;
+        }
+        return max(1, (int) $guest->passes);
+    }
+
+    private function guestsAtTable($eventId, string $tableName)
+    {
+        $key = Table::nameKey($tableName);
+        return Guest::where('event_id', $eventId)->whereNotNull('table_number')->get()
+            ->filter(fn($g) => Table::nameKey($g->table_number) === $key);
+    }
+
     public function index($eventId)
     {
         $event = Event::findOrFail($eventId);
         $this->checkEventAccess($event);
 
-        // Auto-sync: If there are guests with table_number whose table doesn't exist yet, auto-create it now!
-        $guestTables = Guest::where('event_id', $eventId)
-            ->whereNotNull('table_number')
-            ->where('table_number', '!=', '')
-            ->get()
-            ->groupBy(fn($g) => trim($g->table_number));
-
-        if ($guestTables->isNotEmpty()) {
-            $existingTables = Table::where('event_id', $eventId)->get();
-            $existingNamesLower = $existingTables->map(fn($t) => mb_strtolower(trim($t->name)))->toArray();
-
-            foreach ($guestTables as $tableName => $assignedGuests) {
-                $trimmedName = trim($tableName);
-                if (empty($trimmedName)) continue;
-
-                $nameLower = mb_strtolower($trimmedName);
-                $hasExact = in_array($nameLower, $existingNamesLower);
-
-                // Check if numeric match already exists (e.g. "Mesa 1" vs "1")
-                $digits = preg_replace('/[^\d]/', '', $nameLower);
-                $hasNumeric = false;
-                if ($digits !== '') {
-                    foreach ($existingNamesLower as $exName) {
-                        $exDigits = preg_replace('/[^\d]/', '', $exName);
-                        if ($exDigits !== '' && $exDigits === $digits) {
-                            $hasNumeric = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!$hasExact && !$hasNumeric) {
-                    $totalPasses = $assignedGuests->sum('passes');
-                    Table::create([
-                        'event_id' => $eventId,
-                        'name' => $trimmedName,
-                        'capacity' => max(10, (int)$totalPasses),
-                    ]);
-                    $existingNamesLower[] = $nameLower;
-                }
-            }
-        }
-
         $tables = Table::where('event_id', $eventId)->orderBy('id', 'asc')->get();
-        $guests = Guest::where('event_id', $eventId)->get();
+        // Guests who declined don't take a seat
+        $allGuests = Guest::where('event_id', $eventId)->get();
+        $guests = $allGuests->where('status', '!=', 'declined')->values();
+        $guests->each(fn($g) => $g->setAttribute('seats', $this->seatsFor($g)));
 
-        $tableData = $tables->map(function ($table) use ($guests) {
-            $tNameLower = trim(mb_strtolower($table->name));
-            $tDigits = preg_replace('/[^\d]/', '', $tNameLower);
+        // Same rule everywhere: a guest belongs to the table whose normalized name matches
+        $guestsByTable = $guests->groupBy(fn($g) => Table::nameKey($g->table_number) ?? '');
 
-            $assignedGuests = $guests->filter(function ($g) use ($tNameLower, $tDigits) {
-                $gTableLower = trim(mb_strtolower($g->table_number ?? ''));
-                if ($gTableLower === '') return false;
-                if ($gTableLower === $tNameLower) return true;
+        $tableData = $tables->map(function ($table) use ($guestsByTable) {
+            $assignedGuests = ($guestsByTable->get(Table::nameKey($table->name)) ?? collect())->values();
 
-                // Flexible match: e.g. "1" matches "Mesa 1", "01" matches "Mesa 1"
-                $gDigits = preg_replace('/[^\d]/', '', $gTableLower);
-                if ($gDigits !== '' && $gDigits === $tDigits) {
-                    return true;
-                }
-                return false;
-            })->values();
-
-            $occupiedPasses = $assignedGuests->sum('passes');
+            $occupiedPasses = $assignedGuests->sum('seats');
             $youth = $assignedGuests->sum('youth');
             $adults = $assignedGuests->sum('adults');
             $children = $assignedGuests->sum('children');
@@ -97,6 +65,10 @@ class TableController extends Controller
                 'name' => $table->name,
                 'capacity' => $table->capacity,
                 'notes' => $table->notes,
+                'pos_x' => $table->pos_x,
+                'pos_y' => $table->pos_y,
+                'shape' => $table->shape,
+                'rotation' => $table->rotation ?? 0,
                 'occupied_passes' => $occupiedPasses,
                 'youth' => $youth,
                 'adults' => $adults,
@@ -105,42 +77,57 @@ class TableController extends Controller
             ];
         });
 
-        // Unassigned guests (guests not assigned to any table)
-        $allAssignedGuestIds = $tableData->flatMap(fn($t) => $t['guests']->pluck('id'))->toArray();
-        $unassignedGuests = $guests->filter(function ($g) use ($allAssignedGuestIds) {
-            return !in_array($g->id, $allAssignedGuestIds);
-        })->values();
+        // Unassigned guests (guests not assigned to any existing table)
+        $allAssignedGuestIds = $tableData->flatMap(fn($t) => $t['guests']->pluck('id'))->flip();
+        $unassignedGuests = $guests->filter(fn($g) => !$allAssignedGuestIds->has($g->id))->values();
 
         $totalCapacity = $tables->sum('capacity');
         $assignedPasses = $tableData->sum('occupied_passes');
-        $unassignedPasses = $unassignedGuests->sum('passes');
+        $unassignedPasses = $unassignedGuests->sum('seats');
 
         return response()->json([
             'tables' => $tableData,
             'unassigned_guests' => $unassignedGuests,
+            'venue_layout' => $event->venue_layout,
             'stats' => [
                 'total_tables' => $tables->count(),
                 'total_capacity' => $totalCapacity,
                 'assigned_passes' => $assignedPasses,
                 'unassigned_passes' => $unassignedPasses,
                 'total_guests' => $guests->count(),
+                'declined_guests' => $allGuests->count() - $guests->count(),
             ]
         ]);
     }
 
     public function store(Request $request, $eventId)
     {
+        $this->checkEventAccess(Event::findOrFail($eventId));
+
         $validated = $request->validate([
             'name' => 'required|string|max:100',
             'capacity' => 'nullable|integer|min:1',
             'notes' => 'nullable|string|max:255',
+            'pos_x' => 'nullable|numeric',
+            'pos_y' => 'nullable|numeric',
+            'shape' => 'nullable|in:round,imperial,square',
+            'rotation' => 'nullable|in:0,90',
         ]);
+
+        $name = Table::normalizeName($validated['name']);
+        if ($name === null || Table::findByName($eventId, $name)) {
+            return response()->json(['message' => "Ya existe una mesa llamada '{$name}' en este evento."], 422);
+        }
 
         $table = Table::create([
             'event_id' => $eventId,
-            'name' => trim($validated['name']),
+            'name' => $name,
             'capacity' => isset($validated['capacity']) ? (int)$validated['capacity'] : 10,
             'notes' => $validated['notes'] ?? null,
+            'pos_x' => $validated['pos_x'] ?? null,
+            'pos_y' => $validated['pos_y'] ?? null,
+            'shape' => $validated['shape'] ?? null,
+            'rotation' => (int) ($validated['rotation'] ?? 0),
         ]);
 
         return response()->json([
@@ -152,22 +139,34 @@ class TableController extends Controller
     public function update(Request $request, $id)
     {
         $table = Table::findOrFail($id);
+        $this->checkEventAccess($table->event);
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:100',
             'capacity' => 'sometimes|integer|min:1',
             'notes' => 'nullable|string|max:255',
+            'pos_x' => 'nullable|numeric',
+            'pos_y' => 'nullable|numeric',
+            'shape' => 'nullable|in:round,imperial,square',
+            'rotation' => 'sometimes|in:0,90',
         ]);
 
         $oldName = $table->name;
 
+        if (isset($validated['name'])) {
+            $validated['name'] = Table::normalizeName($validated['name']);
+            $existing = Table::findByName($table->event_id, $validated['name']);
+            if ($validated['name'] === null || ($existing && $existing->id !== $table->id)) {
+                return response()->json(['message' => "Ya existe una mesa llamada '{$validated['name']}' en este evento."], 422);
+            }
+        }
+
         $table->update($validated);
 
-        // If name changed, update table_number for guests assigned to old table name
-        if (isset($validated['name']) && trim($validated['name']) !== $oldName) {
-            Guest::where('event_id', $table->event_id)
-                ->where('table_number', $oldName)
-                ->update(['table_number' => trim($validated['name'])]);
+        // Renamed: move every guest seated there (whatever casing/format they were saved with)
+        if (isset($validated['name']) && $validated['name'] !== $oldName) {
+            $this->guestsAtTable($table->event_id, $oldName)
+                ->each(fn($g) => $g->update(['table_number' => $validated['name']]));
         }
 
         return response()->json([
@@ -179,13 +178,12 @@ class TableController extends Controller
     public function destroy($id)
     {
         $table = Table::findOrFail($id);
+        $this->checkEventAccess($table->event);
         $tableName = $table->name;
         $eventId = $table->event_id;
 
-        // Unassign guests
-        Guest::where('event_id', $eventId)
-            ->where('table_number', $tableName)
-            ->update(['table_number' => null]);
+        // Unassign every guest seated there, so the table can't come back from their table_number
+        $this->guestsAtTable($eventId, $tableName)->each(fn($g) => $g->update(['table_number' => null]));
 
         $table->delete();
 
@@ -201,8 +199,19 @@ class TableController extends Controller
             'table_name' => 'nullable|string|max:100',
         ]);
 
-        $guest = Guest::findOrFail($validated['guest_id']);
-        $guest->table_number = $validated['table_name'] ? trim($validated['table_name']) : null;
+        $guest = Guest::with('event')->findOrFail($validated['guest_id']);
+        $this->checkEventAccess($guest->event);
+
+        $tableName = null;
+        if (!empty($validated['table_name'])) {
+            $table = Table::findByName($guest->event_id, $validated['table_name']);
+            if (!$table) {
+                return response()->json(['message' => "La mesa '{$validated['table_name']}' no existe."], 422);
+            }
+            $tableName = $table->name;
+        }
+
+        $guest->table_number = $tableName;
         $guest->save();
 
         return response()->json([
@@ -213,31 +222,71 @@ class TableController extends Controller
 
     public function autoCreateFromGuests($eventId)
     {
-        $uniqueTables = Guest::where('event_id', $eventId)
+        $this->checkEventAccess(Event::findOrFail($eventId));
+
+        $guestsByTable = Guest::where('event_id', $eventId)
             ->whereNotNull('table_number')
-            ->where('table_number', '!=', '')
-            ->pluck('table_number')
-            ->map(fn($t) => trim($t))
-            ->unique();
+            ->where('status', '!=', 'declined')
+            ->get()
+            ->groupBy(fn($g) => Table::nameKey($g->table_number))
+            ->filter(fn($group, $key) => $key !== '');
 
         $createdCount = 0;
-        foreach ($uniqueTables as $tableName) {
-            $exists = Table::where('event_id', $eventId)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($tableName)])
-                ->exists();
-
-            if (!$exists) {
-                Table::create([
-                    'event_id' => $eventId,
-                    'name' => $tableName,
-                    'capacity' => 10,
-                ]);
+        foreach ($guestsByTable as $group) {
+            [$table, $created] = Table::ensureExists($eventId, $group->first()->table_number, (int) $group->sum('passes'));
+            if ($created) {
                 $createdCount++;
             }
+            // Guests adopt the table's exact name
+            $group->where('table_number', '!=', $table->name)->each(fn($g) => $g->update(['table_number' => $table->name]));
         }
 
         return response()->json([
             'message' => $createdCount > 0 ? "Se crearon {$createdCount} mesas automáticamente." : "Todas las mesas existentes ya estaban creadas."
         ]);
+    }
+
+    /**
+     * Saves the venue plan in one go: table positions/shapes plus dance floor, stage and entrance.
+     */
+    public function saveLayout(Request $request, $eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        $this->checkEventAccess($event);
+
+        $validated = $request->validate([
+            'tables' => 'array',
+            'tables.*.id' => 'required|integer',
+            'tables.*.pos_x' => 'required|numeric',
+            'tables.*.pos_y' => 'required|numeric',
+            'tables.*.shape' => 'nullable|in:round,imperial,square',
+            'tables.*.rotation' => 'nullable|in:0,90',
+            'venue' => 'nullable|array',
+            'venue.*.x' => 'required|numeric',
+            'venue.*.y' => 'required|numeric',
+        ]);
+
+        $tables = Table::where('event_id', $eventId)->get()->keyBy('id');
+        foreach ($validated['tables'] ?? [] as $item) {
+            $table = $tables->get($item['id']);
+            if (!$table) continue; // ignore tables from other events
+
+            $table->update([
+                'pos_x' => round($item['pos_x'], 1),
+                'pos_y' => round($item['pos_y'], 1),
+                'shape' => $item['shape'] ?? $table->shape,
+                'rotation' => (int) ($item['rotation'] ?? $table->rotation),
+            ]);
+        }
+
+        if (isset($validated['venue'])) {
+            $venue = collect($validated['venue'])
+                ->only(['dance', 'stage', 'entrance'])
+                ->map(fn($p) => ['x' => round($p['x'], 1), 'y' => round($p['y'], 1)])
+                ->all();
+            $event->update(['venue_layout' => $venue]);
+        }
+
+        return response()->json(['message' => 'Plano del salón guardado']);
     }
 }

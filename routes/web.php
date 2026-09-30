@@ -58,6 +58,7 @@ Route::prefix('api')->group(function () {
     Route::put('/tables/{id}', [TableController::class, 'update']);
     Route::delete('/tables/{id}', [TableController::class, 'destroy']);
     Route::post('/tables/assign', [TableController::class, 'assignGuest']);
+    Route::put('/events/{eventId}/tables/layout', [TableController::class, 'saveLayout']);
 
     // Public Guest RSVP Routes
     Route::post('/rsvp/incoming-whatsapp', [RsvpController::class, 'handleIncomingWhatsApp']);

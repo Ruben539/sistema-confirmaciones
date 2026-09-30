@@ -66,6 +66,7 @@ class Event extends Model
         'auto_decline_expired', // Boolean
         'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
         'timing', // JSON Array of timeline items [{time, title, description, completed}]
+        'venue_layout', // JSON: positions of dance floor, stage and entrance on the seating plan
     ];
 
     protected $casts = [
@@ -75,6 +76,7 @@ class Event extends Model
         'rsvp_deadline_days' => 'integer',
         'milestones_notified' => 'array',
         'timing' => 'array',
+        'venue_layout' => 'array',
     ];
 
     protected $appends = ['is_active'];

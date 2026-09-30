@@ -219,6 +219,9 @@ class GuestController extends Controller
 
         $companions = trim($validated['companions'] ?? '');
 
+        // Same naming rule as the seating plan; creates the table if it doesn't exist yet
+        [$table] = Table::ensureExists($eventId, $validated['table_number'] ?? null, $adults + $youth + $children);
+
         $guest = Guest::create([
             'event_id' => $eventId,
             'name' => trim($validated['name']),
@@ -227,7 +230,7 @@ class GuestController extends Controller
             'youth' => $youth,
             'children' => $children,
             'companions' => $companions !== '' ? $companions : null,
-            'table_number' => $validated['table_number'] ?? null,
+            'table_number' => $table?->name,
             'notes' => $validated['notes'] ?? null,
             'status' => 'pending',
             'token' => Str::random(32),
@@ -320,14 +323,7 @@ class GuestController extends Controller
             $companions = $companions !== '' ? $companions : null;
 
             $dietary = $item['dietary_restrictions'] ?? $item['restricciones'] ?? $item['dieta'] ?? null;
-            $tableNumber = isset($item['table_number']) && trim($item['table_number']) !== '' ? trim($item['table_number']) : null;
-            if ($tableNumber !== null) {
-                if (ctype_digit($tableNumber)) {
-                    $tableNumber = 'Mesa ' . $tableNumber;
-                } elseif (preg_match('/^mesa\s*(\d+)$/i', $tableNumber, $m)) {
-                    $tableNumber = 'Mesa ' . $m[1];
-                }
-            }
+            $tableNumber = Table::normalizeName($item['table_number'] ?? null);
             $dietaryRestrictions = $dietary && trim($dietary) !== '' ? trim($dietary) : null;
             $notes = $item['notes'] ?? null;
 
@@ -336,7 +332,7 @@ class GuestController extends Controller
                 $existingGuest = $existingMap[$phoneKey];
                 $updateFields = [];
 
-                if ($tableNumber !== null && $existingGuest->table_number !== $tableNumber) {
+                if ($tableNumber !== null && Table::nameKey($existingGuest->table_number) !== Table::nameKey($tableNumber)) {
                     $updateFields['table_number'] = $tableNumber;
                 }
                 if ($dietaryRestrictions !== null && $existingGuest->dietary_restrictions !== $dietaryRestrictions) {
@@ -400,55 +396,25 @@ class GuestController extends Controller
             $summaryParts[] = "{$skipped} duplicados omitidos";
         }
 
-        // Auto-create/sync tables in database from guests' table_number
+        // Create missing tables for the imported table numbers (same naming rule as the seating plan),
+        // and make guests use each table's exact name
         $guestTables = Guest::where('event_id', $eventId)
             ->whereNotNull('table_number')
-            ->where('table_number', '!=', '')
             ->get()
-            ->groupBy(fn($g) => trim($g->table_number));
+            ->groupBy(fn($g) => Table::nameKey($g->table_number))
+            ->filter(fn($group, $key) => $key !== '');
 
         $createdTablesCount = 0;
-        if ($guestTables->isNotEmpty()) {
-            $existingTables = Table::where('event_id', $eventId)->get();
-            $existingNamesLower = $existingTables->map(fn($t) => mb_strtolower(trim($t->name)))->toArray();
-
-            foreach ($guestTables as $tableName => $assignedGuests) {
-                $trimmedName = trim($tableName);
-                if (empty($trimmedName)) continue;
-
-                $nameLower = mb_strtolower($trimmedName);
-                $hasExact = in_array($nameLower, $existingNamesLower);
-                $digits = preg_replace('/[^\d]/', '', $nameLower);
-                $hasNumeric = false;
-                if ($digits !== '') {
-                    foreach ($existingNamesLower as $exName) {
-                        $exDigits = preg_replace('/[^\d]/', '', $exName);
-                        if ($exDigits !== '' && $exDigits === $digits) {
-                            $hasNumeric = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!$hasExact && !$hasNumeric) {
-                    $totalPasses = $assignedGuests->sum('passes');
-                    Table::create([
-                        'event_id' => $eventId,
-                        'name' => $trimmedName,
-                        'capacity' => max(10, (int)$totalPasses),
-                    ]);
-                    $existingNamesLower[] = $nameLower;
-                    $createdTablesCount++;
-                } else {
-                    $totalPasses = $assignedGuests->sum('passes');
-                    $tableRecord = Table::where('event_id', $eventId)
-                        ->whereRaw('LOWER(TRIM(name)) = ?', [$nameLower])
-                        ->first();
-                    if ($tableRecord && $tableRecord->capacity < $totalPasses) {
-                        $tableRecord->update(['capacity' => $totalPasses]);
-                    }
-                }
+        foreach ($guestTables as $group) {
+            $totalPasses = (int) $group->sum('passes');
+            [$tableRecord, $created] = Table::ensureExists($eventId, $group->first()->table_number, $totalPasses);
+            if ($created) {
+                $createdTablesCount++;
+            } elseif ($tableRecord->capacity < $totalPasses) {
+                $tableRecord->update(['capacity' => $totalPasses]);
             }
+            $group->where('table_number', '!=', $tableRecord->name)
+                ->each(fn($g) => $g->update(['table_number' => $tableRecord->name]));
         }
 
         if ($createdTablesCount > 0) {
@@ -520,6 +486,11 @@ class GuestController extends Controller
 
         if (isset($validated['phone'])) {
             $validated['phone'] = $this->formatParaguayPhone($validated['phone']);
+        }
+
+        if (array_key_exists('table_number', $validated)) {
+            [$table] = Table::ensureExists($guest->event_id, $validated['table_number'], (int) $guest->passes);
+            $validated['table_number'] = $table?->name;
         }
 
         $guest->update($validated);
