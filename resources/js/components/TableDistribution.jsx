@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Edit2, Users, AlertCircle, CheckCircle2, RefreshCw, UserCheck, ArrowRightLeft, Sparkles, X, LayoutGrid, FileSpreadsheet, Search, List, Grid, Maximize2, Minimize2, ChevronDown, ChevronUp, Box } from 'lucide-react';
+import { Plus, Trash2, Edit2, Users, AlertCircle, CheckCircle2, RefreshCw, UserCheck, ArrowRightLeft, Sparkles, X, LayoutGrid, FileSpreadsheet, Search, List, Grid, Maximize2, Minimize2, ChevronDown, ChevronUp, Box, Printer } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import Visual3DTableMap from './Visual3DTableMap';
+import ExportDocumentsModal from './ExportDocumentsModal';
 import { apiFetch } from '../api';
 
-export default function TableDistribution({ eventId, eventTitle, showToast, onOpenCreateEvent }) {
+export default function TableDistribution({ eventId, eventTitle, event, showToast, onOpenCreateEvent }) {
     const [data, setData] = useState({ tables: [], unassigned_guests: [], stats: {} });
     const [loading, setLoading] = useState(true);
+    const [isExportOpen, setIsExportOpen] = useState(false);
 
     // Create / Edit Table Modal State
     const [isTableModalOpen, setIsTableModalOpen] = useState(false);
@@ -328,6 +330,15 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                         </div>
 
                         <button
+                            onClick={() => setIsExportOpen(true)}
+                            title="Plano, lista de ubicación, catering, recepción y Excel"
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 text-xs font-bold transition-all border border-zinc-200 dark:border-zinc-700"
+                        >
+                            <Printer className="w-4 h-4 text-rose-500" />
+                            <span>Exportar / Imprimir</span>
+                        </button>
+
+                        <button
                             onClick={handleAutoCreateTables}
                             title="Crear mesas automáticamente si los invitados ya tienen números de mesa ingresados"
                             className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 text-xs font-bold transition-all border border-zinc-200 dark:border-zinc-700"
@@ -382,8 +393,8 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                     tables={tables}
                     unassignedGuests={unassigned}
                     venueLayout={data.venue_layout}
-                    eventTitle={eventTitle}
                     onAssignGuest={handleAssignGuest}
+                    onExport={() => setIsExportOpen(true)}
                     onSaveLayout={handleSaveLayout}
                     onRefresh={() => fetchTables({ silent: true })}
                 />
@@ -850,6 +861,16 @@ export default function TableDistribution({ eventId, eventTitle, showToast, onOp
                     </div>
                 </div>
             )}
+
+            <ExportDocumentsModal
+                isOpen={isExportOpen}
+                onClose={() => setIsExportOpen(false)}
+                event={event || { id: eventId, title: eventTitle }}
+                tables={tables}
+                unassigned={unassigned}
+                venueLayout={data.venue_layout}
+                showToast={showToast}
+            />
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}

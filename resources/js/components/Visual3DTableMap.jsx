@@ -1,14 +1,10 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { hasDiet, seatsOf, guestState, VENUE_ITEMS, snap, shapeOf, tableSize, chairPositions, autoGrid, defaultVenue, buildLayout, floorSize } from '../seating';
 import { RotateCw, ZoomIn, ZoomOut, Search, Utensils, Sparkles, X, Compass, Printer, UserPlus, ChefHat, MapPin, Eye, Layers, Move, Save, RotateCcw, Radio, Users, AlertTriangle, Wand2, GripVertical, Music } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const NO_DIET = ['ninguna', 'ninguno', 'sin restricciones', 'normal', 'no'];
-const hasDiet = (g) => !!g?.dietary_restrictions && !NO_DIET.includes(g.dietary_restrictions.toLowerCase().trim());
-const seatsOf = (g) => g?.seats ?? g?.passes ?? 1;
-const guestState = (g) => (g.status === 'attended' || g.attended_at) ? 'attended' : g.status === 'confirmed' ? 'confirmed' : 'pending';
 
 const STATE_INFO = {
     attended: { label: 'En el salón', chair: 'bg-emerald-500 border-emerald-200 shadow-emerald-500/70', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
@@ -22,86 +18,11 @@ const SHAPES = [
     { id: 'square', label: 'Cuadrada' },
 ];
 
-const VENUE_ITEMS = {
-    stage: { label: 'Escenario', w: 260, h: 54 },
-    dance: { label: 'Pista de Baile', w: 230, h: 120 },
-    entrance: { label: 'Entrada', w: 170, h: 34 },
-};
-
-const GRID_SNAP = 10;
-const snap = (v) => Math.round(v / GRID_SNAP) * GRID_SNAP;
-
-// Tables without a saved shape: guess from the name, as before ("Mesa Principal" = imperial)
-const shapeOf = (t) => t.shape || (/principal|novios|imperial|larga/i.test(t.name || '') ? 'imperial' : 'round');
-
-const tableSize = (shape, capacity) => {
-    if (shape === 'imperial') return { w: Math.max(150, Math.ceil(capacity / 2) * 30 + 30), h: 70 };
-    if (shape === 'square') {
-        const side = Math.max(100, Math.ceil(capacity / 4) * 30 + 30);
-        return { w: side, h: side };
-    }
-    const d = Math.max(96, Math.min(170, 70 + capacity * 5));
-    return { w: d, h: d };
-};
-
-// Chair centers relative to the table center
-const chairPositions = (shape, n, w, h) => {
-    const gap = 18;
-    if (shape === 'round') {
-        const r = w / 2 + gap;
-        return Array.from({ length: n }, (_, i) => {
-            const a = (i / n) * 2 * Math.PI - Math.PI / 2;
-            return { x: Math.cos(a) * r, y: Math.sin(a) * r };
-        });
-    }
-    if (shape === 'imperial') {
-        const top = Math.ceil(n / 2);
-        const row = (count, y) => Array.from({ length: count }, (_, i) => ({ x: -w / 2 + (w / count) * (i + 0.5), y }));
-        return [...row(top, -h / 2 - gap), ...row(n - top, h / 2 + gap)];
-    }
-    const perSide = [0, 0, 0, 0];
-    for (let i = 0; i < n; i++) perSide[i % 4]++;
-    const pts = [];
-    const side = (count, fn) => { for (let i = 0; i < count; i++) pts.push(fn((i + 0.5) / count)); };
-    side(perSide[0], t => ({ x: -w / 2 + w * t, y: -h / 2 - gap }));
-    side(perSide[1], t => ({ x: w / 2 + gap, y: -h / 2 + h * t }));
-    side(perSide[2], t => ({ x: w / 2 - w * t, y: h / 2 + gap }));
-    side(perSide[3], t => ({ x: -w / 2 - gap, y: h / 2 - h * t }));
-    return pts;
-};
-
-// Automatic grid for tables that were never placed by hand
-const autoGrid = (tables) => {
-    const count = tables.length || 1;
-    const cols = Math.max(2, Math.ceil(Math.sqrt(count * 1.3)));
-    const rows = Math.ceil(count / cols);
-    const out = {};
-    tables.forEach((t, idx) => {
-        const row = Math.floor(idx / cols);
-        const col = idx % cols;
-        out[t.id] = { x: (col - (cols - 1) / 2) * 230, y: (row - (rows - 1) / 2) * 220 + 60 };
-    });
-    return out;
-};
-
-const defaultVenue = (tablePositions) => {
-    const ys = Object.values(tablePositions).map(p => p.y);
-    const top = ys.length ? Math.min(...ys) : 0;
-    const bottom = ys.length ? Math.max(...ys) : 0;
-    return {
-        stage: { x: 0, y: snap(top - 250) },
-        dance: { x: 0, y: snap(top - 150) },
-        entrance: { x: 0, y: snap(bottom + 150) },
-    };
-};
-
-const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function Visual3DTableMap({ tables = [], unassignedGuests = [], venueLayout = null, eventTitle = '', onAssignGuest, onSaveLayout, onRefresh }) {
+export default function Visual3DTableMap({ tables = [], unassignedGuests = [], venueLayout = null, onAssignGuest, onSaveLayout, onRefresh, onExport }) {
     const [selectedTableId, setSelectedTableId] = useState(null);
     const [rotationY, setRotationY] = useState(35);
     const [rotationX, setRotationX] = useState(55);
@@ -134,22 +55,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
     const movedRef = useRef(false);
 
     // --- Layout: saved positions, falling back to the automatic grid ---------
-    const savedLayout = useMemo(() => {
-        const auto = autoGrid(tables);
-        const positions = {};
-        tables.forEach(t => {
-            positions[t.id] = {
-                x: t.pos_x ?? auto[t.id].x,
-                y: t.pos_y ?? auto[t.id].y,
-                shape: shapeOf(t),
-                rotation: t.rotation || 0,
-            };
-        });
-        const fallbackVenue = defaultVenue(positions);
-        const venue = {};
-        Object.keys(VENUE_ITEMS).forEach(k => { venue[k] = venueLayout?.[k] || fallbackVenue[k]; });
-        return { tables: positions, venue };
-    }, [tables, venueLayout]);
+    const savedLayout = useMemo(() => buildLayout(tables, venueLayout), [tables, venueLayout]);
 
     const layout = editMode && draft ? draft : savedLayout;
 
@@ -190,19 +96,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
     const selectedTable = positionedTables.find(t => t.id === selectedTableId) || null;
 
     // Floor size: fit every table and venue element, centered on 0,0
-    const { floorWidth, floorHeight } = useMemo(() => {
-        let maxX = 300, maxY = 250;
-        positionedTables.forEach(t => {
-            const r = Math.max(t.w, t.h) / 2 + 40;
-            maxX = Math.max(maxX, Math.abs(t.x) + r);
-            maxY = Math.max(maxY, Math.abs(t.y) + r);
-        });
-        Object.entries(layout.venue).forEach(([k, p]) => {
-            maxX = Math.max(maxX, Math.abs(p.x) + VENUE_ITEMS[k].w / 2 + 20);
-            maxY = Math.max(maxY, Math.abs(p.y) + VENUE_ITEMS[k].h / 2 + 20);
-        });
-        return { floorWidth: Math.max(800, 2 * maxX + 80), floorHeight: Math.max(600, 2 * maxY + 80) };
-    }, [positionedTables, layout]);
+    const { floorWidth, floorHeight } = useMemo(() => floorSize(positionedTables, layout.venue), [positionedTables, layout]);
 
     // --- Search: highlight every matching table ------------------------------
     const search = useMemo(() => {
@@ -409,50 +303,6 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
 
     const unassignedSeats = unassignedGuests.reduce((acc, g) => acc + seatsOf(g), 0);
 
-    // --- Print only the plan (new window) -------------------------------------
-    const handlePrintPlan = () => {
-        const scale = Math.min(1, 1000 / floorWidth);
-        const tablesHtml = positionedTables.map(t => {
-            const radius = t.shape === 'round' ? '50%' : '10px';
-            const w = t.rotation === 90 ? t.h : t.w;
-            const h = t.rotation === 90 ? t.w : t.h;
-            return `<div class="tbl" style="left:${(floorWidth / 2 + t.x - w / 2) * scale}px;top:${(floorHeight / 2 + t.y - h / 2) * scale}px;width:${w * scale}px;height:${h * scale}px;border-radius:${radius}">
-                <b>${escapeHtml(t.name)}</b><span>${t.occupied}/${t.capacity}</span></div>`;
-        }).join('');
-        const venueHtml = Object.entries(layout.venue).map(([k, p]) => {
-            const v = VENUE_ITEMS[k];
-            return `<div class="venue" style="left:${(floorWidth / 2 + p.x - v.w / 2) * scale}px;top:${(floorHeight / 2 + p.y - v.h / 2) * scale}px;width:${v.w * scale}px;height:${v.h * scale}px">${v.label}</div>`;
-        }).join('');
-        const listHtml = positionedTables.map(t => `
-            <div class="card"><h3>${escapeHtml(t.name)} <small>${t.occupied}/${t.capacity}</small></h3><ol>
-            ${(t.guests || []).map(g => `<li>${escapeHtml(g.name)}${seatsOf(g) > 1 ? ` <small>(+${seatsOf(g) - 1}${g.companions ? `: ${escapeHtml(g.companions)}` : ''})</small>` : ''}${hasDiet(g) ? ` <i>· ${escapeHtml(g.dietary_restrictions)}</i>` : ''}</li>`).join('') || '<li><i>Sin invitados</i></li>'}
-            </ol></div>`).join('');
-
-        const win = window.open('', '_blank');
-        if (!win) {
-            setNotice('El navegador bloqueó la ventana de impresión. Permití ventanas emergentes para este sitio.');
-            return;
-        }
-        win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Plano del salón - ${escapeHtml(eventTitle)}</title><style>
-            body{font-family:system-ui,sans-serif;margin:24px;color:#18181b}
-            h1{font-size:18px;margin:0 0 12px}
-            .floor{position:relative;width:${floorWidth * scale}px;height:${floorHeight * scale}px;border:2px solid #d4d4d8;border-radius:12px;margin-bottom:24px}
-            .tbl{position:absolute;border:2px solid #52525b;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;background:#fafafa}
-            .tbl span{font-size:10px;color:#71717a}
-            .venue{position:absolute;border:2px dashed #a1a1aa;display:flex;align-items:center;justify-content:center;font-size:10px;text-transform:uppercase;color:#71717a;border-radius:8px}
-            .list{columns:3;column-gap:16px}
-            .card{break-inside:avoid;border:1px solid #e4e4e7;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:11px}
-            .card h3{margin:0 0 4px;font-size:13px}.card ol{margin:0;padding-left:18px}
-            @page{size:landscape;margin:12mm}
-        </style></head><body>
-            <h1>Plano del salón · ${escapeHtml(eventTitle)}</h1>
-            <div class="floor">${venueHtml}${tablesHtml}</div>
-            <div class="list">${listHtml}</div>
-            <script>window.onload=()=>{window.print();}<\/script>
-        </body></html>`);
-        win.document.close();
-    };
-
     // -------------------------------------------------------------------------
     // Render
     // -------------------------------------------------------------------------
@@ -563,9 +413,11 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
                             <button type="button" title="Reiniciar vista" onClick={() => { setRotationY(35); setRotationX(55); setZoom(1); setSearchQuery(''); }} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-200">
                                 <RotateCw className="w-4 h-4" />
                             </button>
-                            <button type="button" onClick={handlePrintPlan} title="Imprimir o guardar el plano en PDF" className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-xs font-bold text-zinc-200 flex items-center gap-1">
-                                <Printer className="w-3.5 h-3.5" /> Exportar
-                            </button>
+                            {onExport && (
+                                <button type="button" onClick={onExport} title="Plano, listas y reportes para imprimir o Excel" className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-xs font-bold text-zinc-200 flex items-center gap-1">
+                                    <Printer className="w-3.5 h-3.5" /> Exportar
+                                </button>
+                            )}
                         </>
                     )}
                 </div>

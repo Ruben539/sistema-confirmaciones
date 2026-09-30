@@ -301,6 +301,7 @@ function Dashboard({ user, onLogout }) {
                         <TableDistribution
                             eventId={activeEvent?.id}
                             eventTitle={activeEvent?.couple_names || activeEvent?.title}
+                            event={activeEvent}
                             showToast={showToast}
                             onOpenCreateEvent={user?.role === 'admin' ? () => { setEditingEvent(null); setIsCreateEventModalOpen(true); } : null}
                         />
