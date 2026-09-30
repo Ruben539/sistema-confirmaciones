@@ -1,15 +1,120 @@
 import React, { useState } from 'react';
 import { 
     X, Music, Gift, Shirt, Image, Sparkles, Check, Plus, Trash2, Upload, 
-    AlertCircle, Save, ExternalLink, Volume2, Play, Disc, FileAudio
+    AlertCircle, Save, ExternalLink, Volume2, Play, Disc, FileAudio,
+    Palette, Wand2, Eye, Sliders, RefreshCw
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
+const THEME_PRESETS = [
+    {
+        id: 'gold_noir',
+        name: 'Gold & Noir',
+        desc: 'Champán, negro carbón y elegancia clásica',
+        primary_color: '#D97706',
+        secondary_color: '#F59E0B',
+        mode: 'dark',
+        font_family: 'serif',
+        background_type: 'gradient',
+        background_value: 'linear-gradient(180deg, #18181b 0%, #09090b 100%)',
+        card_style: 'glass',
+        envelope_color: '#3F2817',
+        envelope_seal_color: '#D97706',
+        sampleDot: 'bg-amber-500',
+    },
+    {
+        id: 'romantic_rose',
+        name: 'Romantic Rose',
+        desc: 'Rosa empolvado, burdeos y caligrafía romántica',
+        primary_color: '#E11D48',
+        secondary_color: '#FB7185',
+        mode: 'dark',
+        font_family: 'script',
+        background_type: 'gradient',
+        background_value: 'linear-gradient(180deg, #240E17 0%, #0F050A 100%)',
+        card_style: 'glass',
+        envelope_color: '#831843',
+        envelope_seal_color: '#F43F5E',
+        sampleDot: 'bg-rose-500',
+    },
+    {
+        id: 'botanical_sage',
+        name: 'Botanical Sage',
+        desc: 'Verde oliva y eucalipto para eventos al aire libre',
+        primary_color: '#059669',
+        secondary_color: '#34D399',
+        mode: 'dark',
+        font_family: 'serif',
+        background_type: 'gradient',
+        background_value: 'linear-gradient(180deg, #0D2818 0%, #05140C 100%)',
+        card_style: 'glass',
+        envelope_color: '#064E3B',
+        envelope_seal_color: '#10B981',
+        sampleDot: 'bg-emerald-500',
+    },
+    {
+        id: 'minimal_luxury',
+        name: 'Minimal Clean',
+        desc: 'Fondo claro, vanguardista y minimalista',
+        primary_color: '#0284C7',
+        secondary_color: '#38BDF8',
+        mode: 'light',
+        font_family: 'sans',
+        background_type: 'gradient',
+        background_value: 'linear-gradient(180deg, #F8FAFC 0%, #E2E8F0 100%)',
+        card_style: 'solid',
+        envelope_color: '#334155',
+        envelope_seal_color: '#0284C7',
+        sampleDot: 'bg-sky-500',
+    },
+    {
+        id: 'midnight_celestial',
+        name: 'Midnight Stars',
+        desc: 'Azul noche profundo con destellos celestiales',
+        primary_color: '#818CF8',
+        secondary_color: '#A5B4FC',
+        mode: 'dark',
+        font_family: 'serif',
+        background_type: 'gradient',
+        background_value: 'linear-gradient(180deg, #0F172A 0%, #030712 100%)',
+        card_style: 'glass',
+        envelope_color: '#1E1B4B',
+        envelope_seal_color: '#6366F1',
+        sampleDot: 'bg-indigo-500',
+    },
+    {
+        id: 'royal_emerald',
+        name: 'Royal Emerald',
+        desc: 'Verde esmeralda imperial con filigrana dorada',
+        primary_color: '#10B981',
+        secondary_color: '#FBBF24',
+        mode: 'dark',
+        font_family: 'serif',
+        background_type: 'gradient',
+        background_value: 'linear-gradient(180deg, #064E3B 0%, #022C22 100%)',
+        card_style: 'glass',
+        envelope_color: '#022C22',
+        envelope_seal_color: '#FBBF24',
+        sampleDot: 'bg-teal-500',
+    },
+];
+
 export default function EventInvitationSettingsModal({ event, onClose, onUpdated }) {
-    const [activeTab, setActiveTab] = useState('spotify'); // 'spotify', 'gifts', 'dress_code', 'cover', 'features'
+    const [activeTab, setActiveTab] = useState('styles'); // Default to styles!
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
     const [successMessage, setSuccessMessage] = useState(null);
+
+    // Invitation Styles & AI Theme State
+    const defaultStyles = THEME_PRESETS[0];
+    const [invitationStyles, setInvitationStyles] = useState({
+        ...defaultStyles,
+        ...(event.invitation_styles || {})
+    });
+    const [isGeneratingAiPalette, setIsGeneratingAiPalette] = useState(false);
+    const [isGeneratingAiCopy, setIsGeneratingAiCopy] = useState(false);
+    const [aiStyleVibe, setAiStyleVibe] = useState('');
+    const [aiFeedback, setAiFeedback] = useState(null);
 
     // Form state
     const initialBgPath = event.background_music_path || '';
@@ -157,6 +262,59 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
         setIsMusicRemoved(true);
     };
 
+    const handleSelectPreset = (preset) => {
+        setInvitationStyles({
+            ...preset,
+            preset: preset.id
+        });
+        setAiFeedback(null);
+    };
+
+    const handleGenerateAiPalette = async () => {
+        setIsGeneratingAiPalette(true);
+        setError(null);
+        setAiFeedback(null);
+        try {
+            const { ok, json } = await apiFetch(`/api/events/${event.id}/ai-style-palette`, {
+                method: 'POST',
+                body: JSON.stringify({ vibe: aiStyleVibe })
+            });
+            if (ok && json?.palette) {
+                setInvitationStyles(prev => ({
+                    ...prev,
+                    ...json.palette,
+                    preset: 'ai_custom'
+                }));
+                setAiFeedback(json.palette.explanation || '¡Paleta exclusiva generada por Gemini!');
+            } else {
+                setError(json?.message || 'No se pudo generar la paleta con IA.');
+            }
+        } catch (err) {
+            setError('Error al conectar con Gemini AI.');
+        } finally {
+            setIsGeneratingAiPalette(false);
+        }
+    };
+
+    const handleGenerateAiCopy = async (tone = 'romantic') => {
+        setIsGeneratingAiCopy(true);
+        setError(null);
+        try {
+            const { ok, json } = await apiFetch(`/api/events/${event.id}/ai-invitation-copy`, {
+                method: 'POST',
+                body: JSON.stringify({ tone })
+            });
+            if (ok && json?.copy) {
+                if (json.copy.welcome_message) setWelcomeMessage(json.copy.welcome_message);
+                if (json.copy.dress_code_notes) setDressCodeNotes(json.copy.dress_code_notes);
+            }
+        } catch (err) {
+            setError('Error al generar textos con IA.');
+        } finally {
+            setIsGeneratingAiCopy(false);
+        }
+    };
+
     const handleSave = async () => {
         setSaving(true);
         setError(null);
@@ -222,6 +380,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     custom_gifts: customGifts,
                 },
                 features_enabled: features,
+                invitation_styles: invitationStyles,
             };
 
             // If direct audio URL was set (not uploaded file)
@@ -319,6 +478,16 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                 <div className="flex border-b border-zinc-800 bg-zinc-950/40 px-6 gap-2 overflow-x-auto select-none">
                     <button
                         type="button"
+                        onClick={() => setActiveTab('styles')}
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                            activeTab === 'styles' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                        }`}
+                    >
+                        <Palette className="w-4 h-4 text-pink-400" />
+                        Estilo & Diseño (IA)
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setActiveTab('spotify')}
                         className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
                             activeTab === 'spotify' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
@@ -382,6 +551,315 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                         <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-2">
                             <Check className="w-4 h-4 shrink-0" />
                             <span>{successMessage}</span>
+                        </div>
+                    )}
+
+                    {/* STYLES & AI THEME TAB */}
+                    {activeTab === 'styles' && (
+                        <div className="space-y-6">
+                            {/* AI GENERATOR BANNER */}
+                            <div className="p-4 rounded-3xl bg-gradient-to-r from-pink-950/40 via-purple-950/40 to-amber-950/40 border border-pink-500/30 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-2 rounded-xl bg-gradient-to-br from-pink-500 to-amber-500 text-zinc-950">
+                                            <Wand2 className="w-4 h-4 font-black" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-xs font-black uppercase text-pink-300 tracking-wider">
+                                                Diseñador Inteligente con Google Gemini
+                                            </h4>
+                                            <p className="text-[11px] text-zinc-300">
+                                                La IA analiza el evento de {event.couple_names || event.title} y crea una paleta armónica exclusiva.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/40">
+                                        Gemini AI
+                                    </span>
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={aiStyleVibe}
+                                        onChange={(e) => setAiStyleVibe(e.target.value)}
+                                        placeholder="Escribí una idea o vibra (ej: Boda nocturna de etiqueta con detalles dorados, o Quinceañera bohemia...)"
+                                        className="flex-1 text-xs rounded-xl border border-zinc-700 bg-zinc-900/90 text-white p-2.5 outline-none focus:ring-2 focus:ring-pink-500"
+                                    />
+                                    <button
+                                        type="button"
+                                        disabled={isGeneratingAiPalette}
+                                        onClick={handleGenerateAiPalette}
+                                        className="px-4 py-2.5 bg-gradient-to-r from-pink-500 to-amber-500 hover:opacity-95 text-zinc-950 font-black text-xs rounded-xl flex items-center gap-1.5 shadow-md disabled:opacity-50 transition-all shrink-0 cursor-pointer"
+                                    >
+                                        {isGeneratingAiPalette ? (
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>{isGeneratingAiPalette ? 'Creando estilo...' : 'Generar con IA'}</span>
+                                    </button>
+                                </div>
+
+                                {aiFeedback && (
+                                    <div className="p-2.5 rounded-xl bg-pink-500/10 border border-pink-500/20 text-[11px] text-pink-200 flex items-start gap-2">
+                                        <Sparkles className="w-3.5 h-3.5 text-pink-400 shrink-0 mt-0.5" />
+                                        <span>{aiFeedback}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 1-CLICK THEME PRESETS */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-black text-zinc-300 uppercase tracking-wider">
+                                        Temas de Diseño Predefinidos
+                                    </label>
+                                    <span className="text-[11px] text-zinc-400">Elegí una estética con 1 clic</span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {THEME_PRESETS.map((preset) => {
+                                        const isSelected = invitationStyles.preset === preset.id;
+                                        return (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                onClick={() => handleSelectPreset(preset)}
+                                                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between cursor-pointer ${
+                                                    isSelected
+                                                        ? 'bg-zinc-800 border-amber-400 ring-2 ring-amber-400/40 shadow-lg'
+                                                        : 'bg-zinc-900/80 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-850'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span
+                                                            className="w-4 h-4 rounded-full border border-white/20 shadow-sm"
+                                                            style={{ backgroundColor: preset.primary_color }}
+                                                        />
+                                                        <span
+                                                            className="w-4 h-4 rounded-full border border-white/20 shadow-sm -ml-2"
+                                                            style={{ backgroundColor: preset.secondary_color }}
+                                                        />
+                                                        <span className="text-xs font-bold text-white">{preset.name}</span>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <span className="p-1 rounded-full bg-amber-400 text-zinc-950">
+                                                            <Check className="w-3 h-3 stroke-[3]" />
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] text-zinc-400 leading-relaxed">{preset.desc}</p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* CUSTOMIZE COLORS & TYPOGRAPHY */}
+                            <div className="p-4 rounded-2xl bg-zinc-950/60 border border-zinc-800 space-y-4">
+                                <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                                    Ajustes Personalizados de Colores y Tipografía
+                                </h4>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                                    {/* Primary Color */}
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Color Principal (Acentos)</label>
+                                        <div className="flex items-center gap-2 bg-zinc-900 p-2 rounded-xl border border-zinc-700">
+                                            <input
+                                                type="color"
+                                                value={invitationStyles.primary_color || '#D97706'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, primary_color: e.target.value, preset: 'custom' })}
+                                                className="w-8 h-8 rounded-lg border-0 bg-transparent cursor-pointer"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={invitationStyles.primary_color || '#D97706'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, primary_color: e.target.value, preset: 'custom' })}
+                                                className="w-full text-xs font-mono uppercase bg-transparent text-white outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Secondary Color */}
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Color Secundario</label>
+                                        <div className="flex items-center gap-2 bg-zinc-900 p-2 rounded-xl border border-zinc-700">
+                                            <input
+                                                type="color"
+                                                value={invitationStyles.secondary_color || '#F59E0B'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, secondary_color: e.target.value, preset: 'custom' })}
+                                                className="w-8 h-8 rounded-lg border-0 bg-transparent cursor-pointer"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={invitationStyles.secondary_color || '#F59E0B'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, secondary_color: e.target.value, preset: 'custom' })}
+                                                className="w-full text-xs font-mono uppercase bg-transparent text-white outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Envelope Color */}
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Color Sobre Digital</label>
+                                        <div className="flex items-center gap-2 bg-zinc-900 p-2 rounded-xl border border-zinc-700">
+                                            <input
+                                                type="color"
+                                                value={invitationStyles.envelope_color || '#3F2817'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, envelope_color: e.target.value, preset: 'custom' })}
+                                                className="w-8 h-8 rounded-lg border-0 bg-transparent cursor-pointer"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={invitationStyles.envelope_color || '#3F2817'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, envelope_color: e.target.value, preset: 'custom' })}
+                                                className="w-full text-xs font-mono uppercase bg-transparent text-white outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Wax Seal Color */}
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Sello de Lacre</label>
+                                        <div className="flex items-center gap-2 bg-zinc-900 p-2 rounded-xl border border-zinc-700">
+                                            <input
+                                                type="color"
+                                                value={invitationStyles.envelope_seal_color || '#D97706'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, envelope_seal_color: e.target.value, preset: 'custom' })}
+                                                className="w-8 h-8 rounded-lg border-0 bg-transparent cursor-pointer"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={invitationStyles.envelope_seal_color || '#D97706'}
+                                                onChange={(e) => setInvitationStyles({ ...invitationStyles, envelope_seal_color: e.target.value, preset: 'custom' })}
+                                                className="w-full text-xs font-mono uppercase bg-transparent text-white outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Typography & Card Style */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Tipografía de Títulos</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {[
+                                                { id: 'serif', label: 'Clásica Serif', fontClass: 'font-serif-luxury', sample: 'Elegancia' },
+                                                { id: 'script', label: 'Romántica Cursiva', fontClass: 'font-script-romantic', sample: 'Amor' },
+                                                { id: 'sans', label: 'Moderna Sans', fontClass: 'font-sans', sample: 'Moderna' },
+                                            ].map((font) => (
+                                                <button
+                                                    key={font.id}
+                                                    type="button"
+                                                    onClick={() => setInvitationStyles({ ...invitationStyles, font_family: font.id, preset: 'custom' })}
+                                                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                                                        invitationStyles.font_family === font.id
+                                                            ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-bold'
+                                                            : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    <div className={`text-base mb-0.5 ${font.fontClass}`}>{font.sample}</div>
+                                                    <div className="text-[10px] text-zinc-400">{font.label}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Estilo de Tarjetas</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {[
+                                                { id: 'glass', label: 'Cristal Translúcido', desc: 'Glassmorphism blur' },
+                                                { id: 'solid', label: 'Opaco Sólido', desc: 'Fondo limpio uniforme' },
+                                            ].map((card) => (
+                                                <button
+                                                    key={card.id}
+                                                    type="button"
+                                                    onClick={() => setInvitationStyles({ ...invitationStyles, card_style: card.id, preset: 'custom' })}
+                                                    className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                                                        invitationStyles.card_style === card.id
+                                                            ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-bold'
+                                                            : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    <div className="text-xs font-bold text-white">{card.label}</div>
+                                                    <div className="text-[10px] text-zinc-400">{card.desc}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* LIVE MINI PREVIEW */}
+                            <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Eye className="w-3.5 h-3.5 text-amber-400" />
+                                        Vista Previa en Vivo de la Invitación
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
+                                        {invitationStyles.name || 'Estilo Personalizado'}
+                                    </span>
+                                </div>
+
+                                <div
+                                    className="rounded-2xl p-6 border text-center relative overflow-hidden transition-all duration-300"
+                                    style={{
+                                        background: invitationStyles.background_value || 'linear-gradient(180deg, #18181b 0%, #09090b 100%)',
+                                        borderColor: `${invitationStyles.primary_color || '#D97706'}40`,
+                                    }}
+                                >
+                                    {/* Simulated Envelope Seal */}
+                                    <div className="flex justify-center mb-3">
+                                        <div
+                                            className="w-12 h-12 rounded-full flex items-center justify-center text-xs font-black shadow-lg"
+                                            style={{
+                                                backgroundColor: invitationStyles.envelope_seal_color || '#D97706',
+                                                color: '#000000',
+                                                boxShadow: `0 0 15px ${invitationStyles.envelope_seal_color || '#D97706'}60`,
+                                            }}
+                                        >
+                                            💌
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        className={`text-xl sm:text-2xl font-black mb-1 drop-shadow-md ${
+                                            invitationStyles.font_family === 'serif'
+                                                ? 'font-serif-luxury'
+                                                : invitationStyles.font_family === 'script'
+                                                ? 'font-script-romantic text-3xl'
+                                                : 'font-sans'
+                                        }`}
+                                        style={{ color: invitationStyles.mode === 'light' ? '#0f172a' : '#ffffff' }}
+                                    >
+                                        {event.couple_names || event.title}
+                                    </div>
+
+                                    <p
+                                        className="text-xs mb-4 max-w-sm mx-auto opacity-80"
+                                        style={{ color: invitationStyles.mode === 'light' ? '#334155' : '#cbd5e1' }}
+                                    >
+                                        ¡Nos casamos y queremos celebrarlo contigo!
+                                    </p>
+
+                                    {/* Sample interactive button */}
+                                    <button
+                                        type="button"
+                                        className="px-5 py-2 rounded-xl text-xs font-black shadow-lg transition-transform hover:scale-105"
+                                        style={{
+                                            backgroundColor: invitationStyles.primary_color || '#D97706',
+                                            color: '#000000',
+                                        }}
+                                    >
+                                        Confirmar Asistencia
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -736,8 +1214,32 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                             </div>
 
                             <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-xs font-black text-zinc-300 uppercase tracking-wider">
+                                        Mensaje de Bienvenida de los Anfitriones
+                                    </label>
+                                    <button
+                                        type="button"
+                                        disabled={isGeneratingAiCopy}
+                                        onClick={() => handleGenerateAiCopy('romantic')}
+                                        className="text-[11px] font-bold text-pink-400 hover:text-pink-300 flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        <span>{isGeneratingAiCopy ? 'Redactando con IA...' : 'Redactar con Gemini IA'}</span>
+                                    </button>
+                                </div>
+                                <textarea
+                                    rows={3}
+                                    value={welcomeMessage}
+                                    onChange={(e) => setWelcomeMessage(e.target.value)}
+                                    placeholder="Mensaje de bienvenida que leerán los invitados al ingresar a la invitación web..."
+                                    className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-800 text-white p-3 font-medium outline-none focus:ring-2 focus:ring-pink-500 mb-3"
+                                />
+                            </div>
+
+                            <div>
                                 <label className="block text-xs font-black text-zinc-300 uppercase tracking-wider mb-1">
-                                    Notas y Consejos de Vestimenta
+                                    Notas y Consejos de Vestimenta (Dress Code)
                                 </label>
                                 <textarea
                                     rows={3}

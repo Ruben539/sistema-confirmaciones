@@ -234,6 +234,27 @@ class RsvpController extends Controller
         ]);
     }
 
+    public function suggestDedication(Request $request)
+    {
+        $guestName = $request->input('guest_name', 'Un invitado');
+        $coupleNames = $request->input('couple_names', 'los anfitriones');
+        $eventType = $request->input('event_type', 'evento');
+        $tone = $request->input('tone', 'cariñoso');
+
+        $gemini = new \App\Services\GoogleGeminiService();
+        $suggestion = $gemini->suggestDedication($guestName, $coupleNames, $eventType, $tone);
+
+        if (!$suggestion) {
+            return response()->json([
+                'message' => 'No se pudo generar la dedicatoria con IA en este momento.'
+            ], 500);
+        }
+
+        return response()->json([
+            'suggestion' => $suggestion
+        ]);
+    }
+
     public function handleIncomingWhatsApp(Request $request)
     {
         $rawDigits = preg_replace('/[^\d]/', '', $request->input('phone', ''));

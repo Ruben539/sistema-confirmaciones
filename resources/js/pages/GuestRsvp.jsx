@@ -35,6 +35,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [dedicationType, setDedicationType] = useState('photo');
     const [dedicationUploading, setDedicationUploading] = useState(false);
     const [dedicationSuccess, setDedicationSuccess] = useState(false);
+    const [isGeneratingDedication, setIsGeneratingDedication] = useState(false);
 
     // Countdown state
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: false, isToday: false });
@@ -270,6 +271,29 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         }
     };
 
+    // AI Dedication Suggestion Handler
+    const handleSuggestDedication = async () => {
+        setIsGeneratingDedication(true);
+        try {
+            const { ok, json } = await apiFetch('/api/rsvp/suggest-dedication', {
+                method: 'POST',
+                body: JSON.stringify({
+                    guest_name: dedicationAuthor || guest?.name || 'Un amigo',
+                    couple_names: event?.couple_names || event?.title,
+                    event_type: event?.event_type || 'boda',
+                    tone: 'cariñoso'
+                })
+            });
+            if (ok && json?.suggestion) {
+                setDedicationMsg(json.suggestion);
+            }
+        } catch (err) {
+            console.error('AI dedication error:', err);
+        } finally {
+            setIsGeneratingDedication(false);
+        }
+    };
+
     // Dedication submit
     const handleDedicationSubmit = async (e) => {
         e.preventDefault();
@@ -418,8 +442,23 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
     const confirmedPasses = confirmedAdults + confirmedYouth + confirmedChildren;
 
+    // Invitation Visual Theme & Styles
+    const invitationStyles = event?.invitation_styles || {};
+    const primaryColor = invitationStyles.primary_color || '#F43F5E';
+    const secondaryColor = invitationStyles.secondary_color || '#FB7185';
+    const fontFam = invitationStyles.font_family || 'sans';
+    const envelopeColor = invitationStyles.envelope_color || '#3F2817';
+    const envelopeSealColor = invitationStyles.envelope_seal_color || '#D97706';
+    const fontHeadingClass = fontFam === 'serif' ? 'font-serif-luxury' : fontFam === 'script' ? 'font-script-romantic' : 'font-sans';
+    const customBg = invitationStyles.background_value;
+
     return (
-        <div className="min-h-screen bg-gradient-to-b from-rose-50/60 via-stone-50 to-amber-50/40 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950 text-zinc-900 dark:text-white font-sans transition-colors pb-16">
+        <div 
+            className="min-h-screen text-zinc-900 dark:text-white font-sans transition-colors pb-16 relative"
+            style={{
+                background: customBg || 'linear-gradient(180deg, rgba(255, 241, 242, 0.6) 0%, rgb(250, 250, 249) 50%, rgba(254, 243, 199, 0.4) 100%)',
+            }}
+        >
             
             {/* HIDDEN BACKGROUND AUDIO ELEMENT */}
             {hasBackgroundMusic && (
@@ -457,7 +496,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
                         {/* Event Title / Names */}
                         <div>
-                            <h1 className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 tracking-tight leading-tight drop-shadow-lg">
+                            <h1 className={`text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200 tracking-tight leading-tight drop-shadow-lg ${fontHeadingClass}`}>
                                 {event.couple_names || event.title}
                             </h1>
                             {event.event_date && (
@@ -475,26 +514,44 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                         {/* Envelope Graphic Container with Wax Seal */}
                         <div 
                             onClick={handleOpenEnvelope}
-                            className="relative mx-auto w-72 sm:w-80 h-48 sm:h-52 rounded-2xl bg-gradient-to-b from-stone-900 via-zinc-900 to-zinc-950 border-2 border-amber-500/40 shadow-2xl shadow-amber-500/10 flex flex-col items-center justify-center cursor-pointer group hover:border-amber-400 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            className="relative mx-auto w-72 sm:w-80 h-48 sm:h-52 rounded-2xl border-2 shadow-2xl flex flex-col items-center justify-center cursor-pointer group transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            style={{
+                                backgroundColor: envelopeColor,
+                                borderColor: `${envelopeSealColor}70`,
+                                boxShadow: `0 20px 50px ${envelopeColor}90`
+                            }}
                         >
                             {/* Envelope Flap Highlight */}
-                            <div className="absolute top-0 inset-x-0 h-20 bg-gradient-to-b from-amber-500/10 to-transparent rounded-t-2xl border-b border-amber-500/20" />
+                            <div 
+                                className="absolute top-0 inset-x-0 h-20 rounded-t-2xl border-b"
+                                style={{
+                                    background: `linear-gradient(to bottom, ${envelopeSealColor}20, transparent)`,
+                                    borderColor: `${envelopeSealColor}35`
+                                }}
+                            />
                             
                             {/* Wax Seal Centerpiece */}
                             <div className="relative z-10 flex flex-col items-center gap-2">
-                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 via-amber-600 to-amber-900 flex items-center justify-center shadow-2xl border-2 border-amber-300 text-zinc-950 animate-seal-pulse group-hover:scale-110 transition-transform">
-                                    <Heart className="w-7 h-7 text-amber-100 fill-amber-100" />
+                                <div 
+                                    className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl border-2 text-white animate-seal-pulse group-hover:scale-110 transition-transform"
+                                    style={{
+                                        backgroundColor: envelopeSealColor,
+                                        borderColor: '#ffffff66',
+                                        boxShadow: `0 10px 25px ${envelopeSealColor}80`
+                                    }}
+                                >
+                                    <Heart className="w-7 h-7 text-white fill-white" />
                                 </div>
-                                <span className="text-[11px] font-black uppercase tracking-wider text-amber-300/90 group-hover:text-amber-200 transition-colors">
+                                <span className="text-[11px] font-black uppercase tracking-wider text-amber-200/90 group-hover:text-amber-100 transition-colors drop-shadow">
                                     Tocar para abrir
                                 </span>
                             </div>
 
-                            {/* Corner Golden Flourishes */}
-                            <div className="absolute top-2 left-2 text-[10px] text-amber-500/40 font-serif">✦</div>
-                            <div className="absolute top-2 right-2 text-[10px] text-amber-500/40 font-serif">✦</div>
-                            <div className="absolute bottom-2 left-2 text-[10px] text-amber-500/40 font-serif">✦</div>
-                            <div className="absolute bottom-2 right-2 text-[10px] text-amber-500/40 font-serif">✦</div>
+                            {/* Corner Flourishes */}
+                            <div className="absolute top-2 left-2 text-[10px] font-serif" style={{ color: `${envelopeSealColor}90` }}>✦</div>
+                            <div className="absolute top-2 right-2 text-[10px] font-serif" style={{ color: `${envelopeSealColor}90` }}>✦</div>
+                            <div className="absolute bottom-2 left-2 text-[10px] font-serif" style={{ color: `${envelopeSealColor}90` }}>✦</div>
+                            <div className="absolute bottom-2 right-2 text-[10px] font-serif" style={{ color: `${envelopeSealColor}90` }}>✦</div>
                         </div>
 
                         {/* CTA Button */}
@@ -502,11 +559,15 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                             <button
                                 type="button"
                                 onClick={handleOpenEnvelope}
-                                className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-300 hover:to-amber-500 text-zinc-950 font-black text-xs uppercase tracking-widest shadow-xl shadow-amber-500/30 transition-all hover:scale-105 active:scale-95 inline-flex items-center justify-center gap-2.5"
+                                className="w-full sm:w-auto px-8 py-3.5 rounded-full text-white font-black text-xs uppercase tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 inline-flex items-center justify-center gap-2.5"
+                                style={{
+                                    background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+                                    boxShadow: `0 10px 25px ${primaryColor}55`
+                                }}
                             >
-                                <Mail className="w-4 h-4 text-zinc-950" />
+                                <Mail className="w-4 h-4 text-white" />
                                 <span>Abrir Invitación</span>
-                                <Music className="w-4 h-4 text-zinc-950 animate-bounce" />
+                                <Music className="w-4 h-4 text-white animate-bounce" />
                             </button>
                             <p className="text-[11px] text-zinc-400 flex items-center justify-center gap-1.5">
                                 <span>🎵</span>
@@ -643,7 +704,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                         <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
                     </div>
 
-                    <h1 className="text-4xl sm:text-6xl font-black tracking-tight drop-shadow-lg font-serif">
+                    <h1 className={`text-4xl sm:text-6xl font-black tracking-tight drop-shadow-lg ${fontHeadingClass}`}>
                         {event?.couple_names || event?.title}
                     </h1>
 
@@ -1046,7 +1107,11 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-500 via-amber-500 to-rose-500 hover:opacity-95 text-white font-black text-sm uppercase tracking-wider transition-all shadow-xl shadow-rose-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="w-full py-4 rounded-2xl hover:opacity-95 text-white font-black text-sm uppercase tracking-wider transition-all shadow-xl active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    style={{
+                                        background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+                                        boxShadow: `0 10px 25px ${primaryColor}40`
+                                    }}
                                 >
                                     <Send className="w-4 h-4" />
                                     <span>{submitting ? 'Enviando confirmación...' : 'Confirmar Asistencia'}</span>
@@ -1352,22 +1417,38 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
                                 {/* Message */}
                                 <div>
-                                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                                        Dedicatoria / Deseo
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                            Dedicatoria / Deseo
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={handleSuggestDedication}
+                                            disabled={isGeneratingDedication}
+                                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-50 transition-colors"
+                                            title="Generar dedicatoria emotiva con Inteligencia Artificial"
+                                        >
+                                            <Sparkles className={`w-3 h-3 ${isGeneratingDedication ? 'animate-spin' : ''}`} />
+                                            <span>{isGeneratingDedication ? 'Creando...' : '✨ Inspirarme con IA'}</span>
+                                        </button>
+                                    </div>
                                     <textarea
-                                        rows={2}
+                                        rows={3}
                                         value={dedicationMsg}
                                         onChange={(e) => setDedicationMsg(e.target.value)}
                                         placeholder="¡Felicidades en esta noche tan especial!"
-                                        className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-2.5 font-medium outline-none"
+                                        className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-2.5 font-medium outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                                     />
                                 </div>
 
                                 <button
                                     type="submit"
                                     disabled={dedicationUploading || (!dedicationFile && !dedicationMsg.trim())}
-                                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 text-white font-black text-xs uppercase tracking-wider shadow-lg disabled:opacity-50"
+                                    className="w-full py-3.5 rounded-2xl text-white font-black text-xs uppercase tracking-wider shadow-lg disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                                    style={{
+                                        background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
+                                        boxShadow: `0 10px 20px ${primaryColor}40`
+                                    }}
                                 >
                                     {dedicationUploading ? 'Subiendo dedicatoria...' : 'Enviar Dedicatoria'}
                                 </button>

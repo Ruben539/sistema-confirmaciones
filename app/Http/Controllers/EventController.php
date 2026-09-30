@@ -123,6 +123,7 @@ class EventController extends Controller
             'dress_code_notes' => 'nullable|string',
             'welcome_message' => 'nullable|string',
             'features_enabled' => 'nullable',
+            'invitation_styles' => 'nullable',
         ]);
 
         // Only admin can reassign event ownership, change plan capacity, or toggle enablement/payment
@@ -223,6 +224,66 @@ class EventController extends Controller
             'background_music_path' => $path,
             'background_music_url' => $musicUrl,
             'event' => $event->fresh()
+        ]);
+    }
+
+    public function saveInvitationStyles(Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $validated = $request->validate([
+            'styles' => 'required|array',
+        ]);
+
+        $event->update([
+            'invitation_styles' => $validated['styles']
+        ]);
+
+        return response()->json([
+            'message' => 'Estilos de la invitación guardados con éxito',
+            'invitation_styles' => $event->invitation_styles,
+            'event' => $event->fresh()
+        ]);
+    }
+
+    public function generateAiStylePalette(Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $gemini = new \App\Services\GoogleGeminiService();
+        $vibe = $request->input('vibe');
+        $eventType = $event->event_type ?: 'boda';
+        $coupleNames = $event->couple_names ?: $event->title;
+
+        $palette = $gemini->generateStylePalette($eventType, $coupleNames, $vibe);
+        if (!$palette) {
+            return response()->json([
+                'message' => 'No se pudo generar la paleta con IA en este momento. Intentá nuevamente.'
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => '¡Paleta generada exitosamente con Gemini!',
+            'palette' => $palette
+        ]);
+    }
+
+    public function generateAiInvitationCopy(Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $gemini = new \App\Services\GoogleGeminiService();
+        $tone = $request->input('tone', 'romantic');
+        $eventType = $event->event_type ?: 'boda';
+        $coupleNames = $event->couple_names ?: $event->title;
+
+        $copy = $gemini->generateInvitationCopy($eventType, $coupleNames, $tone);
+        if (!$copy) {
+            return response()->json([
+                'message' => 'No se pudieron generar los textos con IA en este momento.'
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => '¡Textos generados con éxito!',
+            'copy' => $copy
         ]);
     }
 

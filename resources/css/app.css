@@ -10,6 +10,16 @@
 
 @theme {
     --font-sans: 'Plus Jakarta Sans', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-script: 'Great Vibes', cursive;
+}
+
+.font-serif-luxury {
+    font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-script-romantic {
+    font-family: 'Great Vibes', cursive;
 }
 
 @keyframes soundwave {

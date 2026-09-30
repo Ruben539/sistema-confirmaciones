@@ -76,6 +76,7 @@ class Event extends Model
         'background_music_path',
         'google_drive_folder_id',
         'features_enabled', // JSON: { spotify, gifts, music_suggestions, countdown, guest_dedications, dress_code }
+        'invitation_styles', // JSON: { preset, mode, primary_color, secondary_color, font_family, background_type, background_value, ... }
     ];
 
     protected $casts = [
@@ -88,6 +89,7 @@ class Event extends Model
         'venue_layout' => 'array',
         'gift_settings' => 'array',
         'features_enabled' => 'array',
+        'invitation_styles' => 'array',
     ];
 
     protected $appends = ['is_active', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
