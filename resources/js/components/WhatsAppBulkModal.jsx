@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { MessageSquare, ExternalLink, Copy, Check, X, Filter, Send, Sparkles, CheckCircle2, Play, Square, ShieldAlert, Clock } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { apiFetch } from '../api';
@@ -10,10 +10,9 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     const [errorMessage, setErrorMessage] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, variant: 'info', confirmText: 'Confirmar' });
 
-    // Bulk Anti-Spam Queue state
+    // Bulk sends run in the server queue (throttled per number), not in the browser
     const [isBulkSending, setIsBulkSending] = useState(false);
-    const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, currentGuest: null, delayCountdown: 0 });
-    const cancelBulkRef = useRef(false);
+    const [bulkQueued, setBulkQueued] = useState(null); // { message } once scheduled
 
     if (!isOpen) return null;
 
@@ -91,38 +90,27 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
 
     const processBulkQueue = async (pendingList) => {
         setIsBulkSending(true);
-        cancelBulkRef.current = false;
         setErrorMessage(null);
 
-        // Strict filter to only process guests that are not sent
-        const listToSend = pendingList.filter(g => g.whatsapp_status === 'not_sent');
-
-        for (let i = 0; i < listToSend.length; i++) {
-            if (cancelBulkRef.current) break;
-
-            const guest = listToSend[i];
-            if (guest.whatsapp_status === 'sent') continue;
-
-            setBulkProgress({
-                current: i + 1,
-                total: listToSend.length,
-                currentGuest: guest.name,
-                delayCountdown: 0
+        try {
+            const { ok, json } = await apiFetch(`/api/events/${event.id}/send-bulk-queue`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    mode: 'invitation',
+                    guest_ids: pendingList.filter(g => g.whatsapp_status === 'not_sent').map(g => g.id)
+                })
             });
-
-            await handleAutoSend(guest);
-
-            if (i < listToSend.length - 1 && !cancelBulkRef.current) {
-                for (let secondsLeft = 12; secondsLeft > 0; secondsLeft--) {
-                    if (cancelBulkRef.current) break;
-                    setBulkProgress(prev => ({ ...prev, delayCountdown: secondsLeft }));
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
+            if (ok) {
+                setBulkQueued({ message: json?.message });
+            } else {
+                setErrorMessage(json?.message || 'No se pudo programar el envío masivo.');
             }
+        } catch (err) {
+            console.error(err);
+            setErrorMessage('Error de conexión al programar el envío masivo.');
+        } finally {
+            setIsBulkSending(false);
         }
-
-        setIsBulkSending(false);
-        setBulkProgress({ current: 0, total: 0, currentGuest: null, delayCountdown: 0 });
     };
 
     // Bulk auto-sending queue with anti-spam delay strictly for pending guests
@@ -136,7 +124,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         setConfirmModal({
             isOpen: true,
             title: 'Enviar Mensajes por WhatsApp',
-            message: `¿Deseas enviar las invitaciones a los ${pendingGuests.length} invitados pendientes? El sistema enviará automáticamente con intervalos anti-spam y no reenviará a quienes ya lo recibieron.`,
+            message: `¿Deseas enviar las invitaciones a los ${pendingGuests.length} invitados pendientes? Se envían en segundo plano, de a uno con pausas para proteger tu número (puede llevar un rato y, si superás el límite diario, seguir al día siguiente). No se reenvía a quienes ya lo recibieron.`,
             confirmText: `Sí, Enviar (${pendingGuests.length})`,
             variant: 'info',
             onConfirm: () => {
@@ -146,9 +134,18 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         });
     };
 
-    const stopBulkQueue = () => {
-        cancelBulkRef.current = true;
-        setIsBulkSending(false);
+    const stopBulkQueue = async () => {
+        try {
+            const { ok, json } = await apiFetch(`/api/events/${event.id}/cancel-bulk-queue`, { method: 'POST' });
+            if (ok) {
+                setBulkQueued(null);
+            } else {
+                setErrorMessage(json?.message || 'No se pudo detener el envío.');
+            }
+        } catch (err) {
+            console.error(err);
+            setErrorMessage('Error de conexión al detener el envío.');
+        }
     };
 
     return (
@@ -176,22 +173,15 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                 </div>
 
                 {/* Bulk Auto-Sending Queue Status Card */}
-                {isBulkSending ? (
-                    <div className="p-4 bg-amber-500/10 dark:bg-amber-950/40 border-b border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+                {bulkQueued ? (
+                    <div className="p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border-b border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="space-y-1 text-xs">
-                            <div className="flex items-center gap-2 font-black text-amber-700 dark:text-amber-300">
-                                <Sparkles className="w-4 h-4 animate-spin text-amber-500" />
-                                <span>Envío Masivo en Proceso ({bulkProgress.current} de {bulkProgress.total})</span>
+                            <div className="flex items-center gap-2 font-black text-emerald-700 dark:text-emerald-300">
+                                <Clock className="w-4 h-4 text-emerald-500" />
+                                <span>Envío masivo programado</span>
                             </div>
-                            <p className="text-zinc-600 dark:text-zinc-400">
-                                {bulkProgress.delayCountdown > 0 ? (
-                                    <span className="font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                        <Clock className="w-3.5 h-3.5" /> Pausa Anti-Spam: Enviando próximo en {bulkProgress.delayCountdown}s...
-                                    </span>
-                                ) : (
-                                    <span>Enviando mensaje a: <strong>{bulkProgress.currentGuest}</strong></span>
-                                )}
-                            </p>
+                            <p className="text-zinc-600 dark:text-zinc-400">{bulkQueued.message}</p>
+                            <p className="text-zinc-500 dark:text-zinc-500 text-[11px]">El estado de cada invitado se actualiza a medida que salen los mensajes (recargá la lista para verlo).</p>
                         </div>
 
                         <button
@@ -206,17 +196,18 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                     <div className="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                             <ShieldAlert className="w-4 h-4 text-emerald-500" />
-                            <span>Protección Anti-Spam Activa (intervalo inteligente de 10-15s)</span>
+                            <span>Protección anti-bloqueo: pausas aleatorias, límite diario por número y horario de envío</span>
                         </div>
 
                         {pendingGuestsCount > 0 ? (
                             <button
                                 onClick={startBulkQueue}
+                                disabled={isBulkSending}
                                 className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white text-xs font-black shadow-lg shadow-green-500/20 transition-all active:scale-95"
                                 title={`Enviar automáticamente a los ${pendingGuestsCount} invitados pendientes`}
                             >
                                 <Play className="w-4 h-4 fill-white" />
-                                <span>Enviar Mensajes ({pendingGuestsCount})</span>
+                                <span>{isBulkSending ? 'Programando...' : `Enviar Mensajes (${pendingGuestsCount})`}</span>
                             </button>
                         ) : (
                             <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800 text-xs font-bold">

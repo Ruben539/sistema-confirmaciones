@@ -19,6 +19,7 @@ class Guest extends Model
         'adults',
         'youth',
         'children',
+        'companions',
         'confirmed_adults',
         'confirmed_youth',
         'confirmed_children',

@@ -2,13 +2,14 @@ import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Users, ShieldCheck, Bot } from 'lucide-react';
 import { apiFetch } from '../api';
+import { getPlanLabel } from '../plans';
 
 export default function ExcelUploadModal({ isOpen, onClose, event, eventId, currentGuestsCount = 0, onImportSuccess, onOpenUpgradeBot }) {
     const [file, setFile] = useState(null);
     const [parsedData, setParsedData] = useState([]);
     const [rawRows, setRawRows] = useState([]);
     const [headers, setHeaders] = useState([]);
-    const [mapping, setMapping] = useState({ name: '', phone: '', passes: '', notes: '' });
+    const [mapping, setMapping] = useState({ name: '', phone: '', table_number: '', category: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const fileInputRef = useRef(null);
@@ -16,7 +17,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const activeEventId = event?.id || eventId;
     const maxGuests = event?.max_guests || 100;
     const planType = event?.plan_type || 'initial';
-    const planName = planType === 'medium' ? 'Plan Medio (150)' : planType === 'premium' ? 'Plan Premium (+150)' : 'Plan Inicial (100)';
+    const planName = getPlanLabel(planType, maxGuests);
     const availableSlots = Math.max(0, maxGuests - currentGuestsCount);
     const capacityPercent = Math.min(100, Math.round((currentGuestsCount / maxGuests) * 100));
 
@@ -63,10 +64,21 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
                 setHeaders(fileHeaders);
                 setRawRows(fileRows);                // Auto-detect column mapping
-                const autoMapping = { name: '', phone: '', table_number: '', category: '', notes: '' };
+                const autoMapping = { name: '', phone: '', table_number: '', category: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
 
                 fileHeaders.forEach((h, index) => {
                     const lower = h.toLowerCase();
+                    // Companion columns first: "Acompañantes Niños" would otherwise match the category/name rules
+                    if (lower.includes('acompa')) {
+                        if (!autoMapping.companions && (lower.includes('nombre') || lower.includes('quien') || lower.includes('quién'))) {
+                            autoMapping.companions = h;
+                        } else if (!autoMapping.companion_children && (lower.includes('niñ') || lower.includes('nin') || lower.includes('bebe') || lower.includes('bebé') || lower.includes('hij'))) {
+                            autoMapping.companion_children = h;
+                        } else if (!autoMapping.companion_adults) {
+                            autoMapping.companion_adults = h;
+                        }
+                        return;
+                    }
                     if (!autoMapping.name && (lower.includes('nombre') || lower.includes('name') || lower.includes('invitado'))) {
                         autoMapping.name = h;
                     } else if (!autoMapping.phone && (lower.includes('telefono') || lower.includes('teléfono') || lower.includes('celular') || lower.includes('phone') || lower.includes('whatsapp') || lower.includes('movil') || lower.includes('móvil'))) {
@@ -75,6 +87,8 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         autoMapping.table_number = h;
                     } else if (!autoMapping.category && (lower.includes('tipo') || lower.includes('categoria') || lower.includes('categoría') || lower.includes('edad') || lower.includes('rango') || lower.includes('clasificacion') || lower.includes('clasificación') || lower.includes('joven') || lower.includes('adulto') || lower.includes('niño'))) {
                         autoMapping.category = h;
+                    } else if (!autoMapping.dietary && (lower.includes('dieta') || lower.includes('alimentari') || lower.includes('restric') || lower.includes('alergi'))) {
+                        autoMapping.dietary = h;
                     } else if (!autoMapping.notes && (lower.includes('nota') || lower.includes('observacion') || lower.includes('grupo') || lower.includes('familia') || lower.includes('notes'))) {
                         autoMapping.notes = h;
                     }
@@ -100,6 +114,10 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         const phoneIdx = currentHeaders.indexOf(currentMap.phone);
         const tableIdx = currentHeaders.indexOf(currentMap.table_number);
         const categoryIdx = currentHeaders.indexOf(currentMap.category);
+        const compAdultsIdx = currentHeaders.indexOf(currentMap.companion_adults);
+        const compChildrenIdx = currentHeaders.indexOf(currentMap.companion_children);
+        const companionsIdx = currentHeaders.indexOf(currentMap.companions);
+        const dietaryIdx = currentHeaders.indexOf(currentMap.dietary);
         const notesIdx = currentHeaders.indexOf(currentMap.notes);
 
         const list = currentRows.map((row, index) => {
@@ -117,6 +135,15 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 tableVal = `Mesa ${match[1]}`;
             }
             const categoryVal = categoryIdx !== -1 ? String(row[categoryIdx] || '').trim() : '';
+            const toCount = (idx) => {
+                if (idx === -1) return null;
+                const n = parseInt(String(row[idx] ?? '').replace(/[^\d]/g, ''), 10);
+                return Number.isNaN(n) ? 0 : Math.min(20, n);
+            };
+            const compAdults = toCount(compAdultsIdx);
+            const compChildren = toCount(compChildrenIdx);
+            const companionsVal = companionsIdx !== -1 ? String(row[companionsIdx] || '').trim() : '';
+            const dietaryVal = dietaryIdx !== -1 ? String(row[dietaryIdx] || '').trim() : '';
             const notesVal = notesIdx !== -1 ? String(row[notesIdx] || '').trim() : '';
 
             let safeYouth = 0;
@@ -147,7 +174,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 youth: safeYouth,
                 children: safeChildren,
                 categoryLabel,
-                passes: 1,
+                // Only send a category when the file has one, so re-imports don't reset existing guests to Adulto
+                category: categoryVal ? categoryLabel : null,
+                companion_adults: compAdults,
+                companion_children: compChildren,
+                companions: companionsVal,
+                passes: 1 + (compAdults || 0) + (compChildren || 0),
+                dietary_restrictions: dietaryVal,
                 notes: notesVal,
                 isValid
             };
@@ -169,9 +202,9 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
     const handleDownloadTemplate = () => {
         const templateData = [
-            { "Nombre Completo": "María García", "Teléfono (WhatsApp)": "595981123456", "Número de Mesa": "Mesa 1", "Tipo de Invitado": "Adulto", "Familia / Notas": "Familia de la Novia" },
-            { "Nombre Completo": "Carlos Rodríguez", "Teléfono (WhatsApp)": "595981654321", "Número de Mesa": "Mesa 5", "Tipo de Invitado": "Joven", "Familia / Notas": "Amigo del Novio" },
-            { "Nombre Completo": "Lucas Martínez", "Teléfono (WhatsApp)": "595981999888", "Número de Mesa": "Mesa Principal", "Tipo de Invitado": "Niño", "Familia / Notas": "Hijo de Padrinos" }
+            { "Nombre Completo": "María García", "Teléfono (WhatsApp)": "595981123456", "Número de Mesa": "Mesa 1", "Tipo de Invitado": "Adulto", "Acompañantes Adultos": 0, "Acompañantes Niños": 1, "Nombres Acompañantes": "Sofía (hija, 4 años)", "Restricción Alimentaria": "Celíaco", "Familia / Notas": "Familia de la Novia" },
+            { "Nombre Completo": "Carlos Rodríguez", "Teléfono (WhatsApp)": "595981654321", "Número de Mesa": "Mesa 5", "Tipo de Invitado": "Joven", "Acompañantes Adultos": 0, "Acompañantes Niños": 0, "Nombres Acompañantes": "", "Restricción Alimentaria": "", "Familia / Notas": "Amigo del Novio" },
+            { "Nombre Completo": "Lucas Martínez", "Teléfono (WhatsApp)": "595981999888", "Número de Mesa": "Mesa Principal", "Tipo de Invitado": "Niño", "Acompañantes Adultos": 0, "Acompañantes Niños": 0, "Nombres Acompañantes": "", "Restricción Alimentaria": "Intolerante a la lactosa", "Familia / Notas": "Hijo de Padrinos" }
         ];
 
         const worksheet = XLSX.utils.json_to_sheet(templateData);
@@ -198,10 +231,11 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         name: g.name,
                         phone: g.phone,
                         table_number: g.table_number,
-                        adults: g.adults,
-                        youth: g.youth,
-                        children: g.children,
-                        passes: g.passes,
+                        category: g.category,
+                        companion_adults: g.companion_adults,
+                        companion_children: g.companion_children,
+                        companions: g.companions,
+                        dietary_restrictions: g.dietary_restrictions,
                         notes: g.notes
                     }))
                 })
@@ -333,7 +367,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                 Arrastrá y soltá tu archivo Excel aquí
                             </h3>
                             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm">
-                                Admites formatos <span className="font-semibold text-zinc-700 dark:text-zinc-300">.xlsx, .xls, .csv</span> con nombre, celular, mesa y tipo de invitado.
+                                Admites formatos <span className="font-semibold text-zinc-700 dark:text-zinc-300">.xlsx, .xls, .csv</span> con nombre, celular, mesa, tipo de invitado y acompañantes.
                             </p>
 
                             <div className="mt-6 flex items-center gap-3">
@@ -398,7 +432,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                     <Sparkles className="w-4 h-4 text-amber-500" /> Mapeo de Columnas
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                                     <div>
                                         <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Nombre Completo *</label>
                                         <select
@@ -448,6 +482,54 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                     </div>
 
                                     <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Acompañantes Adultos (cant.)</label>
+                                        <select
+                                            value={mapping.companion_adults}
+                                            onChange={(e) => handleMappingChange('companion_adults', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Acompañantes Niños (cant.)</label>
+                                        <select
+                                            value={mapping.companion_children}
+                                            onChange={(e) => handleMappingChange('companion_children', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Nombres Acompañantes</label>
+                                        <select
+                                            value={mapping.companions}
+                                            onChange={(e) => handleMappingChange('companions', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Restricción Alimentaria</label>
+                                        <select
+                                            value={mapping.dietary}
+                                            onChange={(e) => handleMappingChange('dietary', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
                                         <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Notas / Grupo</label>
                                         <select
                                             value={mapping.notes}
@@ -477,6 +559,8 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                 <th className="p-3">Teléfono</th>
                                                 <th className="p-3">Nº Mesa</th>
                                                 <th className="p-3">Tipo Invitado</th>
+                                                <th className="p-3">Acompañantes</th>
+                                                <th className="p-3">Dieta</th>
                                                 <th className="p-3">Notas</th>
                                             </tr>
                                         </thead>
@@ -502,6 +586,14 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                             {row.categoryLabel}
                                                         </span>
                                                     </td>
+                                                    <td className="p-3 text-zinc-500">
+                                                        {row.passes > 1 ? (
+                                                            <span className="font-bold text-teal-700 dark:text-teal-300">
+                                                                +{row.passes - 1}{row.companions ? ` · ${row.companions}` : ''}
+                                                            </span>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="p-3 text-zinc-500">{row.dietary_restrictions || '-'}</td>
                                                     <td className="p-3 text-zinc-500">{row.notes || '-'}</td>
                                                 </tr>
                                             ))}

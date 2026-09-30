@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PlusCircle, Heart, Calendar, MapPin, User, X, Save, Edit3 } from 'lucide-react';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { apiFetch } from '../api';
+import { PLANS, getPlanRangeLabel } from '../plans';
 
 export const EVENT_TYPES = [
     { value: 'boda', label: '💍 Boda / Casamiento' },
@@ -26,6 +27,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
     const [error, setError] = useState(null);
 
     const [planType, setPlanType] = useState('initial');
+    const [customMaxGuests, setCustomMaxGuests] = useState(400);
     const [isEnabled, setIsEnabled] = useState(true);
     const [rsvpDeadlineDays, setRsvpDeadlineDays] = useState(7);
     const [autoDeclineExpired, setAutoDeclineExpired] = useState(true);
@@ -44,6 +46,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                 setLocation(eventToEdit.location || '');
                 setPlannerId(eventToEdit.user_id || '');
                 setPlanType(eventToEdit.plan_type || 'initial');
+                setCustomMaxGuests(eventToEdit.max_guests || 400);
                 setIsEnabled(eventToEdit.is_enabled !== undefined ? Boolean(eventToEdit.is_enabled) : true);
                 setRsvpDeadlineDays(eventToEdit.rsvp_deadline_days !== undefined ? eventToEdit.rsvp_deadline_days : 7);
                 setAutoDeclineExpired(eventToEdit.auto_decline_expired !== undefined ? Boolean(eventToEdit.auto_decline_expired) : true);
@@ -55,6 +58,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                 setLocation('');
                 setPlannerId('');
                 setPlanType('initial');
+                setCustomMaxGuests(400);
                 setIsEnabled(true);
                 setRsvpDeadlineDays(7);
                 setAutoDeclineExpired(true);
@@ -114,6 +118,7 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                     location,
                     user_id: plannerId,
                     plan_type: planType,
+                    ...(planType === 'custom' ? { max_guests: parseInt(customMaxGuests, 10) || 1 } : {}),
                     is_enabled: isEnabled,
                     rsvp_deadline_days: rsvpDeadlineDays,
                     auto_decline_expired: autoDeclineExpired,
@@ -273,10 +278,23 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                                 onChange={(e) => setPlanType(e.target.value)}
                                 className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300 p-3 font-bold focus:ring-2 focus:ring-amber-500 outline-none"
                             >
-                                <option value="initial">⭐ Plan Inicial (Hasta 100 personas)</option>
-                                <option value="medium">🚀 Plan Medio (Hasta 150 personas)</option>
-                                <option value="premium">👑 Plan Premium (+150 personas)</option>
+                                {PLANS.map(plan => (
+                                    <option key={plan.id} value={plan.id}>
+                                        {plan.emoji} {plan.label} ({getPlanRangeLabel(plan)})
+                                    </option>
+                                ))}
                             </select>
+                            {planType === 'custom' && (
+                                <input
+                                    type="number"
+                                    min="1"
+                                    required
+                                    value={customMaxGuests}
+                                    onChange={(e) => setCustomMaxGuests(e.target.value)}
+                                    className="mt-2 w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-300 p-3 font-bold focus:ring-2 focus:ring-amber-500 outline-none"
+                                    placeholder="Cantidad máxima de invitados"
+                                />
+                            )}
                         </div>
 
                         <div className="flex flex-col justify-end">

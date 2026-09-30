@@ -70,16 +70,15 @@ class PlanRequestController extends Controller
         }
 
         $validated = $request->validate([
-            'requested_plan' => 'required|string|in:initial,medium,premium,custom',
-            'requested_guests' => 'nullable|integer|min:1',
+            'requested_plan' => 'required|string|in:' . Event::planKeys(),
+            'requested_guests' => 'nullable|integer|min:1|required_if:requested_plan,custom',
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        $reqGuests = $validated['requested_guests'] ?? match ($validated['requested_plan']) {
-            'medium' => 150,
-            'premium' => 300,
-            default => 100,
-        };
+        // Fixed plans always use their own capacity; only 'custom' takes the requested amount
+        $reqGuests = $validated['requested_plan'] === 'custom'
+            ? (int) $validated['requested_guests']
+            : Event::planMaxGuests($validated['requested_plan']);
 
         $planRequest = PlanRequest::create([
             'event_id' => $event->id,
@@ -95,15 +94,8 @@ class PlanRequestController extends Controller
         $plannerPhone = $user ? ($user->phone ?? 'Sin teléfono') : '';
         $eventTitle = $event->couple_names ?? $event->title;
 
-        $planLabels = [
-            'initial' => 'Plan Inicial (100 invitados)',
-            'medium' => 'Plan Medio (150 invitados)',
-            'premium' => 'Plan Premium (+150 invitados)',
-            'custom' => 'Personalizado',
-        ];
-
-        $currentPlanLabel = $planLabels[$event->plan_type ?? 'initial'] ?? $event->plan_type;
-        $reqPlanLabel = $planLabels[$validated['requested_plan']] ?? $validated['requested_plan'];
+        $currentPlanLabel = Event::PLANS[$event->plan_type ?? 'initial']['label'] ?? $event->plan_type;
+        $reqPlanLabel = Event::PLANS[$validated['requested_plan']]['label'];
         $notesText = !empty($validated['notes']) ? "\n💬 *Mensaje de la Planner:* \"{$validated['notes']}\"" : "";
 
         $whatsappMessage = "🚨 *SOLICITUD DE CAMBIO DE PLAN* 💍\n\n"
@@ -195,7 +187,7 @@ class PlanRequestController extends Controller
             try {
                 Http::timeout(8)->post($botUrl, [
                     'phone' => preg_replace('/[^\d]/', '', $cleanPlannerPhone),
-                    'message' => "🎉 ¡Hola {$planner->name}! Tu solicitud de ampliación de plan para el evento '{$eventTitle}' fue *APROBADA*.\n\nNuevo plan: *{$planRequest->requested_plan}* con un cupo máximo de *{$planRequest->requested_guests} invitados*. Ya podés continuar cargando invitados."
+                    'message' => "🎉 ¡Hola {$planner->name}! Tu solicitud de ampliación de plan para el evento '{$eventTitle}' fue *APROBADA*.\n\nNuevo plan: *" . (Event::PLANS[$planRequest->requested_plan]['label'] ?? $planRequest->requested_plan) . "* con un cupo máximo de *{$planRequest->requested_guests} invitados*. Ya podés continuar cargando invitados."
                 ]);
             } catch (\Exception $e) {
                 Log::warning("Error notificando aprobación a planner: " . $e->getMessage());

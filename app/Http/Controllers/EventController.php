@@ -53,19 +53,18 @@ class EventController extends Controller
             'user_id' => 'required|exists:users,id', // Assigned Wedding Planner
             'message_template' => 'nullable|string',
             'is_enabled' => 'nullable|boolean',
-            'plan_type' => 'nullable|string|in:initial,medium,premium',
-            'max_guests' => 'nullable|integer|min:1',
+            'plan_type' => 'nullable|string|in:' . Event::planKeys(),
+            'max_guests' => 'nullable|integer|min:1|required_if:plan_type,custom',
             'payment_status' => 'nullable|string|in:pending,paid',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
             'auto_decline_expired' => 'nullable|boolean',
         ]);
 
+        // Fixed plans always use their own capacity; only 'custom' takes a hand-set max_guests
         $planType = $validated['plan_type'] ?? 'initial';
-        $maxGuests = $validated['max_guests'] ?? match($planType) {
-            'medium' => 150,
-            'premium' => 9999,
-            default => 100,
-        };
+        $maxGuests = $planType === 'custom'
+            ? (int) $validated['max_guests']
+            : Event::planMaxGuests($planType);
 
         $event = Event::create([
             'title' => $validated['title'],
@@ -112,7 +111,7 @@ class EventController extends Controller
             'message_template' => 'nullable|string',
             'status' => 'nullable|in:active,completed,archived',
             'is_enabled' => 'nullable|boolean',
-            'plan_type' => 'nullable|string|in:initial,medium,premium',
+            'plan_type' => 'nullable|string|in:' . Event::planKeys(),
             'max_guests' => 'nullable|integer|min:1',
             'payment_status' => 'nullable|string|in:pending,paid',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
@@ -128,12 +127,16 @@ class EventController extends Controller
             unset($validated['is_enabled']);
         }
 
-        if (isset($validated['plan_type']) && !isset($validated['max_guests'])) {
-            $validated['max_guests'] = match($validated['plan_type']) {
-                'medium' => 150,
-                'premium' => 9999,
-                default => 100,
-            };
+        // Fixed plans always use their own capacity; only 'custom' takes a hand-set max_guests
+        if (isset($validated['plan_type'])) {
+            if ($validated['plan_type'] === 'custom') {
+                $validated['max_guests'] = $validated['max_guests'] ?? $event->max_guests;
+            } else {
+                $validated['max_guests'] = Event::planMaxGuests($validated['plan_type']);
+            }
+        } elseif (isset($validated['max_guests']) && (int) $validated['max_guests'] !== Event::planMaxGuests($event->plan_type)) {
+            // A capacity that doesn't match the current plan turns it into a custom plan
+            $validated['plan_type'] = 'custom';
         }
 
         $event->update($validated);

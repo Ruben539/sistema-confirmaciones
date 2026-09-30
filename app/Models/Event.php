@@ -9,6 +9,35 @@ class Event extends Model
 {
     use HasFactory;
 
+    /**
+     * Guest capacity per plan. 'custom' has no fixed cap: max_guests is set by hand.
+     */
+    public const PLANS = [
+        'initial' => ['label' => 'Plan Inicial', 'max_guests' => 100],
+        'medium' => ['label' => 'Plan Medio', 'max_guests' => 150],
+        'pro' => ['label' => 'Plan Pro', 'max_guests' => 180],
+        'premium' => ['label' => 'Plan Premium', 'max_guests' => 300],
+        'custom' => ['label' => 'Personalizado', 'max_guests' => null],
+    ];
+
+    public static function planKeys(): string
+    {
+        return implode(',', array_keys(self::PLANS));
+    }
+
+    public static function planMaxGuests(?string $plan): ?int
+    {
+        $plan = array_key_exists($plan ?? '', self::PLANS) ? $plan : 'initial';
+        return self::PLANS[$plan]['max_guests'];
+    }
+
+    public static function planLabel(?string $plan, ?int $maxGuests = null): string
+    {
+        $label = self::PLANS[$plan ?? 'initial']['label'] ?? ($plan ?? 'Plan Inicial');
+        $max = $maxGuests ?? self::planMaxGuests($plan);
+        return $max ? "{$label} ({$max} invitados)" : $label;
+    }
+
     public const EVENT_TYPES = [
         'boda' => '💍 Boda / Casamiento',
         'xv_anos' => '👑 15 Años / Fiesta de XV',
@@ -30,7 +59,7 @@ class Event extends Model
         'message_template',
         'status',
         'is_enabled',
-        'plan_type', // 'initial' (100), 'medium' (150), 'premium' (+150)
+        'plan_type', // see Event::PLANS
         'max_guests',
         'payment_status', // 'pending', 'paid'
         'rsvp_deadline_days', // Days before event date (e.g. 7)

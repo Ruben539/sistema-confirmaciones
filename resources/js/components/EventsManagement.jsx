@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Heart, MapPin, User, Plus, Edit2, CheckCircle2, ShieldCheck, RefreshCw, Trash2, Eye } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { apiFetch } from '../api';
+import { getPlanLabel } from '../plans';
 
 export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onEditEvent, onDeleteEvent }) {
     const [events, setEvents] = useState([]);
@@ -110,14 +111,6 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
         }
     };
 
-    const getPlanLabel = (plan) => {
-        switch (plan) {
-            case 'medium': return '🚀 Plan Medio (150)';
-            case 'premium': return '👑 Plan Premium (+150)';
-            default: return '⭐ Plan Inicial (100)';
-        }
-    };
-
     return (
         <div className="space-y-6 animate-fade-in">
             {/* Header */}
@@ -216,7 +209,7 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
 
                                     {/* Plan Badge */}
                                     <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 px-3 py-1.5 rounded-xl border border-amber-200/60 dark:border-amber-800/60 font-bold">
-                                        <span>{getPlanLabel(ev.plan_type)}</span>
+                                        <span>{getPlanLabel(ev.plan_type, ev.max_guests, { emoji: true })}</span>
                                     </div>
 
                                     {/* Deadline RSVP Badge */}

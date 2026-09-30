@@ -5,9 +5,8 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Models\Event;
 use App\Models\Guest;
+use App\Jobs\SendWhatsAppMessageJob;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 
 class ProcessRsvpDeadlines extends Command
 {
@@ -58,30 +57,20 @@ class ProcessRsvpDeadlines extends Command
                     ->whereNull('reminder_sent_at')
                     ->get();
 
-                $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
-                $coupleNames = $event->couple_names ?? $event->title;
-
+                // Queue reminders through the throttled job (per-number pacing, daily limit,
+                // sending window) instead of firing them all at once
+                $delay = 0;
                 foreach ($guestsToRemind as $guest) {
-                    $message = "¡Hola {$guest->name}! ⏰ Te recordamos que el plazo para confirmar tu asistencia al evento de {$coupleNames} vence pronto ({$deadlineDate->format('d/m/Y')}).\n\nPor favor, respondé a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
-
-                    try {
-                        $response = Http::timeout(10)->post($botUrl, [
-                            'phone' => preg_replace('/[^\d]/', '', $guest->phone),
-                            'message' => $message
-                        ]);
-
-                        if ($response->successful()) {
-                            $guest->update(['reminder_sent_at' => now()]);
-                            $remindersCount++;
-                        }
-                    } catch (\Exception $e) {
-                        Log::warning("Error al enviar recordatorio WhatsApp a {$guest->name}: " . $e->getMessage());
-                    }
+                    // Mark as queued so the next run doesn't queue it again; the job clears it if it fails
+                    $guest->update(['reminder_sent_at' => now()]);
+                    SendWhatsAppMessageJob::dispatch($guest->id, 'reminder')->delay(now()->addSeconds($delay));
+                    $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+                    $remindersCount++;
                 }
             }
         }
 
-        $this->info("Procesamiento completado: {$remindersCount} recordatorios enviados, {$autoDeclinedCount} invitados autocancelados.");
+        $this->info("Procesamiento completado: {$remindersCount} recordatorios programados, {$autoDeclinedCount} invitados autocancelados.");
         return 0;
     }
 }

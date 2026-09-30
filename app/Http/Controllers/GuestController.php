@@ -5,9 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Event;
 use App\Models\Guest;
 use App\Models\Table;
+use App\Jobs\SendWhatsAppMessageJob;
+use App\Services\WhatsAppMessage;
+use App\Services\WhatsAppThrottle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class GuestController extends Controller
 {
@@ -166,6 +170,10 @@ class GuestController extends Controller
             'phone' => 'required|string|max:50',
             'category' => 'nullable|string|in:adult,youth,child,Adulto,Joven,Niño,Jóven',
             'table_number' => 'nullable|string|max:100',
+            'adults' => 'nullable|integer|min:0|max:20',
+            'youth' => 'nullable|integer|min:0|max:20',
+            'children' => 'nullable|integer|min:0|max:20',
+            'companions' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
         ]);
 
@@ -199,6 +207,18 @@ class GuestController extends Controller
             $adults = 0; $youth = 0; $children = 1;
         }
 
+        // Explicit counts (invited person + companions) take precedence over the single category
+        if (isset($validated['adults']) || isset($validated['youth']) || isset($validated['children'])) {
+            $adults = (int)($validated['adults'] ?? 0);
+            $youth = (int)($validated['youth'] ?? 0);
+            $children = (int)($validated['children'] ?? 0);
+            if ($adults + $youth + $children < 1) {
+                return response()->json(['message' => 'La invitación debe incluir al menos una persona.'], 422);
+            }
+        }
+
+        $companions = trim($validated['companions'] ?? '');
+
         $guest = Guest::create([
             'event_id' => $eventId,
             'name' => trim($validated['name']),
@@ -206,7 +226,7 @@ class GuestController extends Controller
             'adults' => $adults,
             'youth' => $youth,
             'children' => $children,
-            'passes' => 1,
+            'companions' => $companions !== '' ? $companions : null,
             'table_number' => $validated['table_number'] ?? null,
             'notes' => $validated['notes'] ?? null,
             'status' => 'pending',
@@ -235,6 +255,9 @@ class GuestController extends Controller
             'guests.*.phone' => 'required|string',
             'guests.*.category' => 'nullable|string',
             'guests.*.table_number' => 'nullable|string',
+            'guests.*.companion_adults' => 'nullable|integer|min:0|max:20',
+            'guests.*.companion_children' => 'nullable|integer|min:0|max:20',
+            'guests.*.companions' => 'nullable|string|max:255',
             'guests.*.dietary_restrictions' => 'nullable|string',
             'guests.*.restricciones' => 'nullable|string',
             'guests.*.dieta' => 'nullable|string',
@@ -256,6 +279,7 @@ class GuestController extends Controller
         $updated = 0;
         $skipped = 0;
         $limitReached = false;
+        $unimportedDueToLimit = 0;
         $seenInBatch = [];
 
         foreach ($validated['guests'] as $item) {
@@ -274,7 +298,9 @@ class GuestController extends Controller
             }
             $seenInBatch[$phoneKey] = true;
 
-            $cat = strtolower(trim($item['category'] ?? 'adult'));
+            // Only overwrite the category of existing guests when the file actually provides one
+            $hasCategory = trim($item['category'] ?? '') !== '';
+            $cat = mb_strtolower(trim($item['category'] ?? 'adult'));
 
             $adults = 1;
             $youth = 0;
@@ -285,6 +311,13 @@ class GuestController extends Controller
             } elseif (str_contains($cat, 'niñ') || str_contains($cat, 'nin') || str_contains($cat, 'child')) {
                 $adults = 0; $youth = 0; $children = 1;
             }
+
+            // Companions travel on the same invitation (e.g. a mother bringing her daughter)
+            $hasCompanionCounts = isset($item['companion_adults']) || isset($item['companion_children']);
+            $adults += (int)($item['companion_adults'] ?? 0);
+            $children += (int)($item['companion_children'] ?? 0);
+            $companions = trim($item['companions'] ?? '');
+            $companions = $companions !== '' ? $companions : null;
 
             $dietary = $item['dietary_restrictions'] ?? $item['restricciones'] ?? $item['dieta'] ?? null;
             $tableNumber = isset($item['table_number']) && trim($item['table_number']) !== '' ? trim($item['table_number']) : null;
@@ -312,7 +345,10 @@ class GuestController extends Controller
                 if ($notes !== null && $existingGuest->notes !== $notes) {
                     $updateFields['notes'] = $notes;
                 }
-                if ($existingGuest->adults !== $adults || $existingGuest->youth !== $youth || $existingGuest->children !== $children) {
+                if ($companions !== null && $existingGuest->companions !== $companions) {
+                    $updateFields['companions'] = $companions;
+                }
+                if (($hasCategory || $hasCompanionCounts) && ((int) $existingGuest->adults !== $adults || (int) $existingGuest->youth !== $youth || (int) $existingGuest->children !== $children)) {
                     $updateFields['adults'] = $adults;
                     $updateFields['youth'] = $youth;
                     $updateFields['children'] = $children;
@@ -327,10 +363,11 @@ class GuestController extends Controller
                 continue;
             }
 
-            // New guest creation - check plan limit
+            // New guest creation - check plan limit (keep looping so existing guests further down still get updated)
             if ($created >= $availableSlots) {
                 $limitReached = true;
-                break;
+                $unimportedDueToLimit++;
+                continue;
             }
 
             $newGuest = Guest::create([
@@ -340,7 +377,7 @@ class GuestController extends Controller
                 'adults' => $adults,
                 'youth' => $youth,
                 'children' => $children,
-                'passes' => 1,
+                'companions' => $companions,
                 'table_number' => $tableNumber,
                 'dietary_restrictions' => $dietaryRestrictions,
                 'notes' => $notes,
@@ -418,13 +455,6 @@ class GuestController extends Controller
             $summaryParts[] = "{$createdTablesCount} mesas creadas en distribución de salón";
         }
 
-        $unimportedDueToLimit = 0;
-        if ($limitReached) {
-            $totalInFile = count($validated['guests']);
-            $processedCount = $created + $updated + $skipped;
-            $unimportedDueToLimit = max(0, $totalInFile - $processedCount);
-        }
-
         if (empty($summaryParts)) {
             $message = $limitReached
                 ? "Límite alcanzado: Este evento ya cuenta con {$currentCount} de los {$event->max_guests} invitados permitidos por su plan ('{$event->plan_type}'). No es posible registrar nuevos invitados."
@@ -436,7 +466,7 @@ class GuestController extends Controller
                 'created' => 0,
                 'updated' => 0,
                 'skipped' => $skipped,
-                'limit_reached' => true,
+                'limit_reached' => $limitReached,
                 'unimported_due_to_limit' => $unimportedDueToLimit
             ], 422);
         }
@@ -457,7 +487,8 @@ class GuestController extends Controller
             'created' => $created,
             'updated' => $updated,
             'skipped' => $skipped,
-            'limit_reached' => $limitReached
+            'limit_reached' => $limitReached,
+            'unimported_due_to_limit' => $unimportedDueToLimit
         ]);
     }
 
@@ -476,6 +507,7 @@ class GuestController extends Controller
             'adults' => 'sometimes|integer|min:0',
             'youth' => 'sometimes|integer|min:0',
             'children' => 'sometimes|integer|min:0',
+            'companions' => 'nullable|string|max:255',
             'confirmed_adults' => 'sometimes|integer|min:0',
             'confirmed_youth' => 'sometimes|integer|min:0',
             'confirmed_children' => 'sometimes|integer|min:0',
@@ -537,31 +569,22 @@ class GuestController extends Controller
             ], 400);
         }
 
-        $rawLocation = $event->location ?? 'Por confirmar';
-        if ($rawLocation !== 'Por confirmar' && !str_starts_with($rawLocation, 'http')) {
-            $formattedLocation = $rawLocation . "\n🗺️ Ver en Google Maps: https://maps.google.com/?q=" . urlencode($rawLocation);
-        } else {
-            $formattedLocation = $rawLocation;
-        }
-
         $mode = $request->input('mode', 'invitation');
-        if ($mode === 'reminder') {
-            $template = "¡Hola {nombre}! ⏰ Recordatorio: Te recordamos que la fecha límite para confirmar tu asistencia al evento de {pareja} vence pronto.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
-        } else {
-            $template = $event->message_template ?? "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
-            if (!str_contains($template, '{nombre}')) {
-                $template = "¡Hola {nombre}!\n" . $template;
-            }
+        $message = WhatsAppMessage::build($guest, $mode);
+        $botUrl = config('whatsapp.bot_url');
+
+        // Manual sends count against the same per-number pacing and daily limit as bulk sends
+        $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
+        $lock = $throttle->lock();
+        $wait = $lock ? $throttle->secondsUntilAllowed() : 30;
+        if ($wait > 0) {
+            $lock?->release();
+            return response()->json([
+                'message' => $throttle->waitReason() . ' Intentá de nuevo en ' . ($wait >= 120 ? ceil($wait / 60) . ' minutos' : "{$wait} segundos") . ', o usá el envío masivo para que se programe solo.',
+                'retry_after' => $wait,
+                'guest' => $guest
+            ], 429);
         }
-
-        $rsvpUrl = url('/confirmar/' . $guest->token);
-        $message = str_replace(
-            ['{nombre}', '{pareja}', '{lugar}', '{link}'],
-            [$guest->name, $event->couple_names ?? $event->title, $formattedLocation, $rsvpUrl],
-            $template
-        );
-
-        $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
 
         try {
             $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
@@ -571,6 +594,7 @@ class GuestController extends Controller
             ]);
 
             if ($response->successful()) {
+                $throttle->recordSent();
                 $guest->update([
                     'whatsapp_status' => 'sent',
                     'last_sent_at' => now(),
@@ -587,6 +611,8 @@ class GuestController extends Controller
             } catch (\Throwable $logError) {
                 // Ignore storage log permission issues
             }
+        } finally {
+            $lock->release();
         }
 
         return response()->json([
@@ -717,18 +743,49 @@ class GuestController extends Controller
             ], 422);
         }
 
-        $delayCount = 0;
+        // A new bulk send lifts any previous cancellation for this event
+        Cache::forget(SendWhatsAppMessageJob::cancelKey($eventId));
+
+        // Stagger jobs with random gaps; the job itself enforces the real per-number pacing,
+        // daily limit and sending window (see WhatsAppThrottle)
+        $delay = 0;
         foreach ($guests as $guest) {
-            \App\Jobs\SendWhatsAppMessageJob::dispatch($guest->id, $mode)->delay(now()->addSeconds($delayCount * 12));
-            $delayCount++;
+            SendWhatsAppMessageJob::dispatch($guest->id, $mode)->delay(now()->addSeconds($delay));
+            $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
         }
 
-        $estimatedMins = ceil(($delayCount * 12) / 60);
+        $count = $guests->count();
+        $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
+        $remainingToday = max(0, config('whatsapp.daily_limit') - $throttle->sentToday());
+        $avgGap = (config('whatsapp.min_delay') + config('whatsapp.max_delay')) / 2;
+        $estimatedMins = (int) ceil(min($count, $remainingToday) * $avgGap / 60);
+
+        $message = "⚡ Envío programado para {$count} invitados. Los mensajes salen en segundo plano, de a uno cada "
+            . config('whatsapp.min_delay') . '-' . config('whatsapp.max_delay') . ' segundos, con pausas para proteger tu número. Podés cerrar la página.';
+        if ($count > $remainingToday) {
+            $message .= " Hoy se pueden enviar {$remainingToday} más (límite diario de " . config('whatsapp.daily_limit') . '); el resto sale mañana automáticamente.';
+        }
 
         return response()->json([
-            'message' => "⚡ ¡Envío masivo programado con éxito para {$guests->count()} invitados! Los mensajes se enviarán en segundo plano con retardo anti-spam (1 por cada 10-15s). Podés cerrar la página o apagar la laptop sin problemas.",
-            'count' => $guests->count(),
-            'estimated_minutes' => $estimatedMins
+            'message' => $message,
+            'count' => $count,
+            'estimated_minutes' => $estimatedMins,
+            'remaining_today' => $remainingToday,
+        ]);
+    }
+
+    public function cancelBulkQueue($eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, true)) {
+            return $denied;
+        }
+
+        // Jobs queued before this moment will skip themselves
+        Cache::put(SendWhatsAppMessageJob::cancelKey($eventId), now()->timestamp, now()->addDays(4));
+
+        return response()->json([
+            'message' => 'Envío masivo detenido. Los mensajes pendientes no se enviarán.'
         ]);
     }
 }

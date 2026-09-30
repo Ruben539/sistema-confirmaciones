@@ -1,9 +1,18 @@
 import React, { useState } from 'react';
-import { Bot, Send, Sparkles, X, CheckCircle2, MessageSquare, ArrowRight, ShieldCheck, Crown, Zap, AlertCircle } from 'lucide-react';
+import { Bot, Send, Sparkles, X, CheckCircle2, MessageSquare, ArrowRight, ShieldCheck, Crown, Zap, Gem, Star, AlertCircle } from 'lucide-react';
 import { apiFetch } from '../api';
+import { PLANS, getPlan, getPlanRangeLabel } from '../plans';
+
+const PLAN_STYLES = {
+    initial: { icon: Star, color: 'from-emerald-500 to-teal-600', border: 'border-emerald-500/40', bg: 'bg-emerald-50/50 dark:bg-emerald-950/30', description: 'Para eventos de hasta 100 personas.' },
+    medium: { icon: Zap, color: 'from-blue-500 to-indigo-600', border: 'border-blue-500/40', bg: 'bg-blue-50/50 dark:bg-blue-950/30', description: 'Ideal para eventos medianos de hasta 150 personas.' },
+    pro: { icon: Gem, color: 'from-sky-500 to-cyan-600', border: 'border-sky-500/40', bg: 'bg-sky-50/50 dark:bg-sky-950/30', description: 'Para eventos de hasta 180 personas.' },
+    premium: { icon: Crown, color: 'from-amber-500 to-rose-600', border: 'border-amber-500/40', bg: 'bg-amber-50/50 dark:bg-amber-950/30', description: 'Para grandes celebraciones de hasta 300 personas.' },
+    custom: { icon: Sparkles, color: 'from-purple-500 to-pink-600', border: 'border-purple-500/40', bg: 'bg-purple-50/50 dark:bg-purple-950/30', description: 'Define la cantidad exacta de invitados que necesitas.' },
+};
 
 export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, currentGuestsCount = 0, user, onRequestSent }) {
-    const [selectedPlan, setSelectedPlan] = useState('medium');
+    const [selectedPlan, setSelectedPlan] = useState('');
     const [customGuests, setCustomGuests] = useState(200);
     const [notes, setNotes] = useState('');
     const [loading, setLoading] = useState(false);
@@ -17,52 +26,31 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
     const eventTitle = event.couple_names || event.title;
     const plannerName = user?.name ? user.name.replace(/\s*\([^)]*\)/g, '').trim() : 'Wedding Planner';
 
-    const planOptions = [
-        {
-            id: 'medium',
-            title: 'Plan Medio',
-            guests: 150,
-            icon: Zap,
-            color: 'from-blue-500 to-indigo-600',
-            border: 'border-blue-500/40',
-            bg: 'bg-blue-50/50 dark:bg-blue-950/30',
-            description: 'Ideal para eventos medianos de hasta 150 personas.'
-        },
-        {
-            id: 'premium',
-            title: 'Plan Premium',
-            guests: 300,
-            icon: Crown,
-            color: 'from-amber-500 to-rose-600',
-            border: 'border-amber-500/40',
-            bg: 'bg-amber-50/50 dark:bg-amber-950/30',
-            description: 'Para grandes celebraciones de hasta 300 personas.'
-        },
-        {
-            id: 'custom',
-            title: 'Cupo Personalizado',
-            guests: 0,
-            icon: Sparkles,
-            color: 'from-purple-500 to-pink-600',
-            border: 'border-purple-500/40',
-            bg: 'bg-purple-50/50 dark:bg-purple-950/30',
-            description: 'Define la cantidad exacta de invitados que necesitas.'
-        },
-    ];
+    // Only offer plans with more capacity than the current one, plus a custom amount
+    const planOptions = PLANS
+        .filter(p => p.maxGuests === null || p.maxGuests > maxGuests)
+        .map(p => ({
+            id: p.id,
+            title: p.label,
+            guests: p.maxGuests || 0,
+            range: getPlanRangeLabel(p),
+            ...PLAN_STYLES[p.id],
+        }));
+    const activePlan = planOptions.some(p => p.id === selectedPlan) ? selectedPlan : planOptions[0].id;
 
     const handleSendRequest = async () => {
         setLoading(true);
         setError(null);
 
-        const targetGuests = selectedPlan === 'custom'
+        const targetGuests = activePlan === 'custom'
             ? Number(customGuests)
-            : (planOptions.find(p => p.id === selectedPlan)?.guests || 150);
+            : planOptions.find(p => p.id === activePlan).guests;
 
         try {
             const { ok, json } = await apiFetch(`/api/events/${event.id}/plan-request`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    requested_plan: selectedPlan,
+                    requested_plan: activePlan,
                     requested_guests: targetGuests,
                     notes: notes.trim() || null
                 })
@@ -122,7 +110,7 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
                         </div>
                         <div className="bg-zinc-100 dark:bg-zinc-800/80 p-3.5 rounded-2xl rounded-tl-sm text-zinc-800 dark:text-zinc-200 space-y-1.5 max-w-[88%] leading-relaxed border border-zinc-200/50 dark:border-zinc-700/50">
                             <p>
-                                ¡Hola <strong>{plannerName}</strong>! 👋 Veo que el evento <strong>"{eventTitle}"</strong> tiene actualmente el <strong>Plan {planType === 'medium' ? 'Medio' : planType === 'premium' ? 'Premium' : 'Inicial'} ({maxGuests} invitados máx)</strong> y ya cuenta con <strong>{currentGuestsCount} registrados</strong>.
+                                ¡Hola <strong>{plannerName}</strong>! 👋 Veo que el evento <strong>"{eventTitle}"</strong> tiene actualmente el <strong>{getPlan(planType).label} ({maxGuests} invitados máx)</strong> y ya cuenta con <strong>{currentGuestsCount} registrados</strong>.
                             </p>
                             <p className="text-zinc-500 dark:text-zinc-400 text-[11px]">
                                 Seleccioná el plan que necesitas para que le enviemos la notificación por WhatsApp a los administradores de inmediato:
@@ -136,7 +124,7 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
                             <div className="space-y-2.5 pl-9">
                                 {planOptions.map((opt) => {
                                     const IconComp = opt.icon;
-                                    const isSelected = selectedPlan === opt.id;
+                                    const isSelected = activePlan === opt.id;
                                     return (
                                         <div
                                             key={opt.id}
@@ -153,7 +141,7 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
                                                             <span>{opt.title}</span>
                                                             {opt.guests > 0 && (
                                                                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                                                                    Hasta {opt.guests} invitados
+                                                                    {opt.range}
                                                                 </span>
                                                             )}
                                                         </div>
@@ -223,7 +211,7 @@ export default function PlanUpgradeChatbotModal({ isOpen, onClose, event, curren
                                         <span>🚀 ¡Solicitud enviada con éxito!</span>
                                     </div>
                                     <p className="text-xs leading-relaxed">
-                                        Registramos tu pedido para ampliar al <strong>{planOptions.find(p => p.id === selectedPlan)?.title || selectedPlan}</strong> ({result.request?.requested_guests || customGuests} invitados).
+                                        Registramos tu pedido para ampliar al <strong>{planOptions.find(p => p.id === activePlan)?.title || activePlan}</strong> ({result.request?.requested_guests || customGuests} invitados).
                                     </p>
                                     <p className="text-[11px] opacity-90">
                                         {result.whatsapp_notified

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { apiFetch } from '../api';
+import { PLANS, getPlan, getPlanLabel, getPlanRangeLabel } from '../plans';
 
 export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountChange }) {
     // Data State
@@ -133,30 +134,20 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
     }, [users]);
 
     // Helpers
+    const PLAN_BADGE_CLASSES = {
+        initial: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+        medium: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
+        pro: 'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30',
+        premium: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30',
+        custom: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+    };
+
     const getPlanBadge = (planType) => {
-        switch (planType) {
-            case 'medium':
-                return {
-                    label: 'Plan Medio (150)',
-                    class: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30'
-                };
-            case 'premium':
-                return {
-                    label: 'Plan Premium (+150)',
-                    class: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30'
-                };
-            case 'custom':
-                return {
-                    label: 'Personalizado',
-                    class: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30'
-                };
-            case 'initial':
-            default:
-                return {
-                    label: 'Plan Inicial (100)',
-                    class: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                };
-        }
+        const plan = getPlan(planType);
+        return {
+            label: getPlanLabel(plan.id),
+            class: PLAN_BADGE_CLASSES[plan.id]
+        };
     };
 
     const getCleanPhone = (phoneStr) => {
@@ -1246,16 +1237,17 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                     value={manualPlanModal.planType}
                                     onChange={(e) => {
                                         const type = e.target.value;
-                                        let guests = 100;
-                                        if (type === 'medium') guests = 150;
-                                        else if (type === 'premium') guests = 300;
+                                        // Fixed plans have a fixed capacity; custom keeps the current number to edit
+                                        const guests = getPlan(type).maxGuests ?? manualPlanModal.maxGuests;
                                         setManualPlanModal(prev => ({ ...prev, planType: type, maxGuests: guests }));
                                     }}
                                     className="w-full text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-bold focus:ring-2 focus:ring-amber-500 outline-none"
                                 >
-                                    <option value="initial">🌱 Plan Inicial (100 invitados)</option>
-                                    <option value="medium">⭐ Plan Medio (150 invitados)</option>
-                                    <option value="premium">👑 Plan Premium (+150 invitados / 300 máx)</option>
+                                    {PLANS.map(plan => (
+                                        <option key={plan.id} value={plan.id}>
+                                            {plan.emoji} {plan.label} ({getPlanRangeLabel(plan)})
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
 
@@ -1267,9 +1259,13 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                     type="number"
                                     min="1"
                                     value={manualPlanModal.maxGuests}
+                                    disabled={manualPlanModal.planType !== 'custom'}
                                     onChange={(e) => setManualPlanModal(prev => ({ ...prev, maxGuests: e.target.value }))}
-                                    className="w-full text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-bold outline-none focus:ring-2 focus:ring-amber-500"
+                                    className="w-full text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-bold outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
                                 />
+                                {manualPlanModal.planType !== 'custom' && (
+                                    <p className="text-[11px] text-zinc-500 mt-1">El cupo es fijo para este plan. Elegí "Personalizado" para definir otra cantidad.</p>
+                                )}
                             </div>
 
                             <div className="pt-2 flex justify-end gap-3">

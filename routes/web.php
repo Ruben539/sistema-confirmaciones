@@ -43,6 +43,7 @@ Route::prefix('api')->group(function () {
     Route::post('/events/{eventId}/guests', [GuestController::class, 'store']);
     Route::post('/events/{eventId}/guests/import', [GuestController::class, 'importBatch']);
     Route::post('/events/{eventId}/send-bulk-queue', [GuestController::class, 'sendBulkQueue']);
+    Route::post('/events/{eventId}/cancel-bulk-queue', [GuestController::class, 'cancelBulkQueue']);
     Route::delete('/events/{eventId}/guests/clear', [GuestController::class, 'destroyAll']);
     
     Route::put('/guests/{id}', [GuestController::class, 'update']);

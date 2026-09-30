@@ -36,7 +36,8 @@ export default function GuestList({
                 guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 guest.phone.includes(searchTerm) ||
                 (guest.table_number && guest.table_number.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (guest.notes && guest.notes.toLowerCase().includes(searchTerm.toLowerCase()));
+                (guest.notes && guest.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (guest.companions && guest.companions.toLowerCase().includes(searchTerm.toLowerCase()));
 
             if (!matchesSearch) return false;
 
@@ -45,7 +46,7 @@ export default function GuestList({
             if (tableFilter === 'assigned' && !guest.table_number) return false;
             if (tableFilter === 'unassigned' && guest.table_number) return false;
 
-            if (categoryFilter === 'adults' && ((guest.youth || 0) > 0 || (guest.children || 0) > 0)) return false;
+            if (categoryFilter === 'adults' && (guest.adults || 0) === 0) return false;
             if (categoryFilter === 'youth' && (guest.youth || 0) === 0) return false;
             if (categoryFilter === 'children' && (guest.children || 0) === 0) return false;
 
@@ -86,12 +87,14 @@ export default function GuestList({
     // Summary counts for filtered list
     const summaryStats = useMemo(() => {
         return filteredGuests.reduce((acc, g) => {
-            if ((g.children || 0) > 0) acc.children += 1;
-            else if ((g.youth || 0) > 0) acc.youth += 1;
-            else acc.adults += 1;
+            // Count people, not invitations: one invitation can include companions
+            acc.adults += g.adults || 0;
+            acc.youth += g.youth || 0;
+            acc.children += g.children || 0;
+            acc.people += Math.max(1, (g.adults || 0) + (g.youth || 0) + (g.children || 0));
             acc.total += 1;
             return acc;
-        }, { adults: 0, youth: 0, children: 0, total: 0 });
+        }, { adults: 0, youth: 0, children: 0, people: 0, total: 0 });
     }, [filteredGuests]);
 
     const handleSort = (field) => {
@@ -298,7 +301,7 @@ export default function GuestList({
                     Mostrando <strong className="text-zinc-800 dark:text-zinc-200">{filteredGuests.length > 0 ? (currentPage - 1) * pageSize + 1 : 0}</strong> - <strong className="text-zinc-800 dark:text-zinc-200">{Math.min(currentPage * pageSize, filteredGuests.length)}</strong> de <strong className="text-zinc-800 dark:text-zinc-200">{filteredGuests.length}</strong> invitados
                 </div>
                 <div className="hidden md:flex items-center gap-3 text-zinc-600 dark:text-zinc-400 font-bold">
-                    <span>Total: {summaryStats.total} invitados</span>
+                    <span>Total: {summaryStats.total} invitaciones · {summaryStats.people} personas</span>
                     <span>({summaryStats.adults} Adultos · {summaryStats.youth} Jóvenes · {summaryStats.children} Niños)</span>
                 </div>
             </div>
@@ -401,20 +404,29 @@ export default function GuestList({
                                         </select>
                                     </td>
 
-                                    {/* Single Guest Category Badge */}
+                                    {/* Invitation composition (invited person + companions) */}
                                     <td className="p-3.5">
-                                        {(guest.children || 0) > 0 ? (
-                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-xl border border-teal-200 dark:border-teal-800">
-                                                👶 Niño
-                                            </span>
-                                        ) : (guest.youth || 0) > 0 ? (
-                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 px-2.5 py-1 rounded-xl border border-violet-200 dark:border-violet-800">
-                                                ⚡ Joven
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-xl border border-blue-200 dark:border-blue-800">
-                                                👤 Adulto
-                                            </span>
+                                        <div className="flex flex-wrap items-center gap-1">
+                                            {(guest.adults || 0) > 0 && (
+                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-xl border border-blue-200 dark:border-blue-800">
+                                                    👤 {guest.adults > 1 ? `${guest.adults} Adultos` : 'Adulto'}
+                                                </span>
+                                            )}
+                                            {(guest.youth || 0) > 0 && (
+                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 px-2.5 py-1 rounded-xl border border-violet-200 dark:border-violet-800">
+                                                    ⚡ {guest.youth > 1 ? `${guest.youth} Jóvenes` : 'Joven'}
+                                                </span>
+                                            )}
+                                            {(guest.children || 0) > 0 && (
+                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-xl border border-teal-200 dark:border-teal-800">
+                                                    👶 {guest.children > 1 ? `${guest.children} Niños` : 'Niño'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {guest.companions && (
+                                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 truncate max-w-[180px]" title={guest.companions}>
+                                                + {guest.companions}
+                                            </div>
                                         )}
                                     </td>
 

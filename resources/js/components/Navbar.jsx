@@ -1,5 +1,6 @@
 import React from 'react';
 import { Heart, Calendar, MapPin, Sparkles, RefreshCw, LogOut, User, Sun, Moon, Bot } from 'lucide-react';
+import { getPlan } from '../plans';
 
 export default function Navbar({ event, user, onRefresh, onLogout, theme, onToggleTheme, onOpenUpgradeBot }) {
     return (
@@ -25,7 +26,7 @@ export default function Navbar({ event, user, onRefresh, onLogout, theme, onTogg
                                 title="Cambiar o solicitar ampliación de plan con el Bot de Soporte"
                             >
                                 <Bot className="w-3.5 h-3.5 text-rose-500" />
-                                <span>{event.plan_type === 'medium' ? 'Plan Medio' : event.plan_type === 'premium' ? 'Plan Premium' : 'Plan Inicial'} ({event.max_guests} máx)</span>
+                                <span>{getPlan(event.plan_type).label} ({event.max_guests} máx)</span>
                             </button>
                         )}
                     </div>

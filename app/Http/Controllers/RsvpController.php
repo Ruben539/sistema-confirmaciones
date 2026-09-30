@@ -133,7 +133,7 @@ class RsvpController extends Controller
                     ]);
 
                     $eventTitle = $planReq->event->couple_names ?? $planReq->event->title;
-                    $reply = "✅ *SOLICITUD #{$reqId} APROBADA EXITOSAMENTE*\n\nEl evento '{$eventTitle}' ahora cuenta con el *{$planReq->requested_plan}* y una capacidad de *{$planReq->requested_guests} invitados máx*.\nLa Wedding Planner ya puede continuar cargando su lista.";
+                    $reply = "✅ *SOLICITUD #{$reqId} APROBADA EXITOSAMENTE*\n\nEl evento '{$eventTitle}' ahora cuenta con el *" . (\App\Models\Event::PLANS[$planReq->requested_plan]["label"] ?? $planReq->requested_plan) . "* y una capacidad de *{$planReq->requested_guests} invitados máx*.\nLa Wedding Planner ya puede continuar cargando su lista.";
 
                     return response()->json([
                         'processed' => true,
@@ -232,7 +232,8 @@ class RsvpController extends Controller
                 'confirmed_adults' => $guest->adults > 0 ? $guest->adults : 1,
                 'confirmed_youth' => $guest->youth,
                 'confirmed_children' => $guest->children,
-                'confirmed_passes' => 1,
+                // Confirm the whole invitation, including companions
+                'confirmed_passes' => max(1, (int)$guest->adults + (int)$guest->youth + (int)$guest->children),
             ]);
 
             $reply = "¡Excelente {$guest->name}! Confirmamos tu asistencia al evento de {$coupleNames} 🎉{$locationText}\n\n¿Tenés alguna restricción alimentaria o menú especial (ej: celíaco, vegetariano)? Respondé con la restricción o escribí 'Ninguna'.";

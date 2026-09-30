@@ -3,11 +3,15 @@
 namespace App\Jobs;
 
 use App\Models\Guest;
+use App\Services\WhatsAppMessage;
+use App\Services\WhatsAppThrottle;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -15,16 +19,34 @@ class SendWhatsAppMessageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $tries = 3;
     public $timeout = 30;
+
+    // Releases for throttling don't count as failures; only real exceptions do
+    public $maxExceptions = 3;
 
     protected $guestId;
     protected $messageMode;
+    protected $queuedAt;
 
     public function __construct($guestId, $messageMode = 'invitation')
     {
         $this->guestId = $guestId;
         $this->messageMode = $messageMode;
+        $this->queuedAt = now()->timestamp;
+    }
+
+    /**
+     * Throttled messages may wait for the daily limit / sending window, so keep
+     * retrying for a few days instead of a fixed number of attempts.
+     */
+    public function retryUntil()
+    {
+        return now()->addDays(3);
+    }
+
+    public static function cancelKey($eventId): string
+    {
+        return "wa:cancel:event:{$eventId}";
     }
 
     public function handle(): void
@@ -43,68 +65,113 @@ class SendWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
-        if ($guest->whatsapp_status === 'sent' && $this->messageMode === 'invitation') {
-            Log::info("WhatsApp Job: Guest {$guest->name} already marked as sent. Skipping.");
+        // Bulk send cancelled by the planner after this job was queued
+        if ((int) Cache::get(self::cancelKey($guest->event_id), 0) >= $this->queuedAt) {
+            Log::info("WhatsApp Job: Bulk send cancelled for event {$guest->event_id}. Skipping guest {$guest->name}.");
+            $this->clearReminderMark($guest);
             return;
         }
 
-        // Apply Spintax Anti-Spam Greeting Variations
-        $greetings = [
-            "¡Hola {nombre}! 👋",
-            "¡Buenas {nombre}! 👋",
-            "¡Hola {nombre}, qué tal! 👋",
-            "¡Hola {nombre}! Espero que estés muy bien 👋",
-        ];
-        $selectedGreeting = $greetings[array_rand($greetings)];
+        $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
 
-        if ($this->messageMode === 'reminder') {
-            $rawTemplate = "{$selectedGreeting} ⏰ Recordatorio: Te recordamos que la fecha límite para confirmar tu asistencia al evento de {pareja} vence pronto.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
-        } else {
-            $rawTemplate = $event->message_template ?? "{$selectedGreeting} Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
-            if (!str_contains($rawTemplate, '{nombre}')) {
-                $rawTemplate = "{$selectedGreeting}\n" . $rawTemplate;
-            }
+        // Only one message at a time per phone number, even with several workers
+        $lock = $throttle->lock();
+        if (!$lock) {
+            $this->release(random_int(15, 45));
+            return;
         }
-
-        $rawLocation = $event->location ?? 'Por confirmar';
-        if ($rawLocation !== 'Por confirmar' && !str_starts_with($rawLocation, 'http')) {
-            $formattedLocation = $rawLocation . "\n🗺️ Ver en Google Maps: https://maps.google.com/?q=" . urlencode($rawLocation);
-        } else {
-            $formattedLocation = $rawLocation;
-        }
-
-        $message = str_replace(
-            ['{nombre}', '{pareja}', '{lugar}'],
-            [$guest->name, $event->couple_names ?? $event->title, $formattedLocation],
-            $rawTemplate
-        );
-
-        $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
-        $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
 
         try {
-            $response = Http::timeout(10)->post($botUrl, [
-                'phone' => $cleanPhone,
-                'message' => $message,
-                'session_id' => $event->user_id ? "planner_{$event->user_id}" : "default"
-            ]);
+            $wait = $throttle->secondsUntilAllowed();
+            if ($wait > 0) {
+                $this->release($wait);
+                return;
+            }
 
-            if ($response->successful()) {
+            // Re-check after waiting: a duplicate job may already have sent it
+            $guest->refresh();
+            if ($this->alreadyHandled($guest)) {
+                return;
+            }
+
+            $this->send($guest, $throttle);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function failed(\Throwable $e): void
+    {
+        $guest = Guest::find($this->guestId);
+        if ($guest) {
+            // Let the next reminder run pick it up again
+            $this->clearReminderMark($guest);
+        }
+        Log::error("WhatsApp Job failed for guest {$this->guestId}: " . $e->getMessage());
+    }
+
+    private function alreadyHandled(Guest $guest): bool
+    {
+        if ($this->messageMode === 'reminder') {
+            // Guest answered in the meantime: no reminder needed
+            return $guest->status !== 'pending';
+        }
+        return $guest->whatsapp_status === 'sent';
+    }
+
+    private function send(Guest $guest, WhatsAppThrottle $throttle): void
+    {
+        $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
+
+        try {
+            $response = Http::timeout(10)->post(config('whatsapp.bot_url'), [
+                'phone' => $cleanPhone,
+                'message' => WhatsAppMessage::build($guest, $this->messageMode),
+                'session_id' => WhatsAppThrottle::sessionForEvent($guest->event),
+            ]);
+        } catch (ConnectionException $e) {
+            if (str_contains($e->getMessage(), 'cURL error 7')) {
+                // Bot not reachable: nothing was sent, safe to retry later
+                Log::warning("WhatsApp Job: bot unreachable, retrying {$guest->name} in 5 min.");
+                $this->release(300);
+                return;
+            }
+
+            // Timeout: the bot may have sent it anyway. Don't retry to avoid a duplicate message.
+            $throttle->recordSent();
+            Log::warning("WhatsApp Job: timeout sending to {$guest->name} ({$cleanPhone}); not retrying to avoid a duplicate. Check manually. " . $e->getMessage());
+            return;
+        }
+
+        if ($response->successful()) {
+            $throttle->recordSent();
+            if ($this->messageMode === 'reminder') {
+                $guest->update(['reminder_sent_at' => now()]);
+            } else {
                 $guest->update([
                     'whatsapp_status' => 'sent',
                     'last_sent_at' => now(),
                 ]);
-                Log::info("WhatsApp Job: Sent successfully to {$guest->name} ({$cleanPhone})");
-            } else {
-                Log::warning("WhatsApp Job: Failed response for {$guest->name}: " . $response->body());
             }
-        } catch (\Exception $e) {
-            Log::error("WhatsApp Job Exception for {$guest->name}: " . $e->getMessage());
-            throw $e;
+            Log::info("WhatsApp Job: Sent {$this->messageMode} to {$guest->name} ({$cleanPhone})");
+            return;
         }
 
-        // Random Anti-Spam Delay (8 to 14 seconds) to protect account velocity
-        $sleepSecs = rand(8, 14);
-        sleep($sleepSecs);
+        if ($response->serverError()) {
+            // Bot up but session disconnected / busy: retry later
+            Log::warning("WhatsApp Job: bot error for {$guest->name}, retrying in 10 min: " . $response->body());
+            $this->release(600);
+            return;
+        }
+
+        Log::warning("WhatsApp Job: rejected for {$guest->name}: " . $response->body());
+        $this->clearReminderMark($guest);
+    }
+
+    private function clearReminderMark(Guest $guest): void
+    {
+        if ($this->messageMode === 'reminder' && $guest->reminder_sent_at) {
+            $guest->update(['reminder_sent_at' => null]);
+        }
     }
 }
