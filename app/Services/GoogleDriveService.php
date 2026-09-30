@@ -230,11 +230,24 @@ class GoogleDriveService
             if (!$this->service) return null;
         }
 
-        // 1. If already saved on event, verify it exists and is not trashed
+        // 1. Generate clean folder name using the names of the hosts / couple
+        $hosts = trim($event->couple_names ?: ($event->title ?: "Evento #{$event->id}"));
+        $safeHosts = preg_replace('/[\/\\\\:*?"<>|]/', '', $hosts);
+        $folderName = $safeHosts ?: "Evento #{$event->id}";
+
+        // 2. If already saved on event, verify it exists and is not trashed
         if (!empty($event->google_drive_folder_id)) {
             try {
-                $existing = $this->service->files->get($event->google_drive_folder_id, ['fields' => 'id, trashed']);
+                $existing = $this->service->files->get($event->google_drive_folder_id, ['fields' => 'id, name, trashed']);
                 if ($existing && !$existing->getTrashed()) {
+                    // If the hosts name changed, keep Drive folder name in sync
+                    if ($existing->getName() !== $folderName) {
+                        try {
+                            $this->service->files->update($event->google_drive_folder_id, new DriveFile(['name' => $folderName]));
+                        } catch (\Throwable $renameErr) {
+                            Log::warning('Could not rename Google Drive folder: ' . $renameErr->getMessage());
+                        }
+                    }
                     return $event->google_drive_folder_id;
                 }
             } catch (\Throwable $e) {
@@ -242,11 +255,7 @@ class GoogleDriveService
             }
         }
 
-        // 2. Generate a clean folder name for the event
-        $eventName = trim($event->title ?: ($event->couple_names ?: 'Evento'));
-        $safeName = preg_replace('/[\/\\\\:*?"<>|]/', '', $eventName);
-        $folderName = "Evento #{$event->id} - {$safeName}";
-
+        // 3. Search or create folder in root Google Drive directory
         $rootFolderId = config('filesystems.disks.google.folderId') ?: env('GOOGLE_DRIVE_FOLDER_ID');
         $folderId = $this->getOrCreateFolder($folderName, $rootFolderId);
 
