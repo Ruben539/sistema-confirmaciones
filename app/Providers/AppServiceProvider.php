@@ -23,20 +23,22 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         try {
-            Storage::extend('google', function ($app, $config) {
-                $client = new \Google\Client();
-                $client->setClientId($config['clientId'] ?? env('GOOGLE_DRIVE_CLIENT_ID'));
-                $client->setClientSecret($config['clientSecret'] ?? env('GOOGLE_DRIVE_CLIENT_SECRET'));
-                $client->refreshToken($config['refreshToken'] ?? env('GOOGLE_DRIVE_REFRESH_TOKEN'));
-                $client->addScope([\Google\Service\Drive::DRIVE, \Google\Service\Drive::DRIVE_FILE]);
+            if (class_exists(\Google\Client::class) && class_exists(GoogleDriveAdapter::class)) {
+                Storage::extend('google', function ($app, $config) {
+                    $client = new \Google\Client();
+                    $client->setClientId($config['clientId'] ?? env('GOOGLE_DRIVE_CLIENT_ID'));
+                    $client->setClientSecret($config['clientSecret'] ?? env('GOOGLE_DRIVE_CLIENT_SECRET'));
+                    $client->refreshToken($config['refreshToken'] ?? env('GOOGLE_DRIVE_REFRESH_TOKEN'));
+                    $client->addScope([\Google\Service\Drive::DRIVE, \Google\Service\Drive::DRIVE_FILE]);
 
-                $service = new \Google\Service\Drive($client);
-                $folderId = $config['folderId'] ?? env('GOOGLE_DRIVE_FOLDER_ID', '/');
-                $adapter = new GoogleDriveAdapter($service, $folderId);
-                $driver = new Filesystem($adapter);
+                    $service = new \Google\Service\Drive($client);
+                    $folderId = $config['folderId'] ?? env('GOOGLE_DRIVE_FOLDER_ID', '/');
+                    $adapter = new GoogleDriveAdapter($service, $folderId);
+                    $driver = new Filesystem($adapter);
 
-                return new \Illuminate\Filesystem\FilesystemAdapter($driver, $adapter);
-            });
+                    return new \Illuminate\Filesystem\FilesystemAdapter($driver, $adapter);
+                });
+            }
         } catch (\Throwable $e) {
             // Safe fallback
         }

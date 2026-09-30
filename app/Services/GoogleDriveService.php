@@ -26,6 +26,10 @@ class GoogleDriveService
      */
     public static function isConfigured(): bool
     {
+        if (!class_exists(\Google\Client::class)) {
+            return false;
+        }
+
         $folderId = config('filesystems.disks.google.folderId') ?: env('GOOGLE_DRIVE_FOLDER_ID');
         $clientId = config('filesystems.disks.google.clientId') ?: env('GOOGLE_DRIVE_CLIENT_ID');
         $refreshToken = config('filesystems.disks.google.refreshToken') ?: env('GOOGLE_DRIVE_REFRESH_TOKEN');
