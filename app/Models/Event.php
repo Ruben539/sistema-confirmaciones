@@ -66,7 +66,7 @@ class Event extends Model
         'auto_decline_expired', // Boolean
         'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
         'timing', // JSON Array of timeline items [{time, title, description, completed}]
-        'venue_layout', // JSON: positions of dance floor, stage and entrance on the seating plan
+        'venue_layout', // JSON list of venue elements on the seating plan (stage, dance floor, bar, buffet...)
     ];
 
     protected $casts = [

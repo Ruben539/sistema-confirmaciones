@@ -27,7 +27,7 @@ return new class extends Migration
         });
 
         Schema::table('events', function (Blueprint $table) {
-            // Posición de pista, escenario y entrada: {"dance": {"x":0,"y":-200}, "stage": {...}, "entrance": {...}}
+            // Elementos del salón: [{"id","type":"bar","label","x","y","w","h","rotation"}, ...]
             if (!Schema::hasColumn('events', 'venue_layout')) {
                 $table->json('venue_layout')->nullable();
             }

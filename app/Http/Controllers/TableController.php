@@ -261,9 +261,16 @@ class TableController extends Controller
             'tables.*.pos_y' => 'required|numeric',
             'tables.*.shape' => 'nullable|in:round,imperial,square',
             'tables.*.rotation' => 'nullable|in:0,90',
-            'venue' => 'nullable|array',
-            'venue.*.x' => 'required|numeric',
-            'venue.*.y' => 'required|numeric',
+            // Venue elements placed by the planner (stage, dance floor, bar, buffet...)
+            'venue' => 'nullable|array|max:150',
+            'venue.*.id' => 'required|string|max:60',
+            'venue.*.type' => 'required|string|max:30|regex:/^[a-z_]+$/',
+            'venue.*.label' => 'nullable|string|max:40',
+            'venue.*.x' => 'required|numeric|between:-10000,10000',
+            'venue.*.y' => 'required|numeric|between:-10000,10000',
+            'venue.*.w' => 'required|numeric|between:20,800',
+            'venue.*.h' => 'required|numeric|between:20,800',
+            'venue.*.rotation' => 'nullable|in:0,90,180,270',
         ]);
 
         $tables = Table::where('event_id', $eventId)->get()->keyBy('id');
@@ -279,10 +286,19 @@ class TableController extends Controller
             ]);
         }
 
-        if (isset($validated['venue'])) {
-            $venue = collect($validated['venue'])
-                ->only(['dance', 'stage', 'entrance'])
-                ->map(fn($p) => ['x' => round($p['x'], 1), 'y' => round($p['y'], 1)])
+        if (array_key_exists('venue', $validated)) {
+            $venue = collect($validated['venue'] ?? [])
+                ->map(fn($item) => [
+                    'id' => $item['id'],
+                    'type' => $item['type'],
+                    'label' => trim($item['label'] ?? '') ?: null,
+                    'x' => round($item['x'], 1),
+                    'y' => round($item['y'], 1),
+                    'w' => round($item['w'], 1),
+                    'h' => round($item['h'], 1),
+                    'rotation' => (int) ($item['rotation'] ?? 0),
+                ])
+                ->values()
                 ->all();
             $event->update(['venue_layout' => $venue]);
         }

@@ -148,6 +148,43 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
         }
     };
 
+    // Used from the 3D plan while arranging the venue
+    const handleCreateTable = async (payload) => {
+        try {
+            const { ok, json } = await apiFetch(`/api/events/${eventId}/tables`, {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            if (ok) {
+                await fetchTables({ silent: true });
+                return json?.table || null;
+            }
+            if (showToast) showToast(json?.message || 'No se pudo crear la mesa.');
+        } catch (err) {
+            console.error(err);
+            if (showToast) showToast('Error de conexión al crear la mesa.');
+        }
+        return null;
+    };
+
+    const handleUpdateTable = async (tableId, patch) => {
+        try {
+            const { ok, json } = await apiFetch(`/api/tables/${tableId}`, {
+                method: 'PUT',
+                body: JSON.stringify(patch)
+            });
+            if (ok) {
+                await fetchTables({ silent: true });
+                return true;
+            }
+            if (showToast) showToast(json?.message || 'No se pudo actualizar la mesa.');
+        } catch (err) {
+            console.error(err);
+            if (showToast) showToast('Error de conexión al actualizar la mesa.');
+        }
+        return false;
+    };
+
     const handleSaveLayout = async (payload) => {
         try {
             const { ok, json } = await apiFetch(`/api/events/${eventId}/tables/layout`, {
@@ -395,6 +432,9 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                     venueLayout={data.venue_layout}
                     onAssignGuest={handleAssignGuest}
                     onExport={() => setIsExportOpen(true)}
+                    onCreateTable={handleCreateTable}
+                    onUpdateTable={handleUpdateTable}
+                    onDeleteTable={handleDeleteTable}
                     onSaveLayout={handleSaveLayout}
                     onRefresh={() => fetchTables({ silent: true })}
                 />

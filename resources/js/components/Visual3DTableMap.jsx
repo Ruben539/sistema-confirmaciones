@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { hasDiet, seatsOf, guestState, VENUE_ITEMS, snap, shapeOf, tableSize, chairPositions, autoGrid, defaultVenue, buildLayout, floorSize } from '../seating';
-import { RotateCw, ZoomIn, ZoomOut, Search, Utensils, Sparkles, X, Compass, Printer, UserPlus, ChefHat, MapPin, Eye, Layers, Move, Save, RotateCcw, Radio, Users, AlertTriangle, Wand2, GripVertical, Music, Info } from 'lucide-react';
+import { hasDiet, seatsOf, guestState, VENUE_CATALOG, VENUE_CATEGORIES, catalogItem, newVenueItem, rotatedSize, snap, shapeOf, tableSize, chairPositions, autoGrid, buildLayout, floorSize } from '../seating';
+import { RotateCw, ZoomIn, ZoomOut, Search, Utensils, Sparkles, X, Compass, Printer, UserPlus, ChefHat, MapPin, Eye, Layers, Move, Save, RotateCcw, Radio, Users, AlertTriangle, Wand2, GripVertical, Music, Info, Disc3, Guitar, Monitor, Heart, Wine, UtensilsCrossed, CakeSlice, Cake, Coffee, ClipboardCheck, Gift, Camera, Sofa, Baby, Shirt, Bath, DoorOpen, Circle, Leaf, Box, Copy, Trash2, Plus } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -10,6 +10,20 @@ const STATE_INFO = {
     attended: { label: 'En el salón', chair: 'bg-emerald-500 border-emerald-200 shadow-emerald-500/70', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
     confirmed: { label: 'Confirmado · por llegar', chair: 'bg-blue-600 border-blue-300 shadow-blue-500/70', badge: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     pending: { label: 'Sin responder', chair: 'bg-zinc-600 border-amber-300/80 border-dashed', badge: 'bg-zinc-700/60 text-zinc-300 border-zinc-600' },
+};
+
+const VENUE_ICONS = {
+    stage: Sparkles, dance: Music, dj: Disc3, band: Guitar, screen: Monitor, altar: Heart,
+    bar: Wine, buffet: UtensilsCrossed, dessert: CakeSlice, cake: Cake, coffee: Coffee, kitchen: ChefHat,
+    entrance: MapPin, reception: ClipboardCheck, gifts: Gift, photobooth: Camera, lounge: Sofa, kids: Baby, cloakroom: Shirt,
+    restrooms: Bath, exit: DoorOpen, column: Circle, plant: Leaf, custom: Box,
+};
+
+const VENUE_STYLES = {
+    show: 'border-rose-400/50 bg-rose-500/15 text-rose-200',
+    food: 'border-orange-400/50 bg-orange-500/15 text-orange-200',
+    guests: 'border-sky-400/50 bg-sky-500/15 text-sky-200',
+    structure: 'border-zinc-500 bg-zinc-800/80 text-zinc-300',
 };
 
 const SHAPES = [
@@ -22,8 +36,9 @@ const SHAPES = [
 // Component
 // ---------------------------------------------------------------------------
 
-export default function Visual3DTableMap({ tables = [], unassignedGuests = [], venueLayout = null, onAssignGuest, onSaveLayout, onRefresh, onExport }) {
+export default function Visual3DTableMap({ tables = [], unassignedGuests = [], venueLayout = null, onAssignGuest, onSaveLayout, onRefresh, onExport, onCreateTable, onUpdateTable, onDeleteTable }) {
     const [selectedTableId, setSelectedTableId] = useState(null);
+    const [selectedItemId, setSelectedItemId] = useState(null); // venue element being edited
     const [rotationY, setRotationY] = useState(35);
     const [rotationX, setRotationX] = useState(55);
     const [zoom, setZoom] = useState(1);
@@ -35,7 +50,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
 
     // Layout editing ("Armar salón")
     const [editMode, setEditMode] = useState(false);
-    const [draft, setDraft] = useState(null); // { tables: {id: {x,y,shape,rotation}}, venue: {...} }
+    const [draft, setDraft] = useState(null); // { tables: {id: {x,y,shape,rotation}}, venue: [{id,type,label,x,y,w,h,rotation}] }
     const [savingLayout, setSavingLayout] = useState(false);
     const savedCameraRef = useRef(null);
     const itemDragRef = useRef(null);
@@ -48,6 +63,8 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
     const [quickSeatGuestId, setQuickSeatGuestId] = useState('');
     const [unassignedSearch, setUnassignedSearch] = useState('');
     const [notice, setNotice] = useState(null);
+    const [newTable, setNewTable] = useState({ shape: 'round', capacity: 10 });
+    const [creatingTable, setCreatingTable] = useState(false);
     const [showLegend, setShowLegend] = useState(false);
 
     // Scene rotation
@@ -59,6 +76,22 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
     const savedLayout = useMemo(() => buildLayout(tables, venueLayout), [tables, venueLayout]);
 
     const layout = editMode && draft ? draft : savedLayout;
+
+    // Tables created or deleted while arranging: add/remove them from the draft, keep everything else
+    useEffect(() => {
+        if (!editMode) return;
+        setDraft(prev => {
+            if (!prev) return prev;
+            const ids = new Set(tables.map(t => String(t.id)));
+            const missing = tables.filter(t => !prev.tables[t.id]);
+            const removed = Object.keys(prev.tables).filter(id => !ids.has(id));
+            if (!missing.length && !removed.length) return prev;
+            const next = { ...prev, tables: { ...prev.tables } };
+            missing.forEach(t => { next.tables[t.id] = savedLayout.tables[t.id]; });
+            removed.forEach(id => { delete next.tables[id]; });
+            return next;
+        });
+    }, [tables, editMode, savedLayout]);
 
     // --- Tables enriched with geometry and seats (one chair per person) -----
     const positionedTables = useMemo(() => tables.map(table => {
@@ -95,6 +128,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
     }), [tables, layout]);
 
     const selectedTable = positionedTables.find(t => t.id === selectedTableId) || null;
+    const selectedItem = editMode && draft ? draft.venue.find(i => i.id === selectedItemId) || null : null;
 
     // Floor size: fit every table and venue element, centered on 0,0
     const { floorWidth, floorHeight } = useMemo(() => floorSize(positionedTables, layout.venue), [positionedTables, layout]);
@@ -201,6 +235,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
     const exitEditMode = () => {
         setEditMode(false);
         setDraft(null);
+        setSelectedItemId(null);
         if (savedCameraRef.current) {
             setRotationX(savedCameraRef.current.rotationX);
             setRotationY(savedCameraRef.current.rotationY);
@@ -209,8 +244,9 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
 
     const autoArrange = () => {
         const auto = autoGrid(tables);
+        // Only tables: venue elements the planner placed stay where they are
         setDraft(prev => {
-            const next = { tables: {}, venue: defaultVenue(auto) };
+            const next = { ...prev, tables: {} };
             tables.forEach(t => { next.tables[t.id] = { ...prev.tables[t.id], ...auto[t.id] }; });
             return next;
         });
@@ -218,6 +254,60 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
 
     const updateDraftTable = (id, patch) => {
         setDraft(prev => ({ ...prev, tables: { ...prev.tables, [id]: { ...prev.tables[id], ...patch } } }));
+    };
+
+    const updateVenueItem = (id, patch) => {
+        setDraft(prev => ({ ...prev, venue: prev.venue.map(i => (i.id === id ? { ...i, ...patch } : i)) }));
+    };
+
+    const addVenueItem = (type) => {
+        // Drop new elements near the center, nudged so several additions don't stack exactly
+        const offset = (draft.venue.length % 5) * 20;
+        const item = newVenueItem(type, offset, offset);
+        setDraft(prev => ({ ...prev, venue: [...prev.venue, item] }));
+        setSelectedTableId(null);
+        setSelectedItemId(item.id);
+    };
+
+    const duplicateVenueItem = (item) => {
+        const copy = { ...newVenueItem(item.type, item.x + 30, item.y + 30), label: item.label, w: item.w, h: item.h, rotation: item.rotation };
+        setDraft(prev => ({ ...prev, venue: [...prev.venue, copy] }));
+        setSelectedItemId(copy.id);
+    };
+
+    const removeVenueItem = (id) => {
+        setDraft(prev => ({ ...prev, venue: prev.venue.filter(i => i.id !== id) }));
+        setSelectedItemId(null);
+    };
+
+    const resizeVenueItem = (item, dw, dh) => {
+        const clamp = (v) => Math.max(20, Math.min(800, v));
+        updateVenueItem(item.id, { w: clamp(item.w + dw), h: clamp(item.h + dh) });
+    };
+
+    // Next free "Mesa N" number
+    const nextTableName = () => {
+        const nums = tables.map(t => /^mesa (\d+)$/i.exec(t.name || '')).filter(Boolean).map(m => parseInt(m[1], 10));
+        return `Mesa ${(nums.length ? Math.max(...nums) : 0) + 1}`;
+    };
+
+    const createTable = async () => {
+        if (!onCreateTable) return;
+        setCreatingTable(true);
+        const offset = (tables.length % 5) * 20;
+        const created = await onCreateTable({
+            name: nextTableName(),
+            capacity: newTable.capacity,
+            shape: newTable.shape,
+            pos_x: offset,
+            pos_y: offset,
+        });
+        setCreatingTable(false);
+        if (created) {
+            setSelectedItemId(null);
+            setSelectedTableId(created.id);
+            setNotice(`${created.name} creada · arrastrala a su lugar`);
+        }
     };
 
     const saveLayout = async () => {
@@ -235,10 +325,16 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
         if (!editMode) return;
         e.stopPropagation();
         e.preventDefault();
-        const current = kind === 'table' ? draft.tables[id] : draft.venue[id];
+        const current = kind === 'table' ? draft.tables[id] : draft.venue.find(i => i.id === id);
         itemDragRef.current = { kind, id, startX: e.clientX, startY: e.clientY, origX: current.x, origY: current.y };
         setDraggingItem(true);
-        if (kind === 'table') setSelectedTableId(id);
+        if (kind === 'table') {
+            setSelectedTableId(id);
+            setSelectedItemId(null);
+        } else {
+            setSelectedItemId(id);
+            setSelectedTableId(null);
+        }
     };
 
     useEffect(() => {
@@ -251,7 +347,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
             const y = snap(d.origY + (e.clientY - d.startY) / zoom);
             setDraft(prev => d.kind === 'table'
                 ? { ...prev, tables: { ...prev.tables, [d.id]: { ...prev.tables[d.id], x, y } } }
-                : { ...prev, venue: { ...prev.venue, [d.id]: { x, y } } });
+                : { ...prev, venue: prev.venue.map(i => (i.id === d.id ? { ...i, x, y } : i)) });
         };
         const onUp = () => {
             itemDragRef.current = null;
@@ -546,31 +642,31 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
                                 boxShadow: '0 35px 80px rgba(0,0,0,0.9), inset 0 0 120px rgba(0,0,0,0.95)'
                             }}
                         >
-                            {/* Venue elements: stage, dance floor, entrance */}
-                            {Object.entries(layout.venue).map(([key, p]) => {
-                                const v = VENUE_ITEMS[key];
-                                const style = key === 'dance'
-                                    ? 'border-amber-400/40 text-amber-300'
-                                    : key === 'stage'
-                                    ? 'border-rose-400/40 bg-gradient-to-r from-rose-500/20 via-amber-500/20 to-rose-500/20 text-rose-200'
-                                    : 'border-zinc-600 bg-zinc-900/80 text-zinc-400';
+                            {/* Venue elements (stage, dance floor, bar, buffet...) */}
+                            {layout.venue.map((item) => {
+                                const c = catalogItem(item.type);
+                                const Icon = VENUE_ICONS[item.type] || Box;
+                                const isSelectedItem = editMode && selectedItemId === item.id;
+                                const small = Math.min(item.w, item.h) < 45;
                                 return (
                                     <div
-                                        key={key}
-                                        onPointerDown={(e) => startItemDrag(e, 'venue', key)}
-                                        className={`absolute rounded-2xl border-2 flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-widest ${style} ${editMode ? 'cursor-move ring-2 ring-sky-400/50' : 'pointer-events-none'}`}
+                                        key={item.id}
+                                        title={item.label}
+                                        onPointerDown={(e) => startItemDrag(e, 'venue', item.id)}
+                                        className={`absolute border-2 flex items-center justify-center gap-1.5 font-black uppercase tracking-wider text-center leading-tight overflow-hidden ${c.round ? 'rounded-full' : 'rounded-2xl'} ${VENUE_STYLES[c.category]} ${editMode ? `cursor-move ${isSelectedItem ? 'ring-4 ring-sky-400' : 'ring-1 ring-sky-400/40'}` : 'pointer-events-none'}`}
                                         style={{
-                                            left: `calc(50% + ${p.x}px)`,
-                                            top: `calc(50% + ${p.y}px)`,
-                                            width: v.w,
-                                            height: v.h,
-                                            transform: 'translate(-50%, -50%) translateZ(1px)',
+                                            left: `calc(50% + ${item.x}px)`,
+                                            top: `calc(50% + ${item.y}px)`,
+                                            width: item.w,
+                                            height: item.h,
+                                            fontSize: small ? 8 : 10,
+                                            transform: `translate(-50%, -50%) rotateZ(${item.rotation || 0}deg) translateZ(1px)`,
                                             // Checkered dance floor
-                                            ...(key === 'dance' ? { backgroundImage: 'repeating-conic-gradient(rgba(245,158,11,0.14) 0% 25%, transparent 0% 50%)', backgroundSize: '28px 28px' } : {}),
+                                            ...(item.type === 'dance' ? { backgroundImage: 'repeating-conic-gradient(rgba(245,158,11,0.14) 0% 25%, transparent 0% 50%)', backgroundSize: '28px 28px' } : {}),
                                         }}
                                     >
-                                        {key === 'entrance' ? <MapPin className="w-3.5 h-3.5 text-rose-400" /> : key === 'dance' ? <Music className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
-                                        {v.label}
+                                        <Icon className={`${small ? 'w-3 h-3' : 'w-3.5 h-3.5'} shrink-0`} />
+                                        {!small && <span className="truncate">{item.label}</span>}
                                     </div>
                                 );
                             })}
@@ -609,6 +705,7 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
                                             e.stopPropagation();
                                             if (movedRef.current) return; // ended a rotation drag, not a click
                                             setSelectedTableId(table.id);
+                                            setSelectedItemId(null);
                                         }}
                                         onPointerDown={(e) => startItemDrag(e, 'table', table.id)}
                                         onDragOver={(e) => { if (draggedGuest) { e.preventDefault(); setDropTargetId(table.id); } }}
@@ -756,7 +853,75 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
                         </div>
                     )}
 
-                    {selectedTable ? (
+                    {selectedItem ? (
+                        /* Venue element editor */
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                                <div className="min-w-0">
+                                    <span className="text-[10px] font-black uppercase text-sky-400 tracking-wider">{catalogItem(selectedItem.type).label}</span>
+                                    <h4 className="text-lg font-extrabold text-white truncate">{selectedItem.label}</h4>
+                                </div>
+                                <button type="button" onClick={() => setSelectedItemId(null)} className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-zinc-400 mb-1">Nombre en el plano</label>
+                                <input
+                                    type="text"
+                                    value={selectedItem.label}
+                                    maxLength={40}
+                                    onChange={(e) => updateVenueItem(selectedItem.id, { label: e.target.value })}
+                                    className="w-full text-xs rounded-xl border-zinc-700 bg-zinc-800 text-white p-2.5 outline-none focus:ring-2 focus:ring-sky-500"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="text-[11px] font-bold text-zinc-400">Tamaño</div>
+                                {[
+                                    { label: 'Ancho', key: 'w', dw: 10, dh: 0 },
+                                    { label: 'Largo', key: 'h', dw: 0, dh: 10 },
+                                ].map(({ label, key, dw, dh }) => (
+                                    <div key={key} className="flex items-center justify-between p-2 rounded-xl bg-zinc-800/80 border border-zinc-700/60">
+                                        <span className="text-xs text-zinc-300">{label}</span>
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => resizeVenueItem(selectedItem, -dw * 2, -dh * 2)} className="p-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-xs font-black w-7">−</button>
+                                            <span className="w-10 text-center text-xs font-bold">{selectedItem[key]}</span>
+                                            <button type="button" onClick={() => resizeVenueItem(selectedItem, dw * 2, dh * 2)} className="p-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-xs font-black w-7">+</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => updateVenueItem(selectedItem.id, { rotation: ((selectedItem.rotation || 0) + 90) % 360 })}
+                                    className="py-2 rounded-xl text-xs font-bold bg-zinc-800 text-zinc-200 hover:bg-zinc-700 flex items-center justify-center gap-1.5"
+                                >
+                                    <RotateCw className="w-3.5 h-3.5" /> Girar 90°
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => duplicateVenueItem(selectedItem)}
+                                    className="py-2 rounded-xl text-xs font-bold bg-zinc-800 text-zinc-200 hover:bg-zinc-700 flex items-center justify-center gap-1.5"
+                                >
+                                    <Copy className="w-3.5 h-3.5" /> Duplicar
+                                </button>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => removeVenueItem(selectedItem.id)}
+                                className="w-full py-2 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 flex items-center justify-center gap-1.5"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" /> Quitar del plano
+                            </button>
+
+                            <p className="text-[10px] text-zinc-500">Arrastralo en el plano para moverlo. Los cambios se guardan con "Guardar plano".</p>
+                        </div>
+                    ) : selectedTable ? (
                         <div className="space-y-4">
                             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
                                 <div>
@@ -793,7 +958,44 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
                                             <RotateCw className="w-3.5 h-3.5" /> Girar 90°
                                         </button>
                                     )}
-                                    <p className="text-[10px] text-zinc-500">La capacidad se cambia desde la vista de tarjetas (editar mesa).</p>
+                                    {onUpdateTable && (
+                                        <>
+                                            <div className="pt-1">
+                                                <label className="block text-[11px] font-extrabold text-sky-300 mb-1">Nombre</label>
+                                                <input
+                                                    key={`${selectedTable.id}-${selectedTable.name}`}
+                                                    type="text"
+                                                    defaultValue={selectedTable.name}
+                                                    maxLength={100}
+                                                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                                    onBlur={(e) => {
+                                                        const name = e.target.value.trim();
+                                                        if (name && name !== selectedTable.name) onUpdateTable(selectedTable.id, { name });
+                                                        else e.target.value = selectedTable.name;
+                                                    }}
+                                                    className="w-full text-xs rounded-lg border-zinc-700 bg-zinc-800 text-white p-2 outline-none focus:ring-2 focus:ring-sky-500"
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/80">
+                                                <span className="text-[11px] font-bold text-zinc-300">Capacidad</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button type="button" disabled={selectedTable.capacity <= 1} onClick={() => onUpdateTable(selectedTable.id, { capacity: selectedTable.capacity - 1 })} className="w-7 p-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-xs font-black disabled:opacity-40">−</button>
+                                                    <span className="w-6 text-center text-xs font-bold">{selectedTable.capacity}</span>
+                                                    <button type="button" disabled={selectedTable.capacity >= 30} onClick={() => onUpdateTable(selectedTable.id, { capacity: selectedTable.capacity + 1 })} className="w-7 p-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-xs font-black disabled:opacity-40">+</button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                    {onDeleteTable && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onDeleteTable(selectedTable)}
+                                            className="w-full py-1.5 rounded-lg text-[11px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 flex items-center justify-center gap-1.5"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" /> Eliminar mesa
+                                        </button>
+                                    )}
+                                    <p className="text-[10px] text-zinc-500">Nombre, capacidad y eliminar se aplican al instante. Posición y forma, al guardar el plano.</p>
                                 </div>
                             )}
 
@@ -905,9 +1107,72 @@ export default function Visual3DTableMap({ tables = [], unassignedGuests = [], v
                             </div>
                         </div>
                     ) : editMode ? (
-                        <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-400 space-y-3">
-                            <Move className="w-8 h-8 text-sky-400" />
-                            <p className="text-xs">Arrastrá mesas, pista, escenario y entrada. Tocá una mesa para cambiar su forma. Al terminar, <strong className="text-white">Guardar plano</strong>.</p>
+                        /* Catalog: add elements to the venue */
+                        <div className="space-y-4">
+                            <div>
+                                <h4 className="text-sm font-black flex items-center gap-2">
+                                    <Plus className="w-4 h-4 text-sky-400" /> Agregar al salón
+                                </h4>
+                                <p className="text-[11px] text-zinc-500 mt-1">Tocá un elemento para sumarlo al plano y después arrastralo a su lugar. Tocá cualquier elemento o mesa del plano para editarlo.</p>
+                            </div>
+
+                            {onCreateTable && (
+                                <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 space-y-2">
+                                    <div className="text-[10px] font-black uppercase tracking-wider text-sky-300">Nueva mesa</div>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                        {SHAPES.map(sh => (
+                                            <button
+                                                key={sh.id}
+                                                type="button"
+                                                onClick={() => setNewTable(prev => ({ ...prev, shape: sh.id }))}
+                                                className={`py-1.5 rounded-lg text-[11px] font-bold ${newTable.shape === sh.id ? 'bg-sky-500 text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}
+                                            >
+                                                {sh.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold text-zinc-300">Capacidad</span>
+                                        <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => setNewTable(prev => ({ ...prev, capacity: Math.max(1, prev.capacity - 1) }))} className="w-7 p-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-xs font-black">−</button>
+                                            <span className="w-6 text-center text-xs font-bold">{newTable.capacity}</span>
+                                            <button type="button" onClick={() => setNewTable(prev => ({ ...prev, capacity: Math.min(30, prev.capacity + 1) }))} className="w-7 p-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-xs font-black">+</button>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={createTable}
+                                        disabled={creatingTable}
+                                        className="w-full py-2 rounded-lg text-xs font-black bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center gap-1.5 disabled:opacity-60"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> {creatingTable ? 'Creando...' : `Crear ${nextTableName()}`}
+                                    </button>
+                                </div>
+                            )}
+
+                            {VENUE_CATEGORIES.map(cat => (
+                                <div key={cat.id} className="space-y-1.5">
+                                    <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{cat.label}</div>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        {VENUE_CATALOG.filter(c => c.category === cat.id).map(c => {
+                                            const Icon = VENUE_ICONS[c.type] || Box;
+                                            const count = draft.venue.filter(i => i.type === c.type).length;
+                                            return (
+                                                <button
+                                                    key={c.type}
+                                                    type="button"
+                                                    onClick={() => addVenueItem(c.type)}
+                                                    className="p-2 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/60 hover:border-sky-500/50 text-left flex items-center gap-2 transition-colors"
+                                                >
+                                                    <Icon className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                                                    <span className="text-[11px] font-bold text-zinc-200 leading-tight flex-1">{c.label}</span>
+                                                    {count > 0 && <span className="text-[10px] font-black text-sky-300">{count}</span>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     ) : (
                         /* Unassigned guests, draggable onto the plan */

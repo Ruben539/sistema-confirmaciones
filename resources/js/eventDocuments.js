@@ -3,7 +3,7 @@
 // iframe (no pop-up window, so browser pop-up blockers don't get in the way).
 
 import * as XLSX from 'xlsx';
-import { seatsOf, peopleOf, hasDiet, dietType, DIET_LABELS, guestState, VENUE_ITEMS, tableSize, chairPositions, buildLayout, floorSize } from './seating';
+import { seatsOf, peopleOf, hasDiet, dietType, DIET_LABELS, guestState, catalogItem, tableSize, chairPositions, buildLayout, floorSize } from './seating';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -98,10 +98,19 @@ const planSvg = (tables, venueLayout) => {
     });
     const { floorWidth: W, floorHeight: H } = floorSize(placed, layout.venue);
 
-    const venue = Object.entries(layout.venue).map(([k, p]) => {
-        const v = VENUE_ITEMS[k];
-        return `<rect x="${p.x - v.w / 2}" y="${p.y - v.h / 2}" width="${v.w}" height="${v.h}" rx="10" fill="${k === 'dance' ? '#fef3c7' : '#f4f4f5'}" stroke="#a1a1aa" stroke-dasharray="6 4" stroke-width="2"/>
-            <text x="${p.x}" y="${p.y + 5}" text-anchor="middle" font-size="14" font-weight="700" fill="#71717a" letter-spacing="2">${esc(v.label.toUpperCase())}</text>`;
+    // Soft fill per element category, readable in black & white too (dashed outline + label)
+    const fills = { show: '#ffe4e6', food: '#ffedd5', guests: '#e0f2fe', structure: '#f4f4f5' };
+    const venue = layout.venue.map(item => {
+        const c = catalogItem(item.type);
+        const fill = item.type === 'dance' ? '#fef3c7' : fills[c.category];
+        const shape = c.round
+            ? `<ellipse rx="${item.w / 2}" ry="${item.h / 2}" fill="${fill}" stroke="#a1a1aa" stroke-dasharray="6 4" stroke-width="2"/>`
+            : `<rect x="${-item.w / 2}" y="${-item.h / 2}" width="${item.w}" height="${item.h}" rx="10" fill="${fill}" stroke="#a1a1aa" stroke-dasharray="6 4" stroke-width="2"/>`;
+        const label = (item.label || c.label).toUpperCase();
+        // Shrink the text so it fits inside the element (bold caps ≈ 0.72em per character incl. spacing)
+        const fontSize = Math.max(5, Math.min(14, item.h / 3, (item.w * 0.9) / (label.length * 0.72)));
+        return `<g transform="translate(${item.x} ${item.y}) rotate(${item.rotation || 0})">${shape}
+            <text y="${fontSize / 3}" text-anchor="middle" font-size="${fontSize}" font-weight="700" fill="#52525b" letter-spacing="0.5">${esc(label)}</text></g>`;
     }).join('');
 
     const tablesSvg = placed.map(t => {
@@ -136,7 +145,7 @@ export const buildPlanDocument = ({ event, tables, unassigned, venueLayout }) =>
         return `<div class="card">
             <div class="card-h"><b>${esc(t.name)}</b><span class="${over ? 'warn' : 'muted'}">${t.occupied_passes || 0}/${t.capacity}</span></div>
             ${t.notes ? `<div class="muted" style="font-size:9px;margin-bottom:3px">${esc(t.notes)}</div>` : ''}
-            <ol>${guests.map(g => `<li>${esc(g.name)}${seatsOf(g) > 1 ? ` <span class="muted">+${seatsOf(g) - 1}${g.companions ? ` (${esc(g.companions)})` : ''}</span>` : ''}${hasDiet(g) ? ` <span class="warn">· ${esc(g.dietary_restrictions)}</span>` : ''}</li>`).join('') || '<li class="muted">Sin invitados</li>'}</ol>
+            ${guests.length ? `<ol>${guests.map(g => `<li>${esc(g.name)}${seatsOf(g) > 1 ? ` <span class="muted">+${seatsOf(g) - 1}${g.companions ? ` (${esc(g.companions)})` : ''}</span>` : ''}${hasDiet(g) ? ` <span class="warn">· ${esc(g.dietary_restrictions)}</span>` : ''}</li>`).join('')}</ol>` : '<div class="muted">Sin invitados</div>'}
         </div>`;
     }).join('');
 
