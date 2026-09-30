@@ -34,11 +34,25 @@ class RsvpController extends Controller
             }
         }
 
+        $dedications = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
+                $dedications = \App\Models\EventDedication::where('event_id', $event->id)
+                    ->where('is_approved', true)
+                    ->latest()
+                    ->take(30)
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            $dedications = [];
+        }
+
         return response()->json([
             'guest' => $guest->fresh(),
             'event' => $event,
             'is_expired' => $isExpired,
             'deadline_date' => $deadlineDateFormatted,
+            'dedications' => $dedications,
         ]);
     }
 
@@ -66,7 +80,17 @@ class RsvpController extends Controller
             'confirmed_children' => 'nullable|integer|min:0',
             'dietary_restrictions' => 'nullable|string',
             'notes' => 'nullable|string',
+            'song_suggestion' => 'nullable|string|max:255',
         ]);
+
+        $updateData = [
+            'dietary_restrictions' => $validated['dietary_restrictions'] ?? null,
+            'notes' => $validated['notes'] ?? null,
+        ];
+
+        if (array_key_exists('song_suggestion', $validated)) {
+            $updateData['song_suggestion'] = $validated['song_suggestion'];
+        }
 
         if ($validated['status'] === 'confirmed') {
             $confAdults = isset($validated['confirmed_adults']) ? (int)$validated['confirmed_adults'] : $guest->adults;
@@ -74,26 +98,20 @@ class RsvpController extends Controller
             $confChildren = isset($validated['confirmed_children']) ? (int)$validated['confirmed_children'] : $guest->children;
             $confPasses = isset($validated['confirmed_passes']) ? (int)$validated['confirmed_passes'] : ($confAdults + $confYouth + $confChildren);
 
-            $guest->update([
-                'status' => 'confirmed',
-                'confirmed_adults' => $confAdults,
-                'confirmed_youth' => $confYouth,
-                'confirmed_children' => $confChildren,
-                'confirmed_passes' => $confPasses,
-                'dietary_restrictions' => $validated['dietary_restrictions'] ?? null,
-                'notes' => $validated['notes'] ?? null,
-            ]);
+            $updateData['status'] = 'confirmed';
+            $updateData['confirmed_adults'] = $confAdults;
+            $updateData['confirmed_youth'] = $confYouth;
+            $updateData['confirmed_children'] = $confChildren;
+            $updateData['confirmed_passes'] = $confPasses;
         } else {
-            $guest->update([
-                'status' => 'declined',
-                'confirmed_adults' => 0,
-                'confirmed_youth' => 0,
-                'confirmed_children' => 0,
-                'confirmed_passes' => 0,
-                'dietary_restrictions' => $validated['dietary_restrictions'] ?? null,
-                'notes' => $validated['notes'] ?? null,
-            ]);
+            $updateData['status'] = 'declined';
+            $updateData['confirmed_adults'] = 0;
+            $updateData['confirmed_youth'] = 0;
+            $updateData['confirmed_children'] = 0;
+            $updateData['confirmed_passes'] = 0;
         }
+
+        $guest->update($updateData);
 
         if ($validated['status'] === 'confirmed') {
             EventMilestoneService::checkMilestone($guest->event_id);
@@ -101,7 +119,118 @@ class RsvpController extends Controller
 
         return response()->json([
             'message' => '¡Gracias! Tu respuesta ha sido registrada con éxito.',
-            'guest' => $guest
+            'guest' => $guest->fresh()
+        ]);
+    }
+
+    public function uploadDedication(Request $request, $token)
+    {
+        $guest = Guest::with('event')->where('token', $token)->firstOrFail();
+        $event = $guest->event;
+
+        $validated = $request->validate([
+            'message' => 'nullable|string|max:1000',
+            'type' => 'required|in:photo,video,text',
+            'media' => 'nullable|file|mimes:jpg,jpeg,png,webp,mp4,mov,webm,quicktime|max:40960',
+        ]);
+
+        $mediaPath = null;
+        if ($request->hasFile('media')) {
+            $file = $request->file('media');
+            if (\App\Services\GoogleDriveService::isConfigured()) {
+                $drive = new \App\Services\GoogleDriveService();
+                $ext = $file->getClientOriginalExtension() ?: 'jpg';
+                $driveResult = $drive->uploadEventFile($event, $file, 'dedicatoria_' . $event->id . '_' . time() . '.' . $ext);
+                if ($driveResult && !empty($driveResult['direct_url'])) {
+                    $mediaPath = $driveResult['direct_url'];
+                }
+            }
+
+            if (!$mediaPath) {
+                $mediaPath = $file->store('dedications', 'public');
+            }
+        }
+
+        $dedication = \App\Models\EventDedication::create([
+            'event_id' => $event->id,
+            'guest_id' => $guest->id,
+            'author_name' => $guest->name,
+            'type' => $validated['type'],
+            'media_path' => $mediaPath,
+            'message' => $validated['message'] ?? null,
+            'is_approved' => true,
+        ]);
+
+        return response()->json([
+            'message' => '¡Dedicatoria publicada con éxito!',
+            'dedication' => $dedication
+        ]);
+    }
+
+    public function uploadPublicDedication(Request $request, $eventId)
+    {
+        $event = \App\Models\Event::findOrFail($eventId);
+
+        $validated = $request->validate([
+            'author_name' => 'required|string|max:120',
+            'message' => 'nullable|string|max:1000',
+            'type' => 'required|in:photo,video,text',
+            'media' => 'nullable|file|mimes:jpg,jpeg,png,webp,mp4,mov,webm,quicktime|max:40960',
+        ]);
+
+        $mediaPath = null;
+        if ($request->hasFile('media')) {
+            $file = $request->file('media');
+            if (\App\Services\GoogleDriveService::isConfigured()) {
+                $drive = new \App\Services\GoogleDriveService();
+                $ext = $file->getClientOriginalExtension() ?: 'jpg';
+                $driveResult = $drive->uploadEventFile($event, $file, 'dedicatoria_publica_' . $event->id . '_' . time() . '.' . $ext);
+                if ($driveResult && !empty($driveResult['direct_url'])) {
+                    $mediaPath = $driveResult['direct_url'];
+                }
+            }
+
+            if (!$mediaPath) {
+                $mediaPath = $file->store('dedications', 'public');
+            }
+        }
+
+        $dedication = \App\Models\EventDedication::create([
+            'event_id' => $event->id,
+            'guest_id' => null,
+            'author_name' => $validated['author_name'],
+            'type' => $validated['type'],
+            'media_path' => $mediaPath,
+            'message' => $validated['message'] ?? null,
+            'is_approved' => true,
+        ]);
+
+        return response()->json([
+            'message' => '¡Dedicatoria publicada con éxito!',
+            'dedication' => $dedication
+        ]);
+    }
+
+    public function publicInvitation($eventId)
+    {
+        $event = \App\Models\Event::findOrFail($eventId);
+
+        $dedications = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
+                $dedications = \App\Models\EventDedication::where('event_id', $event->id)
+                    ->where('is_approved', true)
+                    ->latest()
+                    ->take(30)
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            $dedications = [];
+        }
+
+        return response()->json([
+            'event' => $event,
+            'dedications' => $dedications,
         ]);
     }
 

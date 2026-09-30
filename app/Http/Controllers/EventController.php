@@ -116,6 +116,13 @@ class EventController extends Controller
             'payment_status' => 'nullable|string|in:pending,paid',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
             'auto_decline_expired' => 'nullable|boolean',
+            'spotify_url' => 'nullable|string|max:500',
+            'background_music_path' => 'nullable|string|max:500',
+            'gift_settings' => 'nullable',
+            'dress_code' => 'nullable|string|max:100',
+            'dress_code_notes' => 'nullable|string',
+            'welcome_message' => 'nullable|string',
+            'features_enabled' => 'nullable',
         ]);
 
         // Only admin can reassign event ownership, change plan capacity, or toggle enablement/payment
@@ -144,6 +151,171 @@ class EventController extends Controller
         return response()->json([
             'message' => 'Evento actualizado correctamente',
             'event' => $event->load('planner')
+        ]);
+    }
+
+    public function uploadCoverPhoto(Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $request->validate([
+            'photo' => 'required|image|mimes:jpeg,png,jpg,webp|max:15360',
+        ]);
+
+        $file = $request->file('photo');
+        $path = null;
+        $photoUrl = null;
+
+        if (\App\Services\GoogleDriveService::isConfigured()) {
+            $drive = new \App\Services\GoogleDriveService();
+            $ext = $file->getClientOriginalExtension() ?: 'jpg';
+            $driveResult = $drive->uploadEventFile($event, $file, 'portada_evento_' . $event->id . '_' . time() . '.' . $ext);
+            if ($driveResult && !empty($driveResult['direct_url'])) {
+                $path = $driveResult['direct_url'];
+                $photoUrl = $driveResult['direct_url'];
+            }
+        }
+
+        if (!$path) {
+            $path = $file->store('covers', 'public');
+            $photoUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        }
+
+        $event->update(['cover_photo_path' => $path]);
+
+        return response()->json([
+            'message' => 'Foto de portada actualizada con éxito',
+            'cover_photo_path' => $path,
+            'cover_photo_url' => $photoUrl,
+            'event' => $event->fresh()
+        ]);
+    }
+
+    public function uploadBackgroundMusic(Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $request->validate([
+            'music' => 'required|file|mimes:mp3,wav,ogg,m4a,aac,webm|max:30720', // max 30MB
+        ]);
+
+        $file = $request->file('music');
+        $path = null;
+        $musicUrl = null;
+
+        if (\App\Services\GoogleDriveService::isConfigured()) {
+            $drive = new \App\Services\GoogleDriveService();
+            $ext = $file->getClientOriginalExtension() ?: 'mp3';
+            $driveResult = $drive->uploadEventFile($event, $file, 'musica_evento_' . $event->id . '_' . time() . '.' . $ext);
+            if ($driveResult && !empty($driveResult['direct_url'])) {
+                $path = $driveResult['direct_url'];
+                $musicUrl = $driveResult['direct_url'];
+            }
+        }
+
+        if (!$path) {
+            $path = $file->store('music', 'public');
+            $musicUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        }
+
+        $event->update(['background_music_path' => $path]);
+
+        return response()->json([
+            'message' => 'Música de fondo cargada exitosamente',
+            'background_music_path' => $path,
+            'background_music_url' => $musicUrl,
+            'event' => $event->fresh()
+        ]);
+    }
+
+    public function removeBackgroundMusic($id)
+    {
+        $event = Event::findOrFail($id);
+        if ($event->background_music_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($event->background_music_path);
+            $event->update(['background_music_path' => null]);
+        }
+        return response()->json([
+            'message' => 'Música de fondo eliminada correctamente',
+            'event' => $event->fresh()
+        ]);
+    }
+
+    public function getSongSuggestions($id)
+    {
+        $event = Event::findOrFail($id);
+        $suggestions = $event->guests()
+            ->whereNotNull('song_suggestion')
+            ->where('song_suggestion', '!=', '')
+            ->select('id', 'name', 'phone', 'song_suggestion', 'status', 'updated_at')
+            ->orderBy('updated_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'total' => $suggestions->count(),
+            'suggestions' => $suggestions
+        ]);
+    }
+
+    public function getDedications($id)
+    {
+        $event = Event::findOrFail($id);
+        $dedications = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
+                $dedications = \App\Models\EventDedication::where('event_id', $event->id)
+                    ->latest()
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            $dedications = [];
+        }
+
+        return response()->json($dedications);
+    }
+
+    public function toggleDedicationApproval($id, $dedicationId)
+    {
+        $dedication = \App\Models\EventDedication::where('event_id', $id)->findOrFail($dedicationId);
+        $dedication->update(['is_approved' => !$dedication->is_approved]);
+
+        return response()->json([
+            'message' => $dedication->is_approved ? 'Dedicatoria aprobada para proyección' : 'Dedicatoria ocultada de proyección',
+            'dedication' => $dedication
+        ]);
+    }
+
+    public function deleteDedication($id, $dedicationId)
+    {
+        $dedication = \App\Models\EventDedication::where('event_id', $id)->findOrFail($dedicationId);
+        if ($dedication->media_path) {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($dedication->media_path);
+        }
+        $dedication->delete();
+
+        return response()->json([
+            'message' => 'Dedicatoria eliminada'
+        ]);
+    }
+
+    public function getLiveProjectionFeed($id)
+    {
+        $event = Event::findOrFail($id);
+        $dedications = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
+                $dedications = \App\Models\EventDedication::where('event_id', $event->id)
+                    ->where('is_approved', true)
+                    ->latest()
+                    ->take(50)
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            $dedications = [];
+        }
+
+        return response()->json([
+            'event' => $event,
+            'dedications' => $dedications,
+            'upload_url' => url("/evento/{$event->id}/dedicatoria"),
         ]);
     }
 

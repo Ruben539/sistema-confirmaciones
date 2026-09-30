@@ -33,6 +33,7 @@ class Guest extends Model
         'reminder_sent_at',
         'attended_at',
         'token',
+        'song_suggestion',
     ];
 
     protected $casts = [

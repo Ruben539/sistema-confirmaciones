@@ -18,6 +18,9 @@ import TableDistribution from './components/TableDistribution';
 import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import EventTiming from './components/EventTiming';
 import EventTypesManagement from './components/EventTypesManagement';
+import EventInteractivePanel from './components/EventInteractivePanel';
+import LiveProjectionScreen from './components/LiveProjectionScreen';
+import PublicDedicationPage from './components/PublicDedicationPage';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
 import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users } from 'lucide-react';
@@ -312,6 +315,12 @@ function Dashboard({ user, onLogout }) {
                             showToast={showToast}
                             user={user}
                         />
+                    ) : activeTab === 'invitation' ? (
+                        <EventInteractivePanel
+                            event={activeEvent}
+                            onUpdateEvent={handleSelectEvent}
+                            showToast={showToast}
+                        />
                     ) : activeTab === 'guests' ? (
                         !activeEvent ? (
                             <div className="p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in font-sans">
@@ -559,9 +568,14 @@ function App() {
 
     const path = window.location.pathname;
     const rsvpMatch = path.match(/^\/confirmar\/(.+)$/);
+    const projectionMatch = path.match(/^\/evento\/(\d+)\/proyeccion$/);
+    const publicDedicationMatch = path.match(/^\/evento\/(\d+)\/dedicatoria$/);
+    const publicInvitationMatch = path.match(/^\/evento\/(\d+)\/invitacion$/);
+
+    const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch;
 
     useEffect(() => {
-        if (!rsvpMatch) {
+        if (!isPublicRoute) {
             checkAuth();
         } else {
             setAuthChecked(true);
@@ -593,9 +607,21 @@ function App() {
         }
     };
 
-    // Public RSVP page for guests
+    // Public routes that bypass login:
     if (rsvpMatch && rsvpMatch[1]) {
         return <GuestRsvp token={rsvpMatch[1]} />;
+    }
+
+    if (publicInvitationMatch && publicInvitationMatch[1]) {
+        return <GuestRsvp eventId={publicInvitationMatch[1]} isPublic={true} />;
+    }
+
+    if (projectionMatch && projectionMatch[1]) {
+        return <LiveProjectionScreen eventId={projectionMatch[1]} />;
+    }
+
+    if (publicDedicationMatch && publicDedicationMatch[1]) {
+        return <PublicDedicationPage eventId={publicDedicationMatch[1]} />;
     }
 
     if (!authChecked) {

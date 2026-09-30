@@ -120,6 +120,14 @@ export default function Sidebar({
                         {!collapsed && <span>Timing del Evento</span>}
                     </button>
 
+                    <button
+                        onClick={() => setActiveTab('invitation')}
+                        className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'invitation' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                    >
+                        <Sparkles className="w-4 h-4 shrink-0 text-amber-400" />
+                        {!collapsed && <span>Invitación & Fiesta</span>}
+                    </button>
+
                     {/* Admin Navigation Options */}
                     {isAdmin && (
                         <div className="pt-2 space-y-1">

@@ -60,10 +60,25 @@ Route::prefix('api')->group(function () {
     Route::post('/tables/assign', [TableController::class, 'assignGuest']);
     Route::put('/events/{eventId}/tables/layout', [TableController::class, 'saveLayout']);
 
-    // Public Guest RSVP Routes
+    // Public Guest Interactive Invitation & RSVP Routes
     Route::post('/rsvp/incoming-whatsapp', [RsvpController::class, 'handleIncomingWhatsApp']);
     Route::get('/rsvp/{token}', [RsvpController::class, 'show']);
     Route::post('/rsvp/{token}', [RsvpController::class, 'submit']);
+    Route::post('/rsvp/{token}/dedication', [RsvpController::class, 'uploadDedication']);
+    Route::get('/events/{eventId}/public-invitation', [RsvpController::class, 'publicInvitation']);
+    Route::post('/events/{eventId}/public-dedication', [RsvpController::class, 'uploadPublicDedication']);
+
+    // Live Projection Screen Route (for Projector / DJ / Big Screen)
+    Route::get('/events/{eventId}/live-feed', [EventController::class, 'getLiveProjectionFeed']);
+
+    // Admin: Interactive Invitation, Dedications & Spotify / Song Suggestions
+    Route::post('/events/{id}/cover-photo', [EventController::class, 'uploadCoverPhoto']);
+    Route::post('/events/{id}/background-music', [EventController::class, 'uploadBackgroundMusic']);
+    Route::delete('/events/{id}/background-music', [EventController::class, 'removeBackgroundMusic']);
+    Route::get('/events/{id}/song-suggestions', [EventController::class, 'getSongSuggestions']);
+    Route::get('/events/{id}/dedications', [EventController::class, 'getDedications']);
+    Route::post('/events/{id}/dedications/{dedicationId}/toggle', [EventController::class, 'toggleDedicationApproval']);
+    Route::delete('/events/{id}/dedications/{dedicationId}', [EventController::class, 'deleteDedication']);
 
     // Door Accreditation / Check-In QR Scan Route
     Route::post('/check-in/scan', [GuestController::class, 'scanQrCheckIn']);

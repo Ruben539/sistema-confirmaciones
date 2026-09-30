@@ -67,6 +67,15 @@ class Event extends Model
         'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
         'timing', // JSON Array of timeline items [{time, title, description, completed}]
         'venue_layout', // JSON list of venue elements on the seating plan (stage, dance floor, bar, buffet...)
+        'spotify_url',
+        'gift_settings', // JSON: bank_name, account_holder, cbu, cvu, alias, notes, external_registry_url, custom_gifts
+        'dress_code', // e.g. 'formal', 'elegante_sport', 'black_tie', 'casual', 'playa'
+        'dress_code_notes',
+        'cover_photo_path',
+        'welcome_message',
+        'background_music_path',
+        'google_drive_folder_id',
+        'features_enabled', // JSON: { spotify, gifts, music_suggestions, countdown, guest_dedications, dress_code }
     ];
 
     protected $casts = [
@@ -77,9 +86,45 @@ class Event extends Model
         'milestones_notified' => 'array',
         'timing' => 'array',
         'venue_layout' => 'array',
+        'gift_settings' => 'array',
+        'features_enabled' => 'array',
     ];
 
-    protected $appends = ['is_active'];
+    protected $appends = ['is_active', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
+
+    public function getGoogleDriveFolderUrlAttribute(): ?string
+    {
+        if (empty($this->google_drive_folder_id)) {
+            return null;
+        }
+        return "https://drive.google.com/drive/folders/{$this->google_drive_folder_id}";
+    }
+
+    public function getCoverPhotoUrlAttribute(): ?string
+    {
+        if (!$this->cover_photo_path) {
+            return null;
+        }
+
+        if (str_starts_with($this->cover_photo_path, 'http://') || str_starts_with($this->cover_photo_path, 'https://')) {
+            return $this->cover_photo_path;
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk('public')->url($this->cover_photo_path);
+    }
+
+    public function getBackgroundMusicUrlAttribute(): ?string
+    {
+        if (!$this->background_music_path) {
+            return null;
+        }
+
+        if (str_starts_with($this->background_music_path, 'http://') || str_starts_with($this->background_music_path, 'https://')) {
+            return $this->background_music_path;
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk('public')->url($this->background_music_path);
+    }
 
     public function getIsActiveAttribute(): bool
     {
@@ -121,6 +166,11 @@ class Event extends Model
     public function pendingPlanRequest()
     {
         return $this->hasOne(PlanRequest::class)->where('status', 'pending')->latestOfMany();
+    }
+
+    public function dedications()
+    {
+        return $this->hasMany(EventDedication::class)->latest();
     }
 }
 

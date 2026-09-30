@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Heart, MapPin, User, Plus, Edit2, CheckCircle2, ShieldCheck, RefreshCw, Trash2, Eye } from 'lucide-react';
+import { Calendar, Heart, MapPin, User, Plus, Edit2, CheckCircle2, ShieldCheck, RefreshCw, Trash2, Eye, Sparkles, Music, Tv, Copy, Check, ExternalLink } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
+import EventInvitationSettingsModal from './EventInvitationSettingsModal';
+import EventSongSuggestionsModal from './EventSongSuggestionsModal';
+import EventDedicationsManagerModal from './EventDedicationsManagerModal';
 import { apiFetch } from '../api';
 import { getPlanLabel } from '../plans';
 
@@ -13,6 +16,12 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
     const [successMsg, setSuccessMsg] = useState(null);
     const [errorMsg, setErrorMsg] = useState(null);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+    // Modals state for interactive features
+    const [invitationSettingsEvent, setInvitationSettingsEvent] = useState(null);
+    const [songSuggestionsEvent, setSongSuggestionsEvent] = useState(null);
+    const [dedicationsEvent, setDedicationsEvent] = useState(null);
+    const [copiedId, setCopiedId] = useState(null);
 
     useEffect(() => {
         loadData();
@@ -261,6 +270,39 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                                     </div>
                                 </div>
 
+                                {/* Interactive Tools Buttons */}
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setInvitationSettingsEvent(ev)}
+                                        className="py-2 px-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-amber-500 hover:text-white dark:hover:bg-amber-500 text-zinc-700 dark:text-zinc-300 text-[11px] font-black transition-all flex items-center justify-center gap-1 border border-zinc-200 dark:border-zinc-700/60 shadow-sm"
+                                        title="Configurar Spotify, Regalos y Dress Code"
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                        <span>Invitación</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setSongSuggestionsEvent(ev)}
+                                        className="py-2 px-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-500 hover:text-white dark:hover:bg-emerald-500 text-zinc-700 dark:text-zinc-300 text-[11px] font-black transition-all flex items-center justify-center gap-1 border border-zinc-200 dark:border-zinc-700/60 shadow-sm"
+                                        title="Ver canciones pedidas para el DJ"
+                                    >
+                                        <Music className="w-3.5 h-3.5 text-emerald-500" />
+                                        <span>DJ Playlist</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setDedicationsEvent(ev)}
+                                        className="py-2 px-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-rose-500 hover:text-white dark:hover:bg-rose-500 text-zinc-700 dark:text-zinc-300 text-[11px] font-black transition-all flex items-center justify-center gap-1 border border-zinc-200 dark:border-zinc-700/60 shadow-sm"
+                                        title="Moderar dedicatorias y pantalla de proyector"
+                                    >
+                                        <Tv className="w-3.5 h-3.5 text-rose-500" />
+                                        <span>Proyector</span>
+                                    </button>
+                                </div>
+
                                 {/* Select Event Action */}
                                 <button
                                     onClick={() => onSelectEvent(ev)}
@@ -273,6 +315,31 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                         </div>
                     ))}
                 </div>
+            )}
+
+            {invitationSettingsEvent && (
+                <EventInvitationSettingsModal
+                    event={invitationSettingsEvent}
+                    onClose={() => setInvitationSettingsEvent(null)}
+                    onUpdated={() => {
+                        loadData();
+                        setInvitationSettingsEvent(null);
+                    }}
+                />
+            )}
+
+            {songSuggestionsEvent && (
+                <EventSongSuggestionsModal
+                    event={songSuggestionsEvent}
+                    onClose={() => setSongSuggestionsEvent(null)}
+                />
+            )}
+
+            {dedicationsEvent && (
+                <EventDedicationsManagerModal
+                    event={dedicationsEvent}
+                    onClose={() => setDedicationsEvent(null)}
+                />
             )}
 
             <ConfirmModal
