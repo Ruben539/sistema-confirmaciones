@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
     X, Music, Gift, Shirt, Image, Sparkles, Check, Plus, Trash2, Upload, 
     AlertCircle, Save, ExternalLink, Volume2, Play, Disc, FileAudio,
-    Palette, Wand2, Eye, Sliders, RefreshCw
+    Palette, Wand2, Eye, Sliders, RefreshCw, Loader2
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -120,9 +120,38 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
     const initialBgPath = event.background_music_path || '';
     const isBgSpotify = initialBgPath.includes('spotify.com');
     const [spotifyUrl, setSpotifyUrl] = useState(event.spotify_url || (isBgSpotify ? initialBgPath : ''));
+    const [spotifyMeta, setSpotifyMeta] = useState(null);
+    const [isResolvingSpotify, setIsResolvingSpotify] = useState(false);
     const [dressCode, setDressCode] = useState(event.dress_code || 'elegante');
     const [dressCodeNotes, setDressCodeNotes] = useState(event.dress_code_notes || '');
     const [welcomeMessage, setWelcomeMessage] = useState(event.welcome_message || '');
+
+    // Live Spotify Resolution Effect
+    useEffect(() => {
+        if (!spotifyUrl || !spotifyUrl.includes('spotify')) {
+            setSpotifyMeta(null);
+            return;
+        }
+
+        const timeout = setTimeout(async () => {
+            setIsResolvingSpotify(true);
+            try {
+                const { ok, json } = await apiFetch(`/api/spotify/resolve?url=${encodeURIComponent(spotifyUrl)}`);
+                if (ok && json?.data) {
+                    setSpotifyMeta(json.data);
+                } else {
+                    setSpotifyMeta(null);
+                }
+            } catch (e) {
+                console.error(e);
+                setSpotifyMeta(null);
+            } finally {
+                setIsResolvingSpotify(false);
+            }
+        }, 400);
+
+        return () => clearTimeout(timeout);
+    }, [spotifyUrl]);
 
     // Background music state (only actual audio files / MP3, not Spotify embeds)
     const [backgroundMusicUrl, setBackgroundMusicUrl] = useState(
@@ -1013,11 +1042,53 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                     </div>
                                 </div>
 
-                                {/* Live Spotify Preview */}
-                                {spotifyEmbedUrl ? (
+                                {/* Live Spotify Preview & Verified Metadata Card */}
+                                {spotifyMeta ? (
+                                    <div className="rounded-2xl border border-emerald-500/40 bg-zinc-950 p-3 space-y-3 shadow-xl">
+                                        <div className="flex items-center justify-between px-1">
+                                            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-400 tracking-wider">
+                                                <Check className="w-3.5 h-3.5" />
+                                                <span>Verificado con la API de Spotify</span>
+                                            </div>
+                                            {isResolvingSpotify && (
+                                                <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                                            )}
+                                        </div>
+
+                                        <div className="flex items-center gap-3 bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
+                                            {spotifyMeta.image ? (
+                                                <img src={spotifyMeta.image} alt={spotifyMeta.title} className="w-12 h-12 rounded-lg object-cover shadow-sm shrink-0 border border-zinc-700" />
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                    <Disc className="w-6 h-6 animate-spin-slow" />
+                                                </div>
+                                            )}
+                                            <div className="min-w-0 flex-1">
+                                                <h5 className="text-xs font-black text-white truncate">{spotifyMeta.title}</h5>
+                                                <p className="text-[11px] text-zinc-400 truncate">{spotifyMeta.artist}</p>
+                                                {spotifyMeta.total_tracks && (
+                                                     <span className="text-[10px] text-emerald-400 font-bold">{spotifyMeta.total_tracks} canciones</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl overflow-hidden border border-zinc-800/80">
+                                            <iframe
+                                                src={spotifyMeta.embed_url || spotifyEmbedUrl}
+                                                width="100%"
+                                                height="152"
+                                                frameBorder="0"
+                                                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                                                loading="lazy"
+                                                className="rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
+                                ) : spotifyEmbedUrl ? (
                                     <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-xl bg-zinc-950 p-2">
-                                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 px-1">
-                                            Vista previa del Reproductor Spotify:
+                                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 px-1 flex items-center justify-between">
+                                            <span>Vista previa del Reproductor Spotify:</span>
+                                            {isResolvingSpotify && <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />}
                                         </div>
                                         <iframe
                                             src={spotifyEmbedUrl}
@@ -1031,7 +1102,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                     </div>
                                 ) : (
                                     <div className="p-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-center text-xs text-zinc-500">
-                                        <p className="text-[11px]">Pegá una URL de Spotify para mostrar el reproductor en la tarjeta de música.</p>
+                                        <p className="text-[11px]">Pegá una URL de Spotify para verificarla con la API y activar el reproductor interactivo.</p>
                                     </div>
                                 )}
                             </div>

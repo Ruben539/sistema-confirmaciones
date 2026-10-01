@@ -16,11 +16,28 @@ export default function EventInteractivePanel({ event, onUpdateEvent, showToast 
     const [songsCount, setSongsCount] = useState(0);
     const [dedicationsCount, setDedicationsCount] = useState(0);
     const [copiedUrl, setCopiedUrl] = useState(null);
+    const [spotifyMeta, setSpotifyMeta] = useState(null);
 
     useEffect(() => {
         if (!event?.id) return;
         fetchCounts();
-    }, [event?.id]);
+        if (event?.spotify_url) {
+            fetchSpotifyMeta();
+        } else {
+            setSpotifyMeta(null);
+        }
+    }, [event?.id, event?.spotify_url]);
+
+    const fetchSpotifyMeta = async () => {
+        try {
+            const { ok, json } = await apiFetch(`/api/spotify/resolve?url=${encodeURIComponent(event.spotify_url)}`);
+            if (ok && json?.data) {
+                setSpotifyMeta(json.data);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
 
     const fetchCounts = async () => {
         try {
@@ -132,6 +149,20 @@ export default function EventInteractivePanel({ event, onUpdateEvent, showToast 
                                 {songsCount} {songsCount === 1 ? 'canción sugerida' : 'canciones sugeridas'} por los invitados para sonar en la fiesta.
                             </p>
                         </div>
+
+                        {spotifyMeta && (
+                            <div className="flex items-center gap-2.5 p-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/60 dark:border-zinc-700/60">
+                                {spotifyMeta.image ? (
+                                    <img src={spotifyMeta.image} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                                ) : (
+                                    <Disc className="w-7 h-7 text-emerald-500 animate-spin-slow" />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-bold text-zinc-900 dark:text-white truncate">{spotifyMeta.title}</div>
+                                    <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">{spotifyMeta.artist}</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-2">

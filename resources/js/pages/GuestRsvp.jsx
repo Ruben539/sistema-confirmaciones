@@ -3,7 +3,7 @@ import {
     Heart, Calendar, MapPin, CheckCircle2, XCircle, Utensils, Send, Sparkles, AlertCircle, 
     Sun, Moon, Music, Disc, Gift, Copy, Check, ExternalLink, Camera, Film, Navigation, 
     Share2, Compass, Clock, Shirt, MessageSquare, Play, Pause, Volume2, VolumeX, Upload, 
-    ChevronRight, Mail, MailOpen
+    ChevronRight, Mail, MailOpen, Search, Loader2, Maximize2, Minimize2
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -42,6 +42,18 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
     // Audio / Spotify play state
     const [showMusicPlayer, setShowMusicPlayer] = useState(false);
+    const [spotifyMeta, setSpotifyMeta] = useState(null);
+    const [isSpotifyPlaying, setIsSpotifyPlaying] = useState(false);
+    const [isSpotifyReady, setIsSpotifyReady] = useState(false);
+    const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
+    const spotifyControllerRef = useRef(null);
+
+    // DJ Song Live Spotify Search
+    const [songSearchResults, setSongSearchResults] = useState([]);
+    const [isSearchingSong, setIsSearchingSong] = useState(false);
+    const [showSongDropdown, setShowSongDropdown] = useState(false);
+    const [selectedSongMeta, setSelectedSongMeta] = useState(null);
+    const searchDebounceRef = useRef(null);
 
     // Interactive Digital Envelope & Background Music states
     const [isEnvelopeOpen, setIsEnvelopeOpen] = useState(false);
@@ -181,7 +193,6 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const getSpotifyEmbedUrl = (url) => {
         if (!url) return null;
         try {
-            // Support spotify:track:xxx or spotify:playlist:xxx format
             if (url.startsWith('spotify:')) {
                 const parts = url.split(':');
                 if (parts.length >= 3) {
@@ -192,10 +203,8 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             const parsed = new URL(url);
             if (!parsed.hostname.includes('spotify.com')) return null;
 
-            // Strip localization prefixes (e.g. /intl-es/, /intl-en/, /intl-pt/)
             let pathname = parsed.pathname.replace(/^\/intl-[a-zA-Z-]+/, '');
 
-            // Don't duplicate /embed if already present
             if (pathname.startsWith('/embed/')) {
                 return `https://open.spotify.com${pathname}`;
             }
@@ -206,6 +215,128 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         }
     };
     const spotifyEmbedUrl = getSpotifyEmbedUrl(event?.spotify_url);
+
+    // Fetch Spotify Metadata (Title, Artist, Artwork, etc.) via backend API
+    useEffect(() => {
+        if (!event?.spotify_url) return;
+
+        let isMounted = true;
+        apiFetch(`/api/spotify/resolve?url=${encodeURIComponent(event.spotify_url)}`)
+            .then(({ ok, json }) => {
+                if (isMounted && ok && json?.data) {
+                    setSpotifyMeta(json.data);
+                }
+            })
+            .catch(console.error);
+
+        return () => { isMounted = false; };
+    }, [event?.spotify_url]);
+
+    // Initialize Spotify IFrame API Controller
+    useEffect(() => {
+        if (!event?.spotify_url || !features.spotify) return;
+
+        let isMounted = true;
+
+        const mountController = (IFrameAPI) => {
+            const container = document.getElementById('spotify-embed-controller');
+            if (!container || !isMounted) return;
+
+            const targetUri = spotifyMeta?.uri || (event.spotify_url.startsWith('spotify:') ? event.spotify_url : null);
+            if (!targetUri) return;
+
+            container.innerHTML = '';
+
+            const options = {
+                uri: targetUri,
+                width: '100%',
+                height: '152',
+            };
+
+            IFrameAPI.createController(container, options, (controller) => {
+                if (!isMounted) return;
+                spotifyControllerRef.current = controller;
+                setIsSpotifyReady(true);
+
+                controller.addListener('playback_update', (e) => {
+                    if (e && e.data) {
+                        setIsSpotifyPlaying(!e.data.isPaused);
+                    }
+                });
+            });
+        };
+
+        if (window.SpotifyIframeApi) {
+            mountController(window.SpotifyIframeApi);
+        } else {
+            if (!document.getElementById('spotify-iframe-api-script')) {
+                const script = document.createElement('script');
+                script.id = 'spotify-iframe-api-script';
+                script.src = 'https://open.spotify.com/embed/iframe-api/v1';
+                script.async = true;
+                document.body.appendChild(script);
+            }
+
+            const prevReady = window.onSpotifyIframeApiReady;
+            window.onSpotifyIframeApiReady = (IFrameAPI) => {
+                if (prevReady) prevReady(IFrameAPI);
+                window.SpotifyIframeApi = IFrameAPI;
+                mountController(IFrameAPI);
+            };
+        }
+
+        return () => { isMounted = false; };
+    }, [event?.spotify_url, spotifyMeta?.uri, features.spotify]);
+
+    // Handle Song Search on Spotify (Debounced)
+    const handleSongInputChange = (e) => {
+        const val = e.target.value;
+        setSongSuggestion(val);
+        setSelectedSongMeta(null);
+
+        if (searchDebounceRef.current) {
+            clearTimeout(searchDebounceRef.current);
+        }
+
+        if (val.trim().length >= 2) {
+            setIsSearchingSong(true);
+            searchDebounceRef.current = setTimeout(async () => {
+                try {
+                    const { ok, json } = await apiFetch(`/api/spotify/search?q=${encodeURIComponent(val.trim())}&limit=5`);
+                    if (ok && Array.isArray(json?.results)) {
+                        setSongSearchResults(json.results);
+                        setShowSongDropdown(true);
+                    }
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setIsSearchingSong(false);
+                }
+            }, 300);
+        } else {
+            setSongSearchResults([]);
+            setShowSongDropdown(false);
+            setIsSearchingSong(false);
+        }
+    };
+
+    const handleSelectSpotifySong = (track) => {
+        setSongSuggestion(`${track.name} - ${track.artist}`);
+        setSelectedSongMeta(track);
+        setShowSongDropdown(false);
+    };
+
+    const toggleSpotifyPlay = () => {
+        if (spotifyControllerRef.current) {
+            if (audioRef.current && isPlayingAudio) {
+                audioRef.current.pause();
+                setIsPlayingAudio(false);
+            }
+            spotifyControllerRef.current.togglePlay();
+        } else {
+            setShowMusicPlayer(true);
+        }
+    };
 
     // Client-side image optimization to bypass server PHP upload limits (e.g. 2MB)
     const compressImage = (file, maxWidth = 1920, maxHeight = 1080, quality = 0.85) => {
@@ -374,7 +505,6 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             if (playPromise !== undefined) {
                 playPromise.then(() => {
                     setIsPlayingAudio(true);
-                    // Fade in volume to 0.7 over 1.5 seconds
                     let vol = 0;
                     const fade = setInterval(() => {
                         if (vol < 0.7) {
@@ -387,6 +517,14 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 }).catch(err => {
                     console.log('Autoplay prevented on open:', err);
                 });
+            }
+        } else if (spotifyControllerRef.current) {
+            try {
+                spotifyControllerRef.current.play();
+                setIsSpotifyPlaying(true);
+                setShowMusicPlayer(true);
+            } catch (err) {
+                console.log('Spotify autoplay on envelope open:', err);
             }
         }
 
@@ -634,12 +772,28 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 {features.spotify && (event.spotify_url || spotifyEmbedUrl) && (
                     <button
                         type="button"
-                        onClick={() => setShowMusicPlayer(!showMusicPlayer)}
-                        className="p-3 rounded-full bg-emerald-500 text-zinc-950 hover:bg-emerald-400 shadow-xl transition-all hover:scale-110 flex items-center gap-2 font-black text-xs"
-                        title="Música Spotify"
+                        onClick={() => {
+                            if (!showMusicPlayer) setShowMusicPlayer(true);
+                            else toggleSpotifyPlay();
+                        }}
+                        className={`p-2.5 sm:p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 font-black text-xs ${
+                            isSpotifyPlaying 
+                                ? 'bg-emerald-500 text-zinc-950 ring-4 ring-emerald-500/30 shadow-emerald-500/40' 
+                                : 'bg-zinc-900/90 dark:bg-zinc-800/90 text-white border border-emerald-500/40 hover:bg-zinc-800'
+                        }`}
+                        title={isSpotifyPlaying ? "Pausar música Spotify" : "Reproducir música Spotify"}
                     >
-                        <Disc className="w-5 h-5 animate-spin-slow" />
-                        <span className="hidden sm:inline">Spotify</span>
+                        <Disc className={`w-4 h-4 sm:w-5 sm:h-5 ${isSpotifyPlaying ? 'text-zinc-950 animate-spin-slow' : 'text-emerald-400'}`} />
+                        <span className="hidden sm:inline">
+                            {isSpotifyPlaying ? 'Sonando' : 'Spotify'}
+                        </span>
+                        {isSpotifyPlaying && (
+                            <div className="flex items-end gap-0.5 h-3 ml-0.5">
+                                <span className="w-1 bg-zinc-950 rounded-full h-full animate-pulse" />
+                                <span className="w-1 bg-zinc-950 rounded-full h-2 animate-pulse delay-75" />
+                                <span className="w-1 bg-zinc-950 rounded-full h-2.5 animate-pulse delay-150" />
+                            </div>
+                        )}
                     </button>
                 )}
 
@@ -653,27 +807,104 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 </button>
             </div>
 
-            {/* FLOATING SPOTIFY PLAYER DRAWER */}
-            {showMusicPlayer && spotifyEmbedUrl && (
-                <div className="fixed bottom-4 right-4 z-40 w-80 sm:w-96 rounded-3xl overflow-hidden shadow-2xl border border-zinc-700/80 bg-zinc-950 p-3 animate-fade-in">
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800 px-1">
+            {/* FLOATING SPOTIFY ADVANCED PLAYER DRAWER */}
+            {showMusicPlayer && (event.spotify_url || spotifyEmbedUrl) && (
+                <div className="fixed bottom-4 right-4 z-40 w-[90vw] max-w-sm sm:max-w-md rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/40 bg-zinc-950/95 backdrop-blur-xl p-3 sm:p-4 text-white animate-fade-in space-y-3">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 px-1">
                         <div className="flex items-center gap-2 text-xs font-black text-emerald-400 uppercase tracking-wider">
-                            <Music className="w-4 h-4 animate-bounce" />
-                            <span>Música del Evento</span>
+                            <Disc className={`w-4 h-4 ${isSpotifyPlaying ? 'animate-spin-slow text-emerald-400' : 'text-zinc-400'}`} />
+                            <span className="truncate max-w-[170px] sm:max-w-[220px]">
+                                {spotifyMeta?.title || 'Música de la Fiesta'}
+                            </span>
                         </div>
-                        <button onClick={() => setShowMusicPlayer(false)} className="text-zinc-400 hover:text-white p-1">
-                            ✕
-                        </button>
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setIsPlayerExpanded(!isPlayerExpanded)}
+                                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors"
+                                title={isPlayerExpanded ? "Contraer" : "Expandir"}
+                            >
+                                {isPlayerExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                            </button>
+                            <button 
+                                onClick={() => setShowMusicPlayer(false)} 
+                                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors"
+                            >
+                                ✕
+                            </button>
+                        </div>
                     </div>
-                    <iframe
-                        src={spotifyEmbedUrl}
-                        width="100%"
-                        height="152"
-                        frameBorder="0"
-                        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                        loading="lazy"
-                        className="rounded-2xl"
-                    />
+
+                    {/* Metadata Card */}
+                    <div className="flex items-center justify-between gap-3 bg-zinc-900/80 p-2.5 rounded-2xl border border-zinc-800/60">
+                        <div className="flex items-center gap-3 min-w-0">
+                            {spotifyMeta?.image ? (
+                                <img
+                                    src={spotifyMeta.image}
+                                    alt={spotifyMeta.title}
+                                    className="w-12 h-12 rounded-xl object-cover shadow-md shrink-0 border border-zinc-700"
+                                />
+                            ) : (
+                                <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                    <Music className="w-6 h-6" />
+                                </div>
+                            )}
+                            <div className="min-w-0">
+                                <h4 className="text-xs font-black text-white truncate">
+                                    {spotifyMeta?.title || event.couple_names || event.title}
+                                </h4>
+                                <p className="text-[11px] text-zinc-400 truncate">
+                                    {spotifyMeta?.artist || 'Playlist oficial del evento'}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Interactive Play/Pause Button */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                                type="button"
+                                onClick={toggleSpotifyPlay}
+                                className="p-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black shadow-lg transition-transform active:scale-95 flex items-center justify-center"
+                                title={isSpotifyPlaying ? "Pausar" : "Reproducir"}
+                            >
+                                {isSpotifyPlaying ? <Pause className="w-4 h-4 fill-zinc-950" /> : <Play className="w-4 h-4 fill-zinc-950 ml-0.5" />}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Spotify Official IFrame / Embed Container */}
+                    <div className={isPlayerExpanded ? 'block' : 'hidden'}>
+                        <div id="spotify-embed-controller" className="rounded-2xl overflow-hidden border border-zinc-800" />
+                        {!isSpotifyReady && spotifyEmbedUrl && (
+                            <iframe
+                                src={spotifyEmbedUrl}
+                                width="100%"
+                                height="152"
+                                frameBorder="0"
+                                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                                loading="lazy"
+                                className="rounded-2xl"
+                            />
+                        )}
+                    </div>
+
+                    {/* Quick App Link */}
+                    <div className="pt-1 flex items-center justify-between text-[11px] px-1 text-zinc-400">
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>Powered by Spotify</span>
+                        </span>
+                        <a
+                            href={spotifyMeta?.external_url || event.spotify_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1"
+                        >
+                            <span>Abrir en Spotify</span>
+                            <ExternalLink className="w-3 h-3" />
+                        </a>
+                    </div>
                 </div>
             )}
 
@@ -1071,20 +1302,85 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                             />
                                         </div>
 
-                                        {/* DJ Song Suggestion Feature */}
+                                        {/* DJ Song Suggestion Feature with Live Spotify Search */}
                                         {features.music_suggestions && (
-                                            <div>
+                                            <div className="relative">
                                                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1.5">
                                                     <Disc className="w-3.5 h-3.5 text-emerald-500" />
                                                     ¿Qué canción no puede faltar en la fiesta? (Para el DJ)
                                                 </label>
-                                                <input
-                                                    type="text"
-                                                    value={songSuggestion}
-                                                    onChange={(e) => setSongSuggestion(e.target.value)}
-                                                    placeholder="Ej: Dua Lipa - Levitating / Rodrigo - Ocho Cuarenta"
-                                                    className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium outline-none focus:ring-2 focus:ring-emerald-500"
-                                                />
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        value={songSuggestion}
+                                                        onChange={handleSongInputChange}
+                                                        onFocus={() => songSearchResults.length > 0 && setShowSongDropdown(true)}
+                                                        placeholder="Buscá canción o artista en Spotify..."
+                                                        className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white pl-9 pr-8 py-3 font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                                    />
+                                                    <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                                    {isSearchingSong && (
+                                                        <Loader2 className="w-4 h-4 text-emerald-500 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                                                    )}
+                                                </div>
+
+                                                {/* Spotify Search Dropdown Results */}
+                                                {showSongDropdown && songSearchResults.length > 0 && (
+                                                    <div className="absolute z-30 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto animate-fade-in">
+                                                        <div className="p-2 text-[10px] font-bold text-emerald-400 uppercase tracking-wider border-b border-zinc-800 flex items-center justify-between">
+                                                            <span className="flex items-center gap-1.5">
+                                                                <Disc className="w-3 h-3" /> Resultados de Spotify
+                                                            </span>
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => setShowSongDropdown(false)} 
+                                                                className="text-zinc-400 hover:text-white px-1"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                        {songSearchResults.map((track) => (
+                                                            <button
+                                                                key={track.id}
+                                                                type="button"
+                                                                onClick={() => handleSelectSpotifySong(track)}
+                                                                className="w-full p-2.5 flex items-center gap-3 hover:bg-zinc-800 transition-colors text-left border-b border-zinc-800/50 last:border-b-0"
+                                                            >
+                                                                {track.image ? (
+                                                                    <img src={track.image} alt={track.name} className="w-10 h-10 rounded-lg object-cover shadow-sm shrink-0 border border-zinc-700" />
+                                                                ) : (
+                                                                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
+                                                                        <Music className="w-5 h-5 text-emerald-400" />
+                                                                    </div>
+                                                                )}
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="text-xs font-bold text-white truncate">{track.name}</div>
+                                                                    <div className="text-[11px] text-zinc-400 truncate">{track.artist} · <span className="text-zinc-500">{track.album}</span></div>
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {selectedSongMeta && (
+                                                    <div className="mt-2 p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            {selectedSongMeta.image && (
+                                                                <img src={selectedSongMeta.image} alt="" className="w-6 h-6 rounded object-cover" />
+                                                            )}
+                                                            <span className="text-[11px] font-bold text-emerald-400 truncate">
+                                                                ✓ Seleccionada de Spotify: {selectedSongMeta.name} ({selectedSongMeta.artist})
+                                                            </span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setSelectedSongMeta(null); setSongSuggestion(''); }}
+                                                            className="text-zinc-400 hover:text-white text-xs px-1"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>

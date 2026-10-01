@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'spotify' => [
+        'client_id' => env('SPOTIFY_CLIENT_ID', env('SPOTIFYCLIENTID')),
+        'client_secret' => env('SPOTIFY_CLIENT_SECRET', env('SPOTIFYCLIENTSECRET')),
+        'api_key' => env('SPOTIFY_API_KEY', env('SPOTIFYAPIKEY')),
+    ],
+
 ];

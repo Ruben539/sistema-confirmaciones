@@ -10,6 +10,7 @@ use App\Http\Controllers\TableController;
 use App\Http\Controllers\PlanRequestController;
 use App\Http\Controllers\TimingController;
 use App\Http\Controllers\EventTypeController;
+use App\Http\Controllers\SpotifyController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -83,6 +84,10 @@ Route::prefix('api')->group(function () {
     Route::get('/events/{id}/dedications', [EventController::class, 'getDedications']);
     Route::post('/events/{id}/dedications/{dedicationId}/toggle', [EventController::class, 'toggleDedicationApproval']);
     Route::delete('/events/{id}/dedications/{dedicationId}', [EventController::class, 'deleteDedication']);
+
+    // Spotify Integration & Real-Time DJ Music Search Routes
+    Route::get('/spotify/resolve', [SpotifyController::class, 'resolve']);
+    Route::get('/spotify/search', [SpotifyController::class, 'search']);
 
     // Door Accreditation / Check-In QR Scan Route
     Route::post('/check-in/scan', [GuestController::class, 'scanQrCheckIn']);
