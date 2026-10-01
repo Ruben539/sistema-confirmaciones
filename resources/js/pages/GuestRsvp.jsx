@@ -3,7 +3,8 @@ import {
     Heart, Calendar, MapPin, CheckCircle2, XCircle, Utensils, Send, Sparkles, AlertCircle, 
     Sun, Moon, Music, Disc, Gift, Copy, Check, ExternalLink, Camera, Film, Navigation, 
     Share2, Compass, Clock, Shirt, MessageSquare, Play, Pause, Volume2, VolumeX, Upload, 
-    ChevronRight, Mail, MailOpen, Search, Loader2, Maximize2, Minimize2, ChevronDown
+    ChevronRight, Mail, MailOpen, Search, Loader2, Maximize2, Minimize2, ChevronDown,
+    Download, Car, Trophy, Award, HelpCircle, Layout
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -36,6 +37,14 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [dedicationUploading, setDedicationUploading] = useState(false);
     const [dedicationSuccess, setDedicationSuccess] = useState(false);
     const [isGeneratingDedication, setIsGeneratingDedication] = useState(false);
+
+    // VIP Features States: Photobooth Frame, Seating Modal, Trivia Mini-game
+    const [applyPhotoboothFrame, setApplyPhotoboothFrame] = useState(true);
+    const [rawDedicationPhoto, setRawDedicationPhoto] = useState(null);
+    const [showSeatingModal, setShowSeatingModal] = useState(false);
+    const [triviaAnswers, setTriviaAnswers] = useState({});
+    const [triviaSubmitted, setTriviaSubmitted] = useState(false);
+    const [triviaScore, setTriviaScore] = useState(0);
 
     // Countdown state
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: false, isToday: false });
@@ -456,11 +465,8 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         }
     };
 
-    // Client-side image optimization to bypass server PHP upload limits (e.g. 2MB)
-    const compressImage = (file, maxWidth = 1920, maxHeight = 1080, quality = 0.85) => {
-        if (!file.type.startsWith('image/') || file.size < 1.2 * 1024 * 1024) {
-            return Promise.resolve(file);
-        }
+    // Client-side image optimization with Photobooth VIP frame option
+    const compressAndFrameImage = (file, withFrame = true, maxWidth = 1920, maxHeight = 1080, quality = 0.85) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
@@ -477,27 +483,102 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                         width = Math.round((width * maxHeight) / height);
                         height = maxHeight;
                     }
+
                     const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+
+                    if (withFrame) {
+                        const border = Math.max(16, Math.round(Math.min(width, height) * 0.035));
+                        const bottomBar = Math.max(70, Math.round(border * 3.6));
+                        canvas.width = width + border * 2;
+                        canvas.height = height + border * 2 + bottomBar;
+                        const ctx = canvas.getContext('2d');
+
+                        // Luxury dark background
+                        ctx.fillStyle = '#0f172a';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                        // Gold gradient frame
+                        const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+                        grad.addColorStop(0, '#f59e0b');
+                        grad.addColorStop(0.5, '#d97706');
+                        grad.addColorStop(1, '#f59e0b');
+                        ctx.strokeStyle = grad;
+                        ctx.lineWidth = Math.max(2, Math.round(border * 0.2));
+                        ctx.strokeRect(border * 0.4, border * 0.4, canvas.width - border * 0.8, canvas.height - border * 0.8);
+
+                        // Main photo
+                        ctx.drawImage(img, border, border, width, height);
+
+                        // Inner border
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(border, border, width, height);
+
+                        // Event title
+                        ctx.fillStyle = '#ffffff';
+                        ctx.textAlign = 'center';
+                        const titleSize = Math.max(18, Math.round(bottomBar * 0.28));
+                        ctx.font = `bold ${titleSize}px Georgia, serif`;
+                        const textY = height + border + (bottomBar * 0.46);
+                        const displayTitle = event?.couple_names || event?.title || 'Recuerdo del Evento';
+                        ctx.fillText(displayTitle, canvas.width / 2, textY);
+
+                        // Date & Sparkle
+                        ctx.fillStyle = '#fbbf24';
+                        const subSize = Math.max(12, Math.round(bottomBar * 0.18));
+                        ctx.font = `600 ${subSize}px system-ui, sans-serif`;
+                        const formattedDate = event?.event_date 
+                            ? new Date(event.event_date + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) 
+                            : 'Noche Inolvidable';
+                        ctx.fillText(`✨ ${formattedDate} · Photobooth VIP ✨`, canvas.width / 2, textY + (bottomBar * 0.34));
+                    } else {
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                    }
+
                     canvas.toBlob((blob) => {
                         if (blob) {
                             const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
                                 type: 'image/jpeg',
                                 lastModified: Date.now()
                             });
-                            resolve(compressedFile);
+                            resolve({
+                                file: compressedFile,
+                                previewUrl: URL.createObjectURL(blob)
+                            });
                         } else {
-                            resolve(file);
+                            resolve({
+                                file: file,
+                                previewUrl: URL.createObjectURL(file)
+                            });
                         }
                     }, 'image/jpeg', quality);
                 };
-                img.onerror = () => resolve(file);
+                img.onerror = () => resolve({ file, previewUrl: URL.createObjectURL(file) });
             };
-            reader.onerror = () => resolve(file);
+            reader.onerror = () => resolve({ file, previewUrl: URL.createObjectURL(file) });
         });
+    };
+
+    const processAndSetPhoto = async (file, withFrame) => {
+        try {
+            const processed = await compressAndFrameImage(file, withFrame);
+            setDedicationFile(processed.file);
+            setDedicationPreview(processed.previewUrl);
+        } catch (err) {
+            console.error('Error framing image:', err);
+            setDedicationFile(file);
+            setDedicationPreview(URL.createObjectURL(file));
+        }
+    };
+
+    const togglePhotoboothFrame = async (enable) => {
+        setApplyPhotoboothFrame(enable);
+        if (rawDedicationPhoto && dedicationType === 'photo') {
+            await processAndSetPhoto(rawDedicationPhoto, enable);
+        }
     };
 
     // Dedication file handler
@@ -506,17 +587,14 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         if (!file) return;
         const isVideo = file.type.startsWith('video') || file.name?.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
         setDedicationType(isVideo ? 'video' : 'photo');
-        setDedicationPreview(URL.createObjectURL(file));
 
-        if (!isVideo) {
-            try {
-                const optimized = await compressImage(file);
-                setDedicationFile(optimized);
-            } catch (err) {
-                setDedicationFile(file);
-            }
-        } else {
+        if (isVideo) {
             setDedicationFile(file);
+            setDedicationPreview(URL.createObjectURL(file));
+            setRawDedicationPhoto(null);
+        } else {
+            setRawDedicationPhoto(file);
+            await processAndSetPhoto(file, applyPhotoboothFrame);
         }
     };
 
@@ -593,6 +671,181 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         const details = encodeURIComponent(`¡Gran celebración de ${event.couple_names || event.title}!`);
         const location = encodeURIComponent(event.location || '');
         return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}T180000Z/${dateStr}T235900Z&details=${details}&location=${location}`;
+    };
+
+    // Apple Calendar & Outlook (.ics) Direct File Generator
+    const downloadIcsCalendar = () => {
+        if (!event?.event_date) return;
+        const dateFormatted = event.event_date.replace(/-/g, '');
+        const startTime = `${dateFormatted}T180000Z`;
+        const endTime = `${dateFormatted}T235900Z`;
+        const title = event.couple_names || event.title || 'Evento Especial';
+        const description = `Gran celebración de ${title}. Lugar: ${event.location || 'Salón Principal'}`;
+        const location = event.location || '';
+
+        const icsContent = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//Invitaciones VIP//ES',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH',
+            'BEGIN:VEVENT',
+            `UID:${Date.now()}@invitacionesvip.com`,
+            `DTSTAMP:${dateFormatted}T000000Z`,
+            `DTSTART:${startTime}`,
+            `DTEND:${endTime}`,
+            `SUMMARY:${title}`,
+            `DESCRIPTION:${description}`,
+            `LOCATION:${location}`,
+            'STATUS:CONFIRMED',
+            'SEQUENCE:0',
+            'END:VEVENT',
+            'END:VCALENDAR'
+        ].join('\r\n');
+
+        const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.setAttribute('download', `${(event.couple_names || event.title || 'evento').toLowerCase().replace(/\s+/g, '_')}.ics`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    // Direct Uber Ride Deep Link
+    const getUberUrl = () => {
+        if (!event?.location) return 'https://m.uber.com/';
+        return `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${encodeURIComponent(event.location)}`;
+    };
+
+    // Visual Palette Swatches based on Dress Code
+    const getDressCodeColors = (code) => {
+        const normalized = (code || '').toLowerCase();
+        if (normalized.includes('black') || normalized.includes('gala')) {
+            return [
+                { name: 'Negro Azabache', hex: '#09090b' },
+                { name: 'Azul Noche', hex: '#0f172a' },
+                { name: 'Dorado Champagne', hex: '#d4af37' },
+                { name: 'Plata Satinado', hex: '#94a3b8' }
+            ];
+        }
+        if (normalized.includes('formal') || normalized.includes('elegante')) {
+            return [
+                { name: 'Azul Marino', hex: '#1e3a8a' },
+                { name: 'Verde Esmeralda', hex: '#064e3b' },
+                { name: 'Vino Borgoña', hex: '#881337' },
+                { name: 'Champagne', hex: '#e2b77a' },
+                { name: 'Gris Grafito', hex: '#334155' }
+            ];
+        }
+        if (normalized.includes('cocktail') || normalized.includes('coctel') || normalized.includes('fiesta')) {
+            return [
+                { name: 'Rosa Palo', hex: '#f43f5e' },
+                { name: 'Terracota', hex: '#c2410c' },
+                { name: 'Lavanda', hex: '#a855f7' },
+                { name: 'Champagne Gold', hex: '#d4af37' },
+                { name: 'Azul Petróleo', hex: '#0e7490' }
+            ];
+        }
+        return [
+            { name: 'Tonos Tierra', hex: '#78350f' },
+            { name: 'Terracota Cálido', hex: '#ea580c' },
+            { name: 'Verde Salvia', hex: '#65a30d' },
+            { name: 'Arena Nude', hex: '#d97706' },
+            { name: 'Azul Cielo', hex: '#38bdf8' }
+        ];
+    };
+
+    // Trivia Questions Generator (Dynamic based on event type)
+    const getTriviaQuestions = (ev) => {
+        const isWedding = (ev?.event_type === 'boda') || Boolean(ev?.couple_names);
+        if (isWedding) {
+            return [
+                {
+                    id: 1,
+                    question: '¿Dónde se conocieron los novios por primera vez?',
+                    options: [
+                        'En la universidad / trabajo durante un proyecto',
+                        'Por amigos en común en una reunión o salida',
+                        'En una fiesta espontánea donde cruzaron miradas'
+                    ],
+                    correct: 1
+                },
+                {
+                    id: 2,
+                    question: '¿Quién es más probable que cope el centro de la pista de baile?',
+                    options: [
+                        'Ella, ¡no se pierde ni un solo tema!',
+                        'Él, mostrando sus pasos prohibidos',
+                        '¡Ambos juntos hasta que apaguen las luces!'
+                    ],
+                    correct: 2
+                },
+                {
+                    id: 3,
+                    question: '¿Cuál es el plan o viaje soñado para celebrar?',
+                    options: [
+                        'Playa paradisíaca con atardeceres y relax',
+                        'Aventura en la montaña y noches bajo las estrellas',
+                        'Recorrido por ciudades llenas de historia y gastronomía'
+                    ],
+                    correct: 0
+                }
+            ];
+        }
+        return [
+            {
+                id: 1,
+                question: '¿Qué género musical jamás puede faltar en sus noches de festejo?',
+                options: [
+                    'Cumbia y Reggaetón clásico para bailar sin parar',
+                    'Rock nacional y Pop nostálgico',
+                    '¡Un remix de todo hasta el amanecer!'
+                ],
+                correct: 2
+            },
+            {
+                id: 2,
+                question: '¿Qué frase resume mejor el espíritu de los anfitriones?',
+                options: [
+                    'La vida se celebra con amigos y buena música',
+                    'Donde hay risas y brindis, ahí es el lugar',
+                    'Coleccionando recuerdos inolvidables siempre'
+                ],
+                correct: 1
+            },
+            {
+                id: 3,
+                question: '¿Cuál es el momento que más esperan de esta gran noche?',
+                options: [
+                    'El brindis y las palabras emotivas',
+                    'La tanda de baile con cotillón y DJ a pleno',
+                    'Abrazar y compartir con cada uno de los invitados'
+                ],
+                correct: 2
+            }
+        ];
+    };
+
+    const handleTriviaAnswer = (qId, optionIdx) => {
+        setTriviaAnswers(prev => ({ ...prev, [qId]: optionIdx }));
+    };
+
+    const handleTriviaSubmit = (questions) => {
+        let score = 0;
+        questions.forEach(q => {
+            if (triviaAnswers[q.id] === q.correct) {
+                score++;
+            }
+        });
+        setTriviaScore(score);
+        setTriviaSubmitted(true);
+    };
+
+    const handleTriviaReset = () => {
+        setTriviaAnswers({});
+        setTriviaSubmitted(false);
+        setTriviaScore(0);
     };
 
     // Background Audio & Envelope Handlers
@@ -1193,6 +1446,65 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 </div>
             )}
 
+            {/* MODO FIESTA EN VIVO (STICKY TOP BAR WHEN TODAY) */}
+            {timeLeft.isToday && (
+                <div className="sticky top-0 z-40 bg-gradient-to-r from-amber-600 via-rose-600 to-purple-700 text-white px-4 py-2.5 shadow-2xl backdrop-blur-md border-b border-white/20 animate-fade-in">
+                    <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-300 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-400"></span>
+                            </span>
+                            <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider whitespace-nowrap">
+                                ¡HOY ES LA FIESTA! · EN VIVO
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                            {event.location && (
+                                <a
+                                    href={getUberUrl()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2.5 py-1 bg-black/40 hover:bg-black/60 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1 transition-all whitespace-nowrap border border-white/20"
+                                >
+                                    <Car className="w-3 h-3 text-white" />
+                                    <span>Pedir Uber</span>
+                                </a>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => setShowDedicationModal(true)}
+                                className="px-2.5 py-1 bg-white text-zinc-950 hover:bg-zinc-100 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1 shadow transition-all whitespace-nowrap"
+                            >
+                                <Camera className="w-3 h-3 text-rose-500" />
+                                <span>Muro en Vivo</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const djEl = document.getElementById('dj-song-request-section');
+                                    if (djEl) djEl.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1 shadow transition-all whitespace-nowrap"
+                            >
+                                <Music className="w-3 h-3" />
+                                <span>DJ</span>
+                            </button>
+                            {guest?.table_number && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSeatingModal(true)}
+                                    className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-zinc-950 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1 shadow transition-all whitespace-nowrap"
+                                >
+                                    <MapPin className="w-3 h-3" />
+                                    <span>Mesa {guest.table_number}</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* HERO COVER BANNER */}
             <div className="relative w-full min-h-[500px] sm:min-h-[580px] flex items-center justify-center text-center overflow-hidden">
                 {/* Background Image / Cover */}
@@ -1315,19 +1627,30 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                             <div className="p-2.5 bg-rose-500 text-white rounded-xl shadow-md">
                                 <Calendar className="w-5 h-5" />
                             </div>
-                            <div>
+                            <div className="flex-1">
                                 <div className="text-[11px] font-black text-rose-600 dark:text-rose-400 uppercase">Fecha</div>
                                 <div className="text-sm font-bold text-zinc-900 dark:text-white capitalize">
                                     {event.event_date ? new Date(event.event_date + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'A confirmar'}
                                 </div>
-                                <a
-                                    href={getCalendarUrl()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline mt-1 inline-block"
-                                >
-                                    + Agendar en Google Calendar
-                                </a>
+                                <div className="pt-2 flex flex-wrap gap-2">
+                                    <a
+                                        href={getCalendarUrl()}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] font-black inline-flex items-center gap-1 transition-all"
+                                    >
+                                        <ExternalLink className="w-3 h-3" />
+                                        Google Calendar
+                                    </a>
+                                    <button
+                                        type="button"
+                                        onClick={downloadIcsCalendar}
+                                        className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-[10px] font-black inline-flex items-center gap-1 transition-all cursor-pointer"
+                                    >
+                                        <Download className="w-3 h-3" />
+                                        Apple / Outlook (.ics)
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -1336,7 +1659,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                             <div className="p-2.5 bg-amber-500 text-zinc-950 rounded-xl shadow-md">
                                 <MapPin className="w-5 h-5" />
                             </div>
-                            <div>
+                            <div className="flex-1">
                                 <div className="text-[11px] font-black text-amber-600 dark:text-amber-400 uppercase">Lugar</div>
                                 <div className="text-sm font-bold text-zinc-900 dark:text-white">
                                     {event.location || 'Salón Principal'}
@@ -1348,7 +1671,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location)}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="px-3 py-1 bg-white dark:bg-zinc-900 rounded-lg text-[10px] font-black border border-zinc-300 dark:border-zinc-600 hover:border-amber-500 text-zinc-800 dark:text-zinc-200 flex items-center gap-1 shadow-sm"
+                                                className="px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-lg text-[10px] font-black border border-zinc-300 dark:border-zinc-600 hover:border-amber-500 text-zinc-800 dark:text-zinc-200 flex items-center gap-1 shadow-sm"
                                             >
                                                 <Navigation className="w-3 h-3 text-amber-500" />
                                                 Google Maps
@@ -1357,10 +1680,19 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                                 href={`https://waze.com/ul?q=${encodeURIComponent(event.location)}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="px-3 py-1 bg-white dark:bg-zinc-900 rounded-lg text-[10px] font-black border border-zinc-300 dark:border-zinc-600 hover:border-blue-500 text-zinc-800 dark:text-zinc-200 flex items-center gap-1 shadow-sm"
+                                                className="px-2.5 py-1 bg-white dark:bg-zinc-900 rounded-lg text-[10px] font-black border border-zinc-300 dark:border-zinc-600 hover:border-blue-500 text-zinc-800 dark:text-zinc-200 flex items-center gap-1 shadow-sm"
                                             >
                                                 <Navigation className="w-3 h-3 text-blue-500" />
                                                 Waze
+                                            </a>
+                                            <a
+                                                href={getUberUrl()}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="px-2.5 py-1 bg-zinc-950 text-white hover:bg-zinc-800 rounded-lg text-[10px] font-black border border-zinc-800 flex items-center gap-1 shadow-sm"
+                                            >
+                                                <Car className="w-3 h-3 text-white" />
+                                                Pedir Uber
                                             </a>
                                         </>
                                     )}
@@ -1370,24 +1702,55 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                     </div>
                 </div>
 
-                {/* DRESS CODE CARD */}
+                {/* DRESS CODE CARD WITH VISUAL PALETTE */}
                 {features.dress_code && event.dress_code && (
-                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-500/20 text-2xl">
-                            👗
+                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-500/20 text-2xl">
+                                👗
+                            </div>
+                            <div className="space-y-1">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500">
+                                    Código de Vestimenta
+                                </span>
+                                <h4 className="text-lg font-black text-zinc-900 dark:text-white capitalize">
+                                    {event.dress_code.replace(/_/g, ' ')}
+                                </h4>
+                                {event.dress_code_notes && (
+                                    <p className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                                        {event.dress_code_notes}
+                                    </p>
+                                )}
+                            </div>
                         </div>
-                        <div className="space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                                Código de Vestimenta
-                            </span>
-                            <h4 className="text-lg font-black text-zinc-900 dark:text-white capitalize">
-                                {event.dress_code.replace('_', ' ')}
-                            </h4>
-                            {event.dress_code_notes && (
-                                <p className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-                                    {event.dress_code_notes}
-                                </p>
-                            )}
+
+                        {/* Visual Palette Guide */}
+                        <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 space-y-2.5">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                                    Paleta sugerida para invitados
+                                </span>
+                                <span className="text-[10px] font-bold text-zinc-400">
+                                    Guía de estilo
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2.5">
+                                {getDressCodeColors(event.dress_code).map((color, idx) => (
+                                    <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700">
+                                        <span 
+                                            className="w-3.5 h-3.5 rounded-full shadow-sm shrink-0 border border-black/10 dark:border-white/20" 
+                                            style={{ backgroundColor: color.hex }}
+                                        />
+                                        <span className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
+                                            {color.name}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200/50 flex items-center gap-2">
+                                <span className="text-sm">✨</span>
+                                <span>Recordatorio especial: Rogamos reservar los tonos blancos y marfil exclusivamente para los protagonistas de la celebración.</span>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1449,6 +1812,16 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                             />
                                         </div>
                                         <p className="text-[10px] text-zinc-400">Presentá este código al ingresar al salón.</p>
+
+                                        {/* Button to view Seating Table Map */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowSeatingModal(true)}
+                                            className="w-full py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[11px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                                        >
+                                            <MapPin className="w-3.5 h-3.5" />
+                                            <span>{guest.table_number ? `Ver mi Mesa ${guest.table_number} en el Plano` : 'Ver Plano del Salón'}</span>
+                                        </button>
                                     </div>
                                 )}
 
@@ -1807,6 +2180,100 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                         )}
                     </div>
                 )}
+
+                {/* TRIVIA INTERACTIVA SOBRE LOS ANFITRIONES */}
+                <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">
+                                Desafío Divertido
+                            </span>
+                            <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
+                                ¿Cuánto conoces a los anfitriones? 🧠✨
+                            </h3>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                {event.couple_names || event.title}: ¡Pon a prueba cuánto recuerdas de su historia!
+                            </p>
+                        </div>
+                        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20 text-2xl shadow-inner">
+                            🏆
+                        </div>
+                    </div>
+
+                    {triviaSubmitted ? (
+                        <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-rose-500/10 to-indigo-500/10 border border-amber-500/30 text-center space-y-4 animate-fade-in">
+                            <div className="w-16 h-16 rounded-full bg-amber-500 text-zinc-950 flex items-center justify-center mx-auto text-3xl shadow-lg">
+                                {triviaScore === 3 ? '🏆' : triviaScore === 2 ? '⭐' : '🎉'}
+                            </div>
+                            <div>
+                                <div className="text-2xl font-black text-zinc-900 dark:text-white">
+                                    ¡Puntaje: {triviaScore} de 3 Aciertos!
+                                </div>
+                                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-1 max-w-sm mx-auto">
+                                    {triviaScore === 3 
+                                        ? '¡Increíble! Eres un invitado de honor y conoces cada detalle de esta historia ❤️'
+                                        : triviaScore === 2
+                                        ? '¡Casi perfecto! Se nota el gran cariño que tienes por los protagonistas 🥂'
+                                        : '¡Excelente intento! Lo más importante es celebrar juntos esta gran noche 🥳'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleTriviaReset}
+                                className="px-5 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-black transition-all hover:scale-105 shadow cursor-pointer"
+                            >
+                                Jugar de nuevo
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {getTriviaQuestions(event).map((q, qIdx) => (
+                                <div key={q.id} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
+                                    <div className="text-xs font-black text-zinc-900 dark:text-white flex items-start gap-2">
+                                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] flex items-center justify-center shrink-0 font-bold">
+                                            {qIdx + 1}
+                                        </span>
+                                        <span>{q.question}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 pt-1">
+                                        {q.options.map((opt, oIdx) => {
+                                            const isSelected = triviaAnswers[q.id] === oIdx;
+                                            return (
+                                                <button
+                                                    key={oIdx}
+                                                    type="button"
+                                                    onClick={() => handleTriviaAnswer(q.id, oIdx)}
+                                                    className={`p-2.5 rounded-xl text-left text-xs font-medium transition-all flex items-center gap-2.5 border cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-amber-500 text-zinc-950 font-bold border-amber-400 shadow-sm'
+                                                            : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-amber-400'
+                                                    }`}
+                                                >
+                                                    <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] shrink-0 ${
+                                                        isSelected ? 'border-zinc-950 bg-zinc-950 text-amber-400 font-bold' : 'border-zinc-400'
+                                                    }`}>
+                                                        {['A', 'B', 'C'][oIdx]}
+                                                    </span>
+                                                    <span>{opt}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+
+                            <button
+                                type="button"
+                                onClick={() => handleTriviaSubmit(getTriviaQuestions(event))}
+                                disabled={Object.keys(triviaAnswers).length < 3}
+                                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-lg disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                <span>Ver Mi Puntaje en la Trivia</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
 
                 {/* GUEST DEDICATIONS / STORIES CAROUSEL */}
                 {features.guest_dedications && (
@@ -2207,6 +2674,22 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                                     )}
                                                 </>
                                             )}
+                                            {dedicationType === 'photo' && (
+                                                <div className="pt-2 px-1 flex items-center justify-between border-t border-zinc-800 text-[11px]">
+                                                    <label className="flex items-center gap-2 cursor-pointer text-amber-400 font-bold select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={applyPhotoboothFrame}
+                                                            onChange={(e) => togglePhotoboothFrame(e.target.checked)}
+                                                            className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-zinc-800 border-zinc-700 cursor-pointer"
+                                                        />
+                                                        <span>Marco Photobooth VIP ({event?.couple_names || event?.title || 'Evento'})</span>
+                                                    </label>
+                                                    <span className="text-[10px] text-zinc-400">
+                                                        {applyPhotoboothFrame ? '✨ Con Marco' : 'Original'}
+                                                    </span>
+                                                </div>
+                                            )}
                                             <div className="flex items-center justify-center gap-2 pt-1 border-t border-zinc-800 text-[11px] font-bold">
                                                 <button
                                                     type="button"
@@ -2226,7 +2709,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                                 <span className="text-zinc-500">|</span>
                                                 <button
                                                     type="button"
-                                                    onClick={() => { setDedicationFile(null); setDedicationPreview(null); }}
+                                                    onClick={() => { setDedicationFile(null); setDedicationPreview(null); setRawDedicationPhoto(null); }}
                                                     className="text-zinc-400 hover:underline cursor-pointer"
                                                 >
                                                     Quitar
@@ -2320,6 +2803,141 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                 </button>
                             </form>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* SALON SEATING PLAN MODAL */}
+            {showSeatingModal && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 sm:p-7 max-w-lg w-full shadow-2xl space-y-4 animate-fade-in relative max-h-[92vh] overflow-y-auto">
+                        <button
+                            type="button"
+                            onClick={() => setShowSeatingModal(false)}
+                            className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-zinc-800 dark:hover:text-white"
+                        >
+                            ✕
+                        </button>
+
+                        <div className="text-center space-y-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">
+                                Distribución del Salón
+                            </span>
+                            <h3 className="text-xl font-black text-zinc-900 dark:text-white">
+                                Plano de Mesas & Áreas
+                            </h3>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                {guest?.table_number 
+                                    ? `Tu mesa reservada es la Mesa #${guest.table_number}`
+                                    : 'Ubicación de mesas, pista de baile y áreas principales'}
+                            </p>
+                        </div>
+
+                        {/* Guest Table Alert if assigned */}
+                        {guest?.table_number && (
+                            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xl">👑</span>
+                                    <div>
+                                        <div className="text-xs font-black text-amber-600 dark:text-amber-400">
+                                            Tu Asignación: Mesa {guest.table_number}
+                                        </div>
+                                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                                            Asignada para {guest.name} ({confirmedPasses} {confirmedPasses === 1 ? 'pase' : 'pases'})
+                                        </div>
+                                    </div>
+                                </div>
+                                <span className="px-2 py-1 rounded-lg bg-amber-500 text-zinc-950 font-black text-[10px] uppercase shadow">
+                                    VIP
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Visual Floor Plan */}
+                        <div className="bg-zinc-950 rounded-2xl p-4 sm:p-5 border border-zinc-800 text-white space-y-4">
+                            {/* Stage / Honor Table at Top */}
+                            <div className="w-52 mx-auto py-2 px-4 rounded-xl bg-gradient-to-r from-amber-600 via-amber-400 to-amber-600 text-zinc-950 font-black text-center text-xs shadow-md uppercase tracking-wider flex items-center justify-center gap-1.5">
+                                <span>👑</span>
+                                <span>Escenario & Mesa de Honor</span>
+                                <span>👑</span>
+                            </div>
+
+                            {/* Main Hall: Left DJ, Center Dancefloor, Right Bar */}
+                            <div className="grid grid-cols-4 gap-2 items-center text-center">
+                                {/* DJ Booth */}
+                                <div className="p-2.5 rounded-xl bg-purple-950/70 border border-purple-500/40 text-purple-300">
+                                    <Disc className="w-4 h-4 mx-auto mb-1 text-purple-400 animate-spin" style={{ animationDuration: '6s' }} />
+                                    <div className="text-[9px] font-black uppercase">DJ & Sonido</div>
+                                    <div className="text-[8px] text-zinc-400">Pantalla</div>
+                                </div>
+
+                                {/* Dance Floor */}
+                                <div className="col-span-2 py-5 px-2 rounded-2xl bg-gradient-to-b from-rose-950/40 to-indigo-950/40 border-2 border-dashed border-rose-500/30 flex flex-col items-center justify-center relative overflow-hidden">
+                                    <Sparkles className="w-5 h-5 text-amber-400 mb-1" />
+                                    <div className="text-[11px] font-black text-white tracking-widest uppercase">
+                                        Pista de Baile
+                                    </div>
+                                    <div className="text-[8px] text-rose-300/80 mt-0.5">
+                                        Luces & Efectos
+                                    </div>
+                                </div>
+
+                                {/* Bar */}
+                                <div className="p-2.5 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-300">
+                                    <Utensils className="w-4 h-4 mx-auto mb-1 text-emerald-400" />
+                                    <div className="text-[9px] font-black uppercase">Open Bar</div>
+                                    <div className="text-[8px] text-zinc-400">Coctelería</div>
+                                </div>
+                            </div>
+
+                            {/* Banquet Tables Grid */}
+                            <div className="pt-2">
+                                <div className="text-[9px] font-bold text-zinc-400 text-center uppercase tracking-wider mb-2.5">
+                                    Zona de Mesas Principales
+                                </div>
+                                <div className="grid grid-cols-4 gap-2.5">
+                                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
+                                        const isMyTable = guest?.table_number && String(guest.table_number).trim() === String(num);
+                                        return (
+                                            <div
+                                                key={num}
+                                                className={`relative p-2.5 rounded-xl text-center transition-all ${
+                                                    isMyTable
+                                                        ? 'bg-amber-500 text-zinc-950 font-black shadow-lg shadow-amber-500/50 ring-4 ring-amber-300 scale-105'
+                                                        : 'bg-zinc-900 border border-zinc-800 text-zinc-300 hover:border-zinc-700'
+                                                }`}
+                                            >
+                                                {isMyTable && (
+                                                    <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-zinc-950 text-amber-400 text-[8px] font-black px-1.5 py-0.5 rounded-full border border-amber-400 whitespace-nowrap shadow">
+                                                        ¡TU MESA!
+                                                    </div>
+                                                )}
+                                                <div className="text-xs font-black">
+                                                    Mesa {num}
+                                                </div>
+                                                <div className={`text-[8px] ${isMyTable ? 'text-zinc-950/80 font-bold' : 'text-zinc-500'}`}>
+                                                    {isMyTable ? '⭐ Reservada' : '8 Asientos'}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Entrance at bottom */}
+                            <div className="text-center pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-400 flex items-center justify-center gap-1.5 font-bold">
+                                <span>🚪</span>
+                                <span>Recepción y Acceso Principal al Salón</span>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowSeatingModal(false)}
+                            className="w-full py-3 rounded-2xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-black text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                            Entendido
+                        </button>
                     </div>
                 </div>
             )}
