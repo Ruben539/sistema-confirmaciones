@@ -12,6 +12,7 @@ export default function PublicDedicationPage({ eventId }) {
     const [previewUrl, setPreviewUrl] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    const [isOptimizing, setIsOptimizing] = useState(false);
     const [error, setError] = useState(null);
 
     const fileInputRef = useRef(null);
@@ -19,6 +20,50 @@ export default function PublicDedicationPage({ eventId }) {
     useEffect(() => {
         fetchEvent();
     }, [eventId]);
+
+    // Client-side image optimization for mobile camera photos (which are usually 5MB-15MB)
+    const compressImage = (file, maxWidth = 1920, maxHeight = 1080, quality = 0.85) => {
+        if (!file.type.startsWith('image/') || file.size < 800 * 1024) {
+            return Promise.resolve(file);
+        }
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new window.Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    let { width, height } = img;
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+                    if (height > maxHeight) {
+                        width = Math.round((width * maxHeight) / height);
+                        height = maxHeight;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            });
+                            resolve(compressedFile);
+                        } else {
+                            resolve(file);
+                        }
+                    }, 'image/jpeg', quality);
+                };
+                img.onerror = () => resolve(file);
+            };
+            reader.onerror = () => resolve(file);
+        });
+    };
 
     const fetchEvent = async () => {
         try {
@@ -33,21 +78,34 @@ export default function PublicDedicationPage({ eventId }) {
         }
     };
 
-    const handleFileChange = (e) => {
+    const handleFileChange = async (e) => {
         const selected = e.target.files?.[0];
         if (!selected) return;
 
-        if (selected.size > 40 * 1024 * 1024) {
-            setError('El archivo no debe superar los 40 MB.');
+        if (selected.size > 50 * 1024 * 1024) {
+            setError('El archivo no debe superar los 50 MB.');
             return;
         }
 
         setError(null);
-        setFile(selected);
 
         const isVideo = selected.type.startsWith('video');
         setType(isVideo ? 'video' : 'photo');
         setPreviewUrl(URL.createObjectURL(selected));
+
+        if (!isVideo) {
+            setIsOptimizing(true);
+            try {
+                const optimized = await compressImage(selected);
+                setFile(optimized);
+            } catch (err) {
+                setFile(selected);
+            } finally {
+                setIsOptimizing(false);
+            }
+        } else {
+            setFile(selected);
+        }
     };
 
     const handleSubmit = async (e) => {
@@ -66,11 +124,20 @@ export default function PublicDedicationPage({ eventId }) {
         setError(null);
 
         try {
+            let fileToSend = file;
+            if (file && type === 'photo' && file.size > 800 * 1024) {
+                try {
+                    fileToSend = await compressImage(file);
+                } catch (e) {
+                    console.warn('Compression fallback', e);
+                }
+            }
+
             const formData = new FormData();
             formData.append('author_name', authorName.trim());
-            formData.append('type', file ? type : 'text');
+            formData.append('type', fileToSend ? type : 'text');
             if (message.trim()) formData.append('message', message.trim());
-            if (file) formData.append('media', file);
+            if (fileToSend) formData.append('media', fileToSend);
 
             const token = localStorage.getItem('auth_token');
             const res = await fetch(`/api/events/${eventId}/public-dedication`, {
@@ -82,12 +149,22 @@ export default function PublicDedicationPage({ eventId }) {
                 body: formData
             });
 
-            const json = await res.json();
+            let json = null;
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                try {
+                    json = await res.json();
+                } catch (e) {}
+            }
 
             if (res.ok) {
                 setSubmitted(true);
             } else {
-                setError(json?.message || 'Error al enviar tu saludo. Verificá el tamaño del archivo.');
+                if (res.status === 413) {
+                    setError('La foto o video supera el tamaño máximo permitido por el servidor. Probá con un archivo más liviano.');
+                } else {
+                    setError(json?.message || 'Error al enviar tu saludo. Verificá el tamaño del archivo.');
+                }
             }
         } catch (err) {
             console.error(err);
@@ -235,11 +312,25 @@ export default function PublicDedicationPage({ eventId }) {
                         {/* Submit Button */}
                         <button
                             type="submit"
-                            disabled={submitting}
-                            className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 hover:opacity-95 text-zinc-950 font-black text-sm uppercase tracking-wider transition-all shadow-xl shadow-amber-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                            disabled={submitting || isOptimizing}
+                            className="w-full py-4 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 hover:opacity-95 text-zinc-950 font-black text-sm uppercase tracking-wider transition-all shadow-xl shadow-amber-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
                         >
-                            <Send className="w-4 h-4 text-zinc-950" />
-                            <span>{submitting ? 'Subiendo dedicatoria...' : 'Enviar a la Pantalla Gigante'}</span>
+                            {submitting ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 animate-spin text-zinc-950" />
+                                    <span>Subiendo a la pantalla gigante...</span>
+                                </>
+                            ) : isOptimizing ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 animate-spin text-zinc-950" />
+                                    <span>Optimizando foto para pantalla gigante...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Send className="w-4 h-4 text-zinc-950" />
+                                    <span>Enviar a la Pantalla Gigante</span>
+                                </>
+                            )}
                         </button>
                     </form>
                 )}
