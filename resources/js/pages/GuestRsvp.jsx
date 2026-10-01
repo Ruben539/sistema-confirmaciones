@@ -1392,39 +1392,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                     </div>
                 )}
 
-                {/* ITINERARY / SCHEDULE */}
-                {event.timing && event.timing.length > 0 && (
-                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-5">
-                        <div className="text-center space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">
-                                Itinerario
-                            </span>
-                            <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
-                                Cronograma del Evento
-                            </h3>
-                        </div>
 
-                        <div className="space-y-3 pt-2">
-                            {event.timing.map((item, idx) => (
-                                <div key={item.id || idx} className="flex items-start gap-4 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60">
-                                    <span className="bg-zinc-900 dark:bg-zinc-700 text-white px-3 py-1.5 rounded-xl text-xs font-black tracking-wider text-center shrink-0 min-w-[75px]">
-                                        {item.time}
-                                    </span>
-                                    <div>
-                                        <h4 className="text-xs font-black text-zinc-900 dark:text-white">
-                                            {item.title}
-                                        </h4>
-                                        {item.description && (
-                                            <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mt-0.5 font-medium">
-                                                {item.description}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
 
                 {/* RSVP CONFIRMATION FORM */}
                 {guest && (
