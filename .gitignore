@@ -22,3 +22,9 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Google Credentials (do not commit)
+*google*.json
+client_secret*.json
+storage/app/*.json
+
