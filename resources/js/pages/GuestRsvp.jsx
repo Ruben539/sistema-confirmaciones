@@ -1939,9 +1939,23 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                     {dedicationPreview ? (
                                         <div className="relative rounded-2xl overflow-hidden border border-zinc-300 dark:border-zinc-700 bg-black p-2 text-center space-y-1">
                                             {dedicationType === 'video' ? (
-                                                <video src={dedicationPreview} controls className="max-h-48 mx-auto rounded-xl w-full object-contain" />
+                                                <>
+                                                    <video src={dedicationPreview} controls className="max-h-48 mx-auto rounded-xl w-full object-contain" />
+                                                    {dedicationFile && (
+                                                        <div className="text-[10px] text-zinc-400 font-bold">
+                                                            Video: {(dedicationFile.size / (1024 * 1024)).toFixed(1)} MB
+                                                        </div>
+                                                    )}
+                                                </>
                                             ) : (
-                                                <img src={dedicationPreview} alt="Preview" className="max-h-48 mx-auto rounded-xl object-contain" />
+                                                <>
+                                                    <img src={dedicationPreview} alt="Preview" className="max-h-48 mx-auto rounded-xl object-contain" />
+                                                    {dedicationFile && (
+                                                        <div className="text-[10px] text-emerald-400 font-bold">
+                                                            Foto: {(dedicationFile.size / 1024).toFixed(0)} KB (Optimizada ✓)
+                                                        </div>
+                                                    )}
+                                                </>
                                             )}
                                             <div className="flex items-center justify-center gap-2 pt-1 border-t border-zinc-800 text-[11px] font-bold">
                                                 <button

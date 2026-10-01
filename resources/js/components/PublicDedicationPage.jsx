@@ -290,15 +290,29 @@ export default function PublicDedicationPage({ eventId }) {
                                     {type === 'video' ? (
                                         <div className="space-y-1">
                                             <video src={previewUrl} controls className="max-h-60 mx-auto rounded-xl w-full object-contain shadow-lg" />
-                                            <div className="text-[11px] font-bold text-rose-400 flex items-center justify-center gap-1">
-                                                <Film className="w-3.5 h-3.5" /> Video listo para proyectar
+                                            <div className="text-[11px] font-bold text-rose-400 flex items-center justify-center gap-1.5">
+                                                <Film className="w-3.5 h-3.5" /> 
+                                                <span>Video listo para proyectar</span>
+                                                {file && (
+                                                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px]">
+                                                        {(file.size / (1024 * 1024)).toFixed(1)} MB
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="space-y-1">
                                             <img src={previewUrl} alt="Preview" className="max-h-60 mx-auto rounded-xl object-contain shadow-lg" />
-                                            <div className="text-[11px] font-bold text-amber-400 flex items-center justify-center gap-1">
-                                                <CheckCircle2 className="w-3.5 h-3.5" /> Foto lista para proyectar {isOptimizing ? '(Optimizando...)' : ''}
+                                            <div className="text-[11px] font-bold text-amber-400 flex items-center justify-center gap-1.5">
+                                                <CheckCircle2 className="w-3.5 h-3.5" /> 
+                                                <span>Foto lista para proyectar</span>
+                                                {isOptimizing ? (
+                                                    <span className="text-[10px] text-amber-300">(Comprimiendo...)</span>
+                                                ) : file ? (
+                                                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px]">
+                                                        {(file.size / 1024).toFixed(0)} KB (Optimizada ✓)
+                                                    </span>
+                                                ) : null}
                                             </div>
                                         </div>
                                     )}
