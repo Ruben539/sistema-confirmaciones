@@ -47,12 +47,25 @@ class RsvpController extends Controller
             $dedications = [];
         }
 
+        $songRequests = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $songRequests = \App\Models\EventSongRequest::where('event_id', $event->id)
+                    ->latest()
+                    ->take(25)
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            $songRequests = [];
+        }
+
         return response()->json([
             'guest' => $guest->fresh(),
             'event' => $event,
             'is_expired' => $isExpired,
             'deadline_date' => $deadlineDateFormatted,
             'dedications' => $dedications,
+            'song_requests' => $songRequests,
         ]);
     }
 
@@ -228,9 +241,22 @@ class RsvpController extends Controller
             $dedications = [];
         }
 
+        $songRequests = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $songRequests = \App\Models\EventSongRequest::where('event_id', $event->id)
+                    ->latest()
+                    ->take(25)
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            $songRequests = [];
+        }
+
         return response()->json([
             'event' => $event,
             'dedications' => $dedications,
+            'song_requests' => $songRequests,
         ]);
     }
 
@@ -464,4 +490,95 @@ class RsvpController extends Controller
             'reply' => $reply
         ]);
     }
+
+    public function storeSongRequest(Request $request, $token)
+    {
+        $guest = \App\Models\Guest::where('token', $token)->firstOrFail();
+        $event = $guest->event;
+
+        $validated = $request->validate([
+            'song_title' => 'required|string|max:255',
+            'artist' => 'nullable|string|max:255',
+            'spotify_id' => 'nullable|string|max:100',
+            'spotify_uri' => 'nullable|string|max:150',
+            'image_url' => 'nullable|string|max:500',
+            'external_url' => 'nullable|string|max:500',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $songRequest = null;
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $songRequest = \App\Models\EventSongRequest::create([
+                    'event_id' => $event->id,
+                    'guest_id' => $guest->id,
+                    'requester_name' => $guest->name,
+                    'song_title' => $validated['song_title'],
+                    'artist' => $validated['artist'] ?? null,
+                    'spotify_id' => $validated['spotify_id'] ?? null,
+                    'spotify_uri' => $validated['spotify_uri'] ?? null,
+                    'image_url' => $validated['image_url'] ?? null,
+                    'external_url' => $validated['external_url'] ?? null,
+                    'note' => $validated['note'] ?? null,
+                    'is_played' => false,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Error creating song request: ' . $e->getMessage());
+        }
+
+        $guest->update([
+            'song_suggestion' => trim(($validated['song_title'] ?? '') . ($validated['artist'] ? ' - ' . $validated['artist'] : '')),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => '¡Canción sugerida al DJ con éxito! 🎧',
+            'song_request' => $songRequest
+        ]);
+    }
+
+    public function storePublicSongRequest(Request $request, $eventId)
+    {
+        $event = \App\Models\Event::findOrFail($eventId);
+
+        $validated = $request->validate([
+            'requester_name' => 'required|string|max:150',
+            'song_title' => 'required|string|max:255',
+            'artist' => 'nullable|string|max:255',
+            'spotify_id' => 'nullable|string|max:100',
+            'spotify_uri' => 'nullable|string|max:150',
+            'image_url' => 'nullable|string|max:500',
+            'external_url' => 'nullable|string|max:500',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $songRequest = null;
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $songRequest = \App\Models\EventSongRequest::create([
+                    'event_id' => $event->id,
+                    'guest_id' => null,
+                    'requester_name' => $validated['requester_name'],
+                    'song_title' => $validated['song_title'],
+                    'artist' => $validated['artist'] ?? null,
+                    'spotify_id' => $validated['spotify_id'] ?? null,
+                    'spotify_uri' => $validated['spotify_uri'] ?? null,
+                    'image_url' => $validated['image_url'] ?? null,
+                    'external_url' => $validated['external_url'] ?? null,
+                    'note' => $validated['note'] ?? null,
+                    'is_played' => false,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Error creating public song request: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => '¡Canción sugerida al DJ con éxito! 🎧',
+            'song_request' => $songRequest
+        ]);
+    }
 }
+

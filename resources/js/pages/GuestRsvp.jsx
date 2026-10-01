@@ -48,12 +48,25 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
     const spotifyControllerRef = useRef(null);
 
-    // DJ Song Live Spotify Search
+    // DJ Song Live Spotify Search (in RSVP form)
     const [songSearchResults, setSongSearchResults] = useState([]);
     const [isSearchingSong, setIsSearchingSong] = useState(false);
     const [showSongDropdown, setShowSongDropdown] = useState(false);
     const [selectedSongMeta, setSelectedSongMeta] = useState(null);
     const searchDebounceRef = useRef(null);
+
+    // Standalone DJ Spotify Song Request Card & List
+    const [songRequests, setSongRequests] = useState([]);
+    const [djRequesterName, setDjRequesterName] = useState('');
+    const [djSongQuery, setDjSongQuery] = useState('');
+    const [djSearchResults, setDjSearchResults] = useState([]);
+    const [isSearchingDjSong, setIsSearchingDjSong] = useState(false);
+    const [showDjDropdown, setShowDjDropdown] = useState(false);
+    const [selectedDjTrack, setSelectedDjTrack] = useState(null);
+    const [djSongNote, setDjSongNote] = useState('');
+    const [isSubmittingDjSong, setIsSubmittingDjSong] = useState(false);
+    const [djSongSuccess, setDjSongSuccess] = useState(false);
+    const djSearchDebounceRef = useRef(null);
 
     // Interactive Digital Envelope & Background Music states
     const [isEnvelopeOpen, setIsEnvelopeOpen] = useState(false);
@@ -82,6 +95,9 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
             if (ok && json) {
                 setData(json);
+                if (Array.isArray(json.song_requests)) {
+                    setSongRequests(json.song_requests);
+                }
                 if (json.guest) {
                     setStatus(json.guest.status === 'declined' ? 'declined' : 'confirmed');
                     setConfirmedAdults(json.guest.confirmed_adults > 0 ? json.guest.confirmed_adults : (json.guest.adults || 1));
@@ -91,6 +107,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                     setNotes(json.guest.notes || '');
                     setSongSuggestion(json.guest.song_suggestion || '');
                     setDedicationAuthor(json.guest.name || '');
+                    setDjRequesterName(json.guest.name || '');
                 }
             } else {
                 setError('Enlace de invitación no encontrado o expirado.');
@@ -350,6 +367,81 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         setSongSuggestion(`${track.name} - ${track.artist}`);
         setSelectedSongMeta(track);
         setShowSongDropdown(false);
+    };
+
+    const handleDjSongInputChange = (e) => {
+        const val = e.target.value;
+        setDjSongQuery(val);
+        setSelectedDjTrack(null);
+
+        if (djSearchDebounceRef.current) {
+            clearTimeout(djSearchDebounceRef.current);
+        }
+
+        if (val.trim().length >= 2) {
+            setIsSearchingDjSong(true);
+            djSearchDebounceRef.current = setTimeout(async () => {
+                try {
+                    const { ok, json } = await apiFetch(`/api/spotify/search?q=${encodeURIComponent(val.trim())}&limit=6`);
+                    if (ok && Array.isArray(json?.results)) {
+                        setDjSearchResults(json.results);
+                        setShowDjDropdown(true);
+                    }
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setIsSearchingDjSong(false);
+                }
+            }, 300);
+        } else {
+            setDjSearchResults([]);
+            setShowDjDropdown(false);
+            setIsSearchingDjSong(false);
+        }
+    };
+
+    const handleSelectDjTrack = (track) => {
+        setSelectedDjTrack(track);
+        setDjSongQuery(`${track.name} - ${track.artist}`);
+        setShowDjDropdown(false);
+    };
+
+    const handleSubmitDjSong = async (e) => {
+        e.preventDefault();
+        if (!selectedDjTrack) return;
+
+        setIsSubmittingDjSong(true);
+        try {
+            const endpoint = token ? `/api/rsvp/${token}/song-request` : `/api/events/${event.id}/public-song-request`;
+            const { ok, json } = await apiFetch(endpoint, {
+                method: 'POST',
+                body: JSON.stringify({
+                    requester_name: (djRequesterName || guest?.name || 'Invitado Especial').trim(),
+                    song_title: selectedDjTrack.name,
+                    artist: selectedDjTrack.artist,
+                    spotify_id: selectedDjTrack.id,
+                    spotify_uri: selectedDjTrack.uri,
+                    image_url: selectedDjTrack.image,
+                    external_url: selectedDjTrack.external_url,
+                    note: djSongNote.trim() || null,
+                }),
+            });
+
+            if (ok) {
+                setDjSongSuccess(true);
+                if (json?.song_request) {
+                    setSongRequests(prev => [json.song_request, ...prev]);
+                }
+                setSelectedDjTrack(null);
+                setDjSongQuery('');
+                setDjSongNote('');
+                setTimeout(() => setDjSongSuccess(false), 5000);
+            }
+        } catch (err) {
+            console.error('Error submitting DJ song:', err);
+        } finally {
+            setIsSubmittingDjSong(false);
+        }
     };
 
     const toggleSpotifyPlay = () => {
@@ -1005,15 +1097,14 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                     <button
                         type="button"
                         onClick={() => {
-                            if (!showMusicPlayer) setShowMusicPlayer(true);
-                            else toggleSpotifyPlay();
+                            setShowMusicPlayer(prev => !prev);
                         }}
-                        className={`p-2.5 sm:p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 font-black text-xs ${
-                            isSpotifyPlaying 
+                        className={`p-2.5 sm:p-3 rounded-full shadow-xl transition-all hover:scale-105 flex items-center gap-2 font-black text-xs cursor-pointer ${
+                            showMusicPlayer 
                                 ? 'bg-emerald-500 text-zinc-950 ring-4 ring-emerald-500/30 shadow-emerald-500/40' 
                                 : 'bg-zinc-900/90 dark:bg-zinc-800/90 text-white border border-emerald-500/40 hover:bg-zinc-800'
                         }`}
-                        title={isSpotifyPlaying ? "Pausar música Spotify" : "Reproducir música Spotify"}
+                        title={showMusicPlayer ? "Ocultar reproductor Spotify" : "Abrir reproductor Spotify"}
                     >
                         <Disc className={`w-4 h-4 sm:w-5 sm:h-5 ${isSpotifyPlaying ? 'text-zinc-950 animate-spin-slow' : 'text-emerald-400'}`} />
                         <span className="hidden sm:inline">
@@ -1041,7 +1132,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
             {/* FLOATING SPOTIFY ADVANCED PLAYER DRAWER */}
             {showMusicPlayer && (event.spotify_url || spotifyEmbedUrl) && (
-                <div className="fixed bottom-4 right-4 z-40 w-[90vw] max-w-sm sm:max-w-md rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/40 bg-zinc-950/95 backdrop-blur-xl p-3 sm:p-4 text-white animate-fade-in space-y-3">
+                <div className="fixed bottom-4 right-4 z-40 w-[92vw] max-w-sm sm:max-w-md rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/40 bg-zinc-950/95 backdrop-blur-xl p-3 sm:p-4 text-white animate-fade-in space-y-3">
                     {/* Header */}
                     <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 px-1">
                         <div className="flex items-center gap-2 text-xs font-black text-emerald-400 uppercase tracking-wider">
@@ -1054,86 +1145,48 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                             <button
                                 type="button"
                                 onClick={() => setIsPlayerExpanded(!isPlayerExpanded)}
-                                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors"
-                                title={isPlayerExpanded ? "Contraer" : "Expandir"}
+                                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                                title={isPlayerExpanded ? "Modo compacto" : "Modo expandido"}
                             >
                                 {isPlayerExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
                             </button>
                             <button 
                                 onClick={() => setShowMusicPlayer(false)} 
-                                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors"
+                                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
                             >
                                 ✕
                             </button>
                         </div>
                     </div>
 
-                    {/* Metadata Card */}
-                    <div className="flex items-center justify-between gap-3 bg-zinc-900/80 p-2.5 rounded-2xl border border-zinc-800/60">
-                        <div className="flex items-center gap-3 min-w-0">
-                            {spotifyMeta?.image ? (
-                                <img
-                                    src={spotifyMeta.image}
-                                    alt={spotifyMeta.title}
-                                    className="w-12 h-12 rounded-xl object-cover shadow-md shrink-0 border border-zinc-700"
-                                />
-                            ) : (
-                                <div className="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                                    <Music className="w-6 h-6" />
-                                </div>
-                            )}
-                            <div className="min-w-0">
-                                <h4 className="text-xs font-black text-white truncate">
-                                    {spotifyMeta?.title || event.couple_names || event.title}
-                                </h4>
-                                <p className="text-[11px] text-zinc-400 truncate">
-                                    {spotifyMeta?.artist || 'Playlist oficial del evento'}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Interactive Play/Pause Button */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                                type="button"
-                                onClick={toggleSpotifyPlay}
-                                className="p-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black shadow-lg transition-transform active:scale-95 flex items-center justify-center"
-                                title={isSpotifyPlaying ? "Pausar" : "Reproducir"}
-                            >
-                                {isSpotifyPlaying ? <Pause className="w-4 h-4 fill-zinc-950" /> : <Play className="w-4 h-4 fill-zinc-950 ml-0.5" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Spotify Official IFrame / Embed Container */}
-                    <div className={isPlayerExpanded ? 'block' : 'hidden'}>
-                        <div id="spotify-embed-controller" className="rounded-2xl overflow-hidden border border-zinc-800" />
-                        {!isSpotifyReady && spotifyEmbedUrl && (
+                    {/* Official Spotify Interactive Embed Player */}
+                    {(spotifyMeta?.embed_url || spotifyEmbedUrl) && (
+                        <div className="rounded-2xl overflow-hidden border border-zinc-800/80 bg-black/60 shadow-inner">
                             <iframe
-                                src={spotifyEmbedUrl}
+                                src={spotifyMeta?.embed_url || spotifyEmbedUrl}
                                 width="100%"
-                                height="152"
+                                height={isPlayerExpanded ? ((spotifyMeta?.type === 'playlist' || spotifyEmbedUrl?.includes('/playlist/')) ? "352" : "152") : ((spotifyMeta?.type === 'track' || spotifyEmbedUrl?.includes('/track/')) ? "80" : "152")}
                                 frameBorder="0"
                                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                                 loading="lazy"
-                                className="rounded-2xl"
+                                className="rounded-2xl block"
                             />
-                        )}
-                    </div>
+                        </div>
+                    )}
 
-                    {/* Quick App Link */}
-                    <div className="pt-1 flex items-center justify-between text-[11px] px-1 text-zinc-400">
+                    {/* Quick App Link and Direct Open */}
+                    <div className="pt-0.5 flex items-center justify-between text-[11px] px-1 text-zinc-400">
                         <span className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>Powered by Spotify</span>
+                            <span>Reproductor Oficial Spotify</span>
                         </span>
                         <a
                             href={spotifyMeta?.external_url || event.spotify_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1"
+                            className="text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 transition-colors"
                         >
-                            <span>Abrir en Spotify</span>
+                            <span>Abrir en Spotify App</span>
                             <ExternalLink className="w-3 h-3" />
                         </a>
                     </div>
@@ -1847,6 +1900,235 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* SPOTIFY DJ SONG REQUEST SELECTOR CARD */}
+                {features.music_suggestions !== false && (
+                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500 flex items-center gap-1.5">
+                                    <Disc className="w-3.5 h-3.5 animate-spin-slow" />
+                                    Música en Vivo
+                                </span>
+                                <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
+                                    Pedí tu Canción para el DJ 🎧
+                                </h3>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                    Buscá en Spotify el tema que no puede faltar para bailar y festejar juntos.
+                                </p>
+                            </div>
+                            <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
+                                {songRequests.length} {songRequests.length === 1 ? 'canción pedida' : 'canciones pedidas'}
+                            </span>
+                        </div>
+
+                        {/* Song Request Form */}
+                        <form onSubmit={handleSubmitDjSong} className="space-y-4 bg-zinc-50 dark:bg-zinc-850/60 p-4 sm:p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                            {/* Guest Name (if not authenticated) */}
+                            {!guest && (
+                                <div>
+                                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Tu Nombre o Apodo:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={djRequesterName}
+                                        onChange={(e) => setDjRequesterName(e.target.value)}
+                                        placeholder="Ej: Sofía, Primo Martín, Los de la facu..."
+                                        required
+                                        className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Spotify Live Search Input */}
+                            <div className="relative">
+                                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center justify-between">
+                                    <span className="flex items-center gap-1.5">
+                                        <Disc className="w-3.5 h-3.5 text-emerald-500" />
+                                        Buscar Canción en el Catálogo de Spotify:
+                                    </span>
+                                    {selectedDjTrack && (
+                                        <span className="text-[10px] text-emerald-500 font-bold">✓ Pista lista</span>
+                                    )}
+                                </label>
+
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={djSongQuery}
+                                        onChange={handleDjSongInputChange}
+                                        onFocus={() => djSearchResults.length > 0 && setShowDjDropdown(true)}
+                                        placeholder="Escribí el nombre del tema o artista (ej: Pepas, Don Omar, Queen, La Mosca)..."
+                                        className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white pl-9 pr-9 py-3 font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                    <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    {isSearchingDjSong && (
+                                        <Loader2 className="w-4 h-4 text-emerald-500 animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                                    )}
+                                </div>
+
+                                {/* Autocomplete Search Dropdown */}
+                                {showDjDropdown && djSearchResults.length > 0 && (
+                                    <div className="absolute z-30 left-0 right-0 mt-1.5 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto animate-fade-in divide-y divide-zinc-800">
+                                        <div className="p-2 text-[10px] font-black text-emerald-400 uppercase tracking-wider bg-zinc-950 flex items-center justify-between">
+                                            <span className="flex items-center gap-1.5">
+                                                <Disc className="w-3 h-3" /> Resultados de Spotify
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowDjDropdown(false)}
+                                                className="text-zinc-400 hover:text-white text-xs px-1 cursor-pointer"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+
+                                        {djSearchResults.map((track) => (
+                                            <button
+                                                key={track.id}
+                                                type="button"
+                                                onClick={() => handleSelectDjTrack(track)}
+                                                className="w-full p-2.5 flex items-center gap-3 hover:bg-zinc-800 text-left transition-colors cursor-pointer group"
+                                            >
+                                                {track.image ? (
+                                                    <img src={track.image} alt="" className="w-10 h-10 rounded-lg object-cover shadow-sm shrink-0 border border-zinc-700" />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-lg bg-zinc-800 text-emerald-400 flex items-center justify-center shrink-0">
+                                                        <Music className="w-5 h-5" />
+                                                    </div>
+                                                )}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="text-xs font-bold text-white truncate group-hover:text-emerald-400 transition-colors">
+                                                        {track.name}
+                                                    </div>
+                                                    <div className="text-[11px] text-zinc-400 truncate">
+                                                        {track.artist} {track.album ? `· ${track.album}` : ''}
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-bold text-emerald-400 px-2.5 py-1 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500 group-hover:text-zinc-950 transition-colors shrink-0">
+                                                    Elegir
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Selected Track Preview Badge */}
+                            {selectedDjTrack && (
+                                <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between gap-3 animate-fade-in">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        {selectedDjTrack.image ? (
+                                            <img src={selectedDjTrack.image} alt="" className="w-11 h-11 rounded-xl object-cover shadow-md border border-emerald-500/40 shrink-0" />
+                                        ) : (
+                                            <div className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                <Music className="w-5 h-5" />
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-black text-zinc-900 dark:text-white truncate">
+                                                {selectedDjTrack.name}
+                                            </div>
+                                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold truncate">
+                                                {selectedDjTrack.artist}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setSelectedDjTrack(null); setDjSongQuery(''); }}
+                                        className="text-zinc-400 hover:text-zinc-700 dark:hover:text-white p-1 rounded-lg text-xs cursor-pointer"
+                                        title="Quitar selección"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Optional Note for the DJ */}
+                            <div>
+                                <label className="block text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
+                                    Nota para el DJ (opcional):
+                                </label>
+                                <input
+                                    type="text"
+                                    value={djSongNote}
+                                    onChange={(e) => setDjSongNote(e.target.value)}
+                                    placeholder="Ej: Para bailar cuando empiece la tanda de cumbia o carnaval carioca..."
+                                    className="w-full text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium outline-none"
+                                />
+                            </div>
+
+                            {/* Submit Button */}
+                            <button
+                                type="submit"
+                                disabled={!selectedDjTrack || isSubmittingDjSong}
+                                className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-zinc-950 font-black text-xs rounded-xl transition-all shadow-lg hover:scale-[1.01] active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                                {isSubmittingDjSong ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Enviando al DJ...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Disc className="w-4 h-4" />
+                                        <span>Enviar Canción a la Lista del DJ 🎧</span>
+                                    </>
+                                )}
+                            </button>
+
+                            {/* Success Notification */}
+                            {djSongSuccess && (
+                                <div className="p-3 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-center text-xs font-bold text-emerald-400 animate-fade-in flex items-center justify-center gap-2">
+                                    <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+                                    <span>¡Excelente! Tu tema fue agregado a la lista del DJ de la fiesta.</span>
+                                </div>
+                            )}
+                        </form>
+
+                        {/* Recent DJ Requests Preview */}
+                        {songRequests.length > 0 && (
+                            <div className="space-y-3 pt-2">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                                    <span>Temas pedidos recientemente por invitados</span>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                </h4>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    {songRequests.slice(0, 6).map((req, idx) => (
+                                        <div
+                                            key={req.id || idx}
+                                            className="p-2.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/40 flex items-center gap-3"
+                                        >
+                                            {req.image_url ? (
+                                                <img src={req.image_url} alt="" className="w-10 h-10 rounded-lg object-cover shadow-sm shrink-0 border border-zinc-700/50" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                    <Music className="w-4 h-4" />
+                                                </div>
+                                            )}
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                                                    {req.song_title}
+                                                </div>
+                                                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                                                    {req.artist || 'Spotify'} · <span className="text-emerald-500 font-semibold">{req.requester_name}</span>
+                                                </div>
+                                                {req.note && (
+                                                    <div className="text-[10px] text-amber-500/90 italic truncate">
+                                                        "{req.note}"
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>

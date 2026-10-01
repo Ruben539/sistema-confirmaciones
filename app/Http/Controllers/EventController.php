@@ -303,17 +303,107 @@ class EventController extends Controller
     public function getSongSuggestions($id)
     {
         $event = Event::findOrFail($id);
-        $suggestions = $event->guests()
+        $richRequests = collect();
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $richRequests = \App\Models\EventSongRequest::where('event_id', $event->id)
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'is_rich' => true,
+                            'song_title' => $item->song_title,
+                            'artist' => $item->artist,
+                            'song_suggestion' => $item->artist ? "{$item->song_title} - {$item->artist}" : $item->song_title,
+                            'name' => $item->requester_name,
+                            'image_url' => $item->image_url,
+                            'spotify_id' => $item->spotify_id,
+                            'spotify_uri' => $item->spotify_uri,
+                            'external_url' => $item->external_url,
+                            'note' => $item->note,
+                            'is_played' => (bool) $item->is_played,
+                            'created_at' => $item->created_at?->diffForHumans() ?? 'Reciente',
+                        ];
+                    });
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Error loading rich song requests: ' . $e->getMessage());
+        }
+
+        // Also get legacy guests song suggestions
+        $legacy = $event->guests()
             ->whereNotNull('song_suggestion')
             ->where('song_suggestion', '!=', '')
             ->select('id', 'name', 'phone', 'song_suggestion', 'status', 'updated_at')
             ->orderBy('updated_at', 'desc')
-            ->get();
+            ->get()
+            ->map(function ($g) {
+                return [
+                    'id' => 'legacy_' . $g->id,
+                    'is_rich' => false,
+                    'song_title' => $g->song_suggestion,
+                    'artist' => null,
+                    'song_suggestion' => $g->song_suggestion,
+                    'name' => $g->name,
+                    'image_url' => null,
+                    'spotify_id' => null,
+                    'spotify_uri' => null,
+                    'external_url' => null,
+                    'note' => null,
+                    'is_played' => false,
+                    'created_at' => $g->updated_at?->diffForHumans() ?? 'Reciente',
+                ];
+            });
+
+        $richNames = $richRequests->pluck('name')->toArray();
+        $filteredLegacy = $legacy->reject(fn($l) => in_array($l['name'], $richNames));
+        $allSuggestions = $richRequests->concat($filteredLegacy)->values();
 
         return response()->json([
-            'total' => $suggestions->count(),
-            'suggestions' => $suggestions
+            'total' => $allSuggestions->count(),
+            'suggestions' => $allSuggestions
         ]);
+    }
+
+    public function toggleSongRequestPlayed($id, $requestId)
+    {
+        $event = Event::findOrFail($id);
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $songReq = \App\Models\EventSongRequest::where('event_id', $event->id)->find($requestId);
+                if ($songReq) {
+                    $songReq->update(['is_played' => !$songReq->is_played]);
+                    return response()->json([
+                        'success' => true,
+                        'is_played' => $songReq->is_played,
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Error toggling song request: ' . $e->getMessage());
+        }
+
+        return response()->json(['success' => false, 'message' => 'No encontrado'], 404);
+    }
+
+    public function deleteSongRequest($id, $requestId)
+    {
+        $event = Event::findOrFail($id);
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $songReq = \App\Models\EventSongRequest::where('event_id', $event->id)->find($requestId);
+                if ($songReq) {
+                    $songReq->delete();
+                    return response()->json(['success' => true]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Error deleting song request: ' . $e->getMessage());
+        }
+
+        return response()->json(['success' => false, 'message' => 'No encontrado'], 404);
     }
 
     public function getDedications($id)
