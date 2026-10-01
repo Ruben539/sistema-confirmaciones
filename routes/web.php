@@ -77,8 +77,8 @@ Route::prefix('api')->group(function () {
     Route::post('/events/{id}/background-music', [EventController::class, 'uploadBackgroundMusic']);
     Route::delete('/events/{id}/background-music', [EventController::class, 'removeBackgroundMusic']);
     Route::post('/events/{id}/styles', [EventController::class, 'saveInvitationStyles']);
-    Route::post('/events/{id}/ai-style-palette', [EventController::class, 'generateAiStylePalette']);
-    Route::post('/events/{id}/ai-invitation-copy', [EventController::class, 'generateAiInvitationCopy']);
+    Route::match(['get', 'post'], '/events/{id}/ai-style-palette', [EventController::class, 'generateAiStylePalette']);
+    Route::match(['get', 'post'], '/events/{id}/ai-invitation-copy', [EventController::class, 'generateAiInvitationCopy']);
     Route::post('/rsvp/suggest-dedication', [RsvpController::class, 'suggestDedication']);
     Route::get('/events/{id}/song-suggestions', [EventController::class, 'getSongSuggestions']);
     Route::get('/events/{id}/dedications', [EventController::class, 'getDedications']);
