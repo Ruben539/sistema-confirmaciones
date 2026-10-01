@@ -62,7 +62,9 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [isMuted, setIsMuted] = useState(false);
     const audioRef = useRef(null);
 
-    const dedicationInputRef = useRef(null);
+    const dedicationPhotoCameraRef = useRef(null);
+    const dedicationVideoCameraRef = useRef(null);
+    const dedicationGalleryRef = useRef(null);
 
     const toggleTheme = () => {
         const isDark = document.documentElement.classList.toggle('dark');
@@ -410,7 +412,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const handleDedicationFile = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const isVideo = file.type.startsWith('video');
+        const isVideo = file.type.startsWith('video') || file.name?.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
         setDedicationType(isVideo ? 'video' : 'photo');
         setDedicationPreview(URL.createObjectURL(file));
 
@@ -1904,39 +1906,113 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                     <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
                                         Foto o Video Corto (hasta 30s)
                                     </label>
+                                    
+                                    {/* Native Direct Photo Camera Input */}
                                     <input
-                                        ref={dedicationInputRef}
+                                        ref={dedicationPhotoCameraRef}
                                         type="file"
-                                        accept="image/*,video/*"
+                                        accept="image/*"
+                                        capture="environment"
+                                        onChange={handleDedicationFile}
+                                        className="hidden"
+                                    />
+
+                                    {/* Native Direct Video Camera Input */}
+                                    <input
+                                        ref={dedicationVideoCameraRef}
+                                        type="file"
+                                        accept="video/mp4,video/quicktime,video/webm,video/*"
+                                        capture="environment"
+                                        onChange={handleDedicationFile}
+                                        className="hidden"
+                                    />
+
+                                    {/* Gallery Input */}
+                                    <input
+                                        ref={dedicationGalleryRef}
+                                        type="file"
+                                        accept="image/*,video/mp4,video/quicktime,video/webm,video/*"
                                         onChange={handleDedicationFile}
                                         className="hidden"
                                     />
 
                                     {dedicationPreview ? (
-                                        <div className="relative rounded-2xl overflow-hidden border border-zinc-300 dark:border-zinc-700 bg-black p-1 text-center">
+                                        <div className="relative rounded-2xl overflow-hidden border border-zinc-300 dark:border-zinc-700 bg-black p-2 text-center space-y-1">
                                             {dedicationType === 'video' ? (
-                                                <video src={dedicationPreview} controls className="max-h-48 mx-auto rounded-xl" />
+                                                <video src={dedicationPreview} controls className="max-h-48 mx-auto rounded-xl w-full object-contain" />
                                             ) : (
                                                 <img src={dedicationPreview} alt="Preview" className="max-h-48 mx-auto rounded-xl object-contain" />
                                             )}
-                                            <button
-                                                type="button"
-                                                onClick={() => { setDedicationFile(null); setDedicationPreview(null); }}
-                                                className="mt-1 text-[11px] text-rose-500 font-bold hover:underline"
-                                            >
-                                                Cambiar archivo
-                                            </button>
+                                            <div className="flex items-center justify-center gap-2 pt-1 border-t border-zinc-800 text-[11px] font-bold">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => dedicationPhotoCameraRef.current?.click()}
+                                                    className="text-amber-500 hover:underline cursor-pointer"
+                                                >
+                                                    Sacar otra foto
+                                                </button>
+                                                <span className="text-zinc-500">|</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => dedicationVideoCameraRef.current?.click()}
+                                                    className="text-rose-500 hover:underline cursor-pointer"
+                                                >
+                                                    Grabar otro video
+                                                </button>
+                                                <span className="text-zinc-500">|</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setDedicationFile(null); setDedicationPreview(null); }}
+                                                    className="text-zinc-400 hover:underline cursor-pointer"
+                                                >
+                                                    Quitar
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <div
-                                            onClick={() => dedicationInputRef.current?.click()}
-                                            className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-rose-500 rounded-2xl p-5 text-center cursor-pointer space-y-1 bg-zinc-50 dark:bg-zinc-800/40"
-                                        >
-                                            <Camera className="w-8 h-8 text-rose-500 mx-auto" />
-                                            <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                                                Tocar para tomar foto o grabar video
+                                        <div className="space-y-2">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => dedicationPhotoCameraRef.current?.click()}
+                                                    className="p-3.5 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 text-center flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                                                >
+                                                    <div className="w-9 h-9 rounded-lg bg-amber-500 text-zinc-950 flex items-center justify-center shadow">
+                                                        <Camera className="w-5 h-5" />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                                                        Sacar Foto
+                                                    </span>
+                                                    <span className="text-[9px] text-zinc-500 dark:text-zinc-400">
+                                                        Abre la cámara
+                                                    </span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => dedicationVideoCameraRef.current?.click()}
+                                                    className="p-3.5 rounded-xl border border-dashed border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/15 text-center flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                                                >
+                                                    <div className="w-9 h-9 rounded-lg bg-rose-500 text-white flex items-center justify-center shadow">
+                                                        <Film className="w-5 h-5" />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                                                        Grabar Video
+                                                    </span>
+                                                    <span className="text-[9px] text-zinc-500 dark:text-zinc-400">
+                                                        Hasta 30s
+                                                    </span>
+                                                </button>
                                             </div>
-                                            <div className="text-[10px] text-zinc-400">O elegir desde tu galería</div>
+
+                                            <button
+                                                 type="button"
+                                                 onClick={() => dedicationGalleryRef.current?.click()}
+                                                 className="w-full p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-center text-[11px] font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                                             >
+                                                 <Upload className="w-3.5 h-3.5 text-zinc-500" />
+                                                 <span>O elegir de tu Galería (Foto o Video)</span>
+                                             </button>
                                         </div>
                                     )}
                                 </div>

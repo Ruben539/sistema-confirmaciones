@@ -15,7 +15,9 @@ export default function PublicDedicationPage({ eventId }) {
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [error, setError] = useState(null);
 
-    const fileInputRef = useRef(null);
+    const photoCameraInputRef = useRef(null);
+    const videoCameraInputRef = useRef(null);
+    const galleryInputRef = useRef(null);
 
     useEffect(() => {
         fetchEvent();
@@ -89,7 +91,7 @@ export default function PublicDedicationPage({ eventId }) {
 
         setError(null);
 
-        const isVideo = selected.type.startsWith('video');
+        const isVideo = selected.type.startsWith('video') || selected.name?.match(/\.(mp4|mov|webm|3gp|m4v)$/i);
         setType(isVideo ? 'video' : 'photo');
         setPreviewUrl(URL.createObjectURL(selected));
 
@@ -254,43 +256,129 @@ export default function PublicDedicationPage({ eventId }) {
                                 Subir Foto o Video Corto (Opcional)
                             </label>
                             
+                            {/* Native Direct Photo Camera Input */}
                             <input
-                                ref={fileInputRef}
+                                ref={photoCameraInputRef}
                                 type="file"
-                                accept="image/*,video/*"
+                                accept="image/*"
+                                capture="environment"
+                                onChange={handleFileChange}
+                                className="hidden"
+                            />
+
+                            {/* Native Direct Video Camera Input (Short Video like WhatsApp) */}
+                            <input
+                                ref={videoCameraInputRef}
+                                type="file"
+                                accept="video/mp4,video/quicktime,video/webm,video/*"
+                                capture="environment"
+                                onChange={handleFileChange}
+                                className="hidden"
+                            />
+
+                            {/* Gallery Input for Photos or Videos */}
+                            <input
+                                ref={galleryInputRef}
+                                type="file"
+                                accept="image/*,video/mp4,video/quicktime,video/webm,video/*"
                                 onChange={handleFileChange}
                                 className="hidden"
                             />
 
                             {previewUrl ? (
-                                <div className="relative rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-950 p-2 text-center">
+                                <div className="relative rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-950 p-3 text-center space-y-2">
                                     {type === 'video' ? (
-                                        <video src={previewUrl} controls className="max-h-56 mx-auto rounded-xl" />
+                                        <div className="space-y-1">
+                                            <video src={previewUrl} controls className="max-h-60 mx-auto rounded-xl w-full object-contain shadow-lg" />
+                                            <div className="text-[11px] font-bold text-rose-400 flex items-center justify-center gap-1">
+                                                <Film className="w-3.5 h-3.5" /> Video listo para proyectar
+                                            </div>
+                                        </div>
                                     ) : (
-                                        <img src={previewUrl} alt="Preview" className="max-h-56 mx-auto rounded-xl object-contain" />
+                                        <div className="space-y-1">
+                                            <img src={previewUrl} alt="Preview" className="max-h-60 mx-auto rounded-xl object-contain shadow-lg" />
+                                            <div className="text-[11px] font-bold text-amber-400 flex items-center justify-center gap-1">
+                                                <CheckCircle2 className="w-3.5 h-3.5" /> Foto lista para proyectar {isOptimizing ? '(Optimizando...)' : ''}
+                                            </div>
+                                        </div>
                                     )}
-                                    <button
-                                        type="button"
-                                        onClick={() => { setFile(null); setPreviewUrl(null); }}
-                                        className="mt-2 text-xs font-bold text-rose-400 hover:text-rose-300 hover:underline"
-                                    >
-                                        Cambiar archivo
-                                    </button>
+                                    <div className="flex items-center justify-center gap-3 pt-2 border-t border-zinc-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => photoCameraInputRef.current?.click()}
+                                            className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <Camera className="w-3.5 h-3.5" /> Sacar otra foto
+                                        </button>
+                                        <span className="text-zinc-600">|</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => videoCameraInputRef.current?.click()}
+                                            className="text-xs font-bold text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <Film className="w-3.5 h-3.5" /> Grabar otro video
+                                        </button>
+                                        <span className="text-zinc-600">|</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setFile(null); setPreviewUrl(null); }}
+                                            className="text-xs font-bold text-zinc-400 hover:text-white cursor-pointer"
+                                        >
+                                            Quitar
+                                        </button>
+                                    </div>
                                 </div>
                             ) : (
-                                <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="cursor-pointer border-2 border-dashed border-zinc-700 hover:border-amber-400 rounded-2xl p-6 text-center space-y-2 bg-zinc-800/40 hover:bg-zinc-800/70 transition-all"
-                                >
-                                    <div className="w-12 h-12 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
-                                        <Camera className="w-6 h-6" />
+                                <div className="space-y-2.5">
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                        {/* Action 1: Instant Photo Camera */}
+                                        <button
+                                            type="button"
+                                            onClick={() => photoCameraInputRef.current?.click()}
+                                            className="p-4 rounded-2xl border-2 border-dashed border-amber-500/40 hover:border-amber-400 bg-amber-500/10 hover:bg-amber-500/15 text-center flex flex-col items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer group"
+                                        >
+                                            <div className="w-12 h-12 rounded-xl bg-amber-500 text-zinc-950 flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-500/20">
+                                                <Camera className="w-6 h-6 stroke-[2.5]" />
+                                            </div>
+                                            <div>
+                                                <span className="block text-xs font-black text-amber-300 uppercase tracking-wide">
+                                                    Sacar Foto Ya
+                                                </span>
+                                                <span className="block text-[10px] text-zinc-400 mt-0.5">
+                                                    Abre la cámara del celular
+                                                </span>
+                                            </div>
+                                        </button>
+
+                                        {/* Action 2: Short Video (WhatsApp-style) */}
+                                        <button
+                                            type="button"
+                                            onClick={() => videoCameraInputRef.current?.click()}
+                                            className="p-4 rounded-2xl border-2 border-dashed border-rose-500/40 hover:border-rose-400 bg-rose-500/10 hover:bg-rose-500/15 text-center flex flex-col items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer group"
+                                        >
+                                            <div className="w-12 h-12 rounded-xl bg-rose-500 text-zinc-950 flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-rose-500/20">
+                                                <Film className="w-6 h-6 stroke-[2.5]" />
+                                            </div>
+                                            <div>
+                                                <span className="block text-xs font-black text-rose-300 uppercase tracking-wide">
+                                                    Grabar Video
+                                                </span>
+                                                <span className="block text-[10px] text-zinc-400 mt-0.5">
+                                                    Video corto en vivo (hasta 30s)
+                                                </span>
+                                            </div>
+                                        </button>
                                     </div>
-                                    <div className="text-xs font-black text-white">
-                                        Tocá aquí para tomar una foto o grabar un video
-                                    </div>
-                                    <div className="text-[11px] text-zinc-400">
-                                        O seleccioná un archivo de tu galería (Foto o Video hasta 30s)
-                                    </div>
+
+                                    {/* Action 3: Choose from Gallery (Photos or Videos) */}
+                                    <button
+                                        type="button"
+                                        onClick={() => galleryInputRef.current?.click()}
+                                        className="w-full p-3 rounded-xl border border-zinc-700 hover:border-zinc-500 bg-zinc-800/60 hover:bg-zinc-800 flex items-center justify-center gap-2 text-xs font-bold text-zinc-300 transition-colors cursor-pointer"
+                                    >
+                                        <Upload className="w-4 h-4 text-zinc-400" />
+                                        <span>O elegir una foto o video desde tu Galería</span>
+                                    </button>
                                 </div>
                             )}
                         </div>
