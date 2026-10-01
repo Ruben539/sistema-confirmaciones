@@ -56,6 +56,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [isSpotifyReady, setIsSpotifyReady] = useState(false);
     const [isPlayerExpanded, setIsPlayerExpanded] = useState(false);
     const spotifyControllerRef = useRef(null);
+    const envelopeWasOpenedRef = useRef(false);
 
     // DJ Song Live Spotify Search (in RSVP form)
     const [songSearchResults, setSongSearchResults] = useState([]);
@@ -153,7 +154,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [showMusicChooser, setShowMusicChooser] = useState(false);
 
     useEffect(() => {
-        if (event?.background_music_url) {
+        if (event?.background_music_url && event.background_music_url !== 'spotify') {
             setCurrentAudioUrl(event.background_music_url);
             if (event.background_music_url.includes('piano')) {
                 setCurrentAudioTitle('Piano Emotivo de Boda');
@@ -163,11 +164,13 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 setCurrentAudioTitle('Música de los Novios');
             }
         } else if (event?.spotify_url) {
-            // Default to acoustic background track so sound is immediate, while Spotify is ready
-            setCurrentAudioUrl('/audio/wedding-acoustic.mp3');
-            setCurrentAudioTitle('Guitarra Acústica Romántica');
+            // When Spotify is configured without background MP3, Spotify is the primary entrance music!
+            setCurrentAudioUrl('');
+            setCurrentAudioTitle(spotifyMeta?.title || 'Canción de Spotify');
+        } else {
+            setCurrentAudioUrl('');
         }
-    }, [event?.background_music_url, event?.spotify_url]);
+    }, [event?.background_music_url, event?.spotify_url, spotifyMeta?.title]);
 
     // Live Countdown
     useEffect(() => {
@@ -294,7 +297,15 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             const container = document.getElementById('spotify-embed-controller');
             if (!container || !isMounted) return;
 
-            const targetUri = spotifyMeta?.uri || (event.spotify_url.startsWith('spotify:') ? event.spotify_url : null);
+            let targetUri = spotifyMeta?.uri;
+            if (!targetUri && event.spotify_url) {
+                if (event.spotify_url.startsWith('spotify:')) {
+                    targetUri = event.spotify_url;
+                } else {
+                    const match = event.spotify_url.match(/(track|playlist|album)\/([a-zA-Z0-9]+)/);
+                    if (match) targetUri = `spotify:${match[1]}:${match[2]}`;
+                }
+            }
             if (!targetUri) return;
 
             container.innerHTML = '';
@@ -302,7 +313,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             const options = {
                 uri: targetUri,
                 width: '100%',
-                height: '152',
+                height: isPlayerExpanded ? '352' : '152',
             };
 
             IFrameAPI.createController(container, options, (controller) => {
@@ -315,6 +326,14 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                         setIsSpotifyPlaying(!e.data.isPaused);
                     }
                 });
+
+                // If user opened envelope while controller was loading, trigger playback immediately!
+                if ((isEnvelopeOpen || envelopeWasOpenedRef.current) && !currentAudioUrl) {
+                    try {
+                        controller.play();
+                        setIsSpotifyPlaying(true);
+                    } catch (err) {}
+                }
             });
         };
 
@@ -935,17 +954,21 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                     console.log('Autoplay prevented on open:', err);
                 });
             }
-        } else if (spotifyControllerRef.current) {
-            // 2. Try starting Spotify controller if no MP3
-            try {
-                spotifyControllerRef.current.play();
-                setIsSpotifyPlaying(true);
-                setShowMusicPlayer(true);
-            } catch (err) {
-                console.log('Spotify autoplay on envelope open:', err);
+        } else if (event?.spotify_url) {
+            // 2. Play Spotify song on entrance!
+            envelopeWasOpenedRef.current = true;
+            setShowMusicPlayer(true);
+            setIsSpotifyPlaying(true);
+            if (spotifyControllerRef.current) {
+                try {
+                    spotifyControllerRef.current.play();
+                } catch (err) {
+                    console.log('Spotify autoplay on envelope open:', err);
+                }
             }
         }
 
+        envelopeWasOpenedRef.current = true;
         setTimeout(() => {
             setIsEnvelopeOpen(true);
         }, 750);
@@ -1383,15 +1406,17 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 </button>
             </div>
 
-            {/* FLOATING SPOTIFY ADVANCED PLAYER DRAWER */}
-            {showMusicPlayer && (event.spotify_url || spotifyEmbedUrl) && (
-                <div className="fixed bottom-4 right-4 z-40 w-[92vw] max-w-sm sm:max-w-md rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/40 bg-zinc-950/95 backdrop-blur-xl p-3 sm:p-4 text-white animate-fade-in space-y-3">
+            {/* FLOATING SPOTIFY ADVANCED PLAYER DRAWER (PERSISTENT MOUNT FOR INSTANT AUTOPLAY) */}
+            {features.spotify && (event.spotify_url || spotifyEmbedUrl) && (
+                <div className={`fixed bottom-4 right-4 z-40 w-[92vw] max-w-sm sm:max-w-md rounded-3xl overflow-hidden shadow-2xl border border-emerald-500/40 bg-zinc-950/95 backdrop-blur-xl p-3 sm:p-4 text-white transition-all duration-300 space-y-3 ${
+                    showMusicPlayer ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none translate-y-12'
+                }`}>
                     {/* Header */}
                     <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 px-1">
                         <div className="flex items-center gap-2 text-xs font-black text-emerald-400 uppercase tracking-wider">
                             <Disc className={`w-4 h-4 ${isSpotifyPlaying ? 'animate-spin-slow text-emerald-400' : 'text-zinc-400'}`} />
                             <span className="truncate max-w-[170px] sm:max-w-[220px]">
-                                {spotifyMeta?.title || 'Música de la Fiesta'}
+                                {spotifyMeta?.title || 'Música de Spotify'}
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -1412,11 +1437,12 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                         </div>
                     </div>
 
-                    {/* Official Spotify Interactive Embed Player */}
-                    {(spotifyMeta?.embed_url || spotifyEmbedUrl) && (
-                        <div className="rounded-2xl overflow-hidden border border-zinc-800/80 bg-black/60 shadow-inner">
+                    {/* Official Spotify Interactive Embed Player Container */}
+                    <div className="rounded-2xl overflow-hidden border border-zinc-800/80 bg-black/60 shadow-inner">
+                        <div id="spotify-embed-controller" className="w-full min-h-[80px]" />
+                        {!isSpotifyReady && (spotifyMeta?.embed_url || spotifyEmbedUrl) && (
                             <iframe
-                                src={spotifyMeta?.embed_url || spotifyEmbedUrl}
+                                src={`${spotifyMeta?.embed_url || spotifyEmbedUrl}${spotifyMeta?.embed_url?.includes('?') ? '&' : '?'}utm_source=generator&theme=0&autoplay=1`}
                                 width="100%"
                                 height={isPlayerExpanded ? ((spotifyMeta?.type === 'playlist' || spotifyEmbedUrl?.includes('/playlist/')) ? "352" : "152") : ((spotifyMeta?.type === 'track' || spotifyEmbedUrl?.includes('/track/')) ? "80" : "152")}
                                 frameBorder="0"
@@ -1424,14 +1450,14 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                                 loading="lazy"
                                 className="rounded-2xl block"
                             />
-                        </div>
-                    )}
+                        )}
+                    </div>
 
                     {/* Quick App Link and Direct Open */}
                     <div className="pt-0.5 flex items-center justify-between text-[11px] px-1 text-zinc-400">
                         <span className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span>Reproductor Oficial Spotify</span>
+                            <span>{isSpotifyPlaying ? 'Sonando en Vivo' : 'Reproductor Oficial Spotify'}</span>
                         </span>
                         <a
                             href={spotifyMeta?.external_url || event.spotify_url}

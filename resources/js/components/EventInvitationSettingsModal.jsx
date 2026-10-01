@@ -480,7 +480,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     const errData = await musicRes.json().catch(() => ({}));
                     throw new Error(errData.message || 'Error al subir la pista de música de fondo.');
                 }
-            } else if (isMusicRemoved) {
+            } else if (isMusicRemoved || (!backgroundMusicUrl && !backgroundMusicFile && event.background_music_path)) {
                 await fetch(`/api/events/${event.id}/background-music`, {
                     method: 'DELETE',
                     headers: {
@@ -518,7 +518,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                 } else {
                     eventPayload.background_music_path = customAudioUrl;
                 }
-            } else if (isMusicRemoved) {
+            } else if (isMusicRemoved || (!backgroundMusicUrl && !backgroundMusicFile)) {
                 eventPayload.background_music_path = null;
             }
 
@@ -1009,11 +1009,16 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                             </p>
                                         </div>
                                     </div>
-                                    {backgroundMusicUrl && (
+                                    {backgroundMusicUrl ? (
                                         <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold shrink-0">
                                             Activa 🎵
                                         </span>
-                                    )}
+                                    ) : spotifyUrl ? (
+                                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold shrink-0 flex items-center gap-1">
+                                            <Disc className="w-3 h-3 text-emerald-400" />
+                                            <span>Spotify en Entrada 🎵</span>
+                                        </span>
+                                    ) : null}
                                 </div>
 
                                 {/* 1-Click Ambient Music Presets */}
@@ -1084,10 +1089,27 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                             className="w-full h-9 rounded-lg"
                                         />
                                     </div>
+                                ) : spotifyUrl ? (
+                                    <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-2 font-bold text-emerald-300 truncate">
+                                                <Disc className="w-4 h-4 text-emerald-400 shrink-0" />
+                                                <span className="truncate">
+                                                    {spotifyMeta ? `Spotify al Entrar: ${spotifyMeta.title} (${spotifyMeta.artist})` : 'Pista de Spotify configurada para Entrada'}
+                                                </span>
+                                            </div>
+                                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full shrink-0">
+                                                ✓ Suena al Entrar
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-zinc-400 leading-snug">
+                                            Esta canción de Spotify se iniciará automáticamente cuando el invitado toque el Sobre Digital para abrir la invitación.
+                                        </p>
+                                    </div>
                                 ) : (
                                     <div className="text-center py-2">
                                         <p className="text-[11px] text-zinc-500">
-                                            No hay música de fondo configurada. Elegí una melodía recomendada arriba o subí tu propio MP3.
+                                            No hay música de fondo configurada. Elegí una melodía recomendada arriba, subí tu propio MP3 o seleccioná una canción de Spotify abajo.
                                         </p>
                                     </div>
                                 )}
@@ -1129,7 +1151,9 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                                     if (url.includes('spotify.com')) {
                                                         setSpotifyUrl(url);
                                                         setCustomAudioUrl('');
-                                                        setError('Detectamos un enlace de Spotify. Lo colocamos automáticamente en "Playlist de Spotify" (abajo). Para la música con sobre digital, por favor elegí una melodía o subí un archivo MP3.');
+                                                        setBackgroundMusicUrl('');
+                                                        setBackgroundMusicFile(null);
+                                                        setIsMusicRemoved(false);
                                                         return;
                                                     }
                                                     setCustomAudioUrl(url);
@@ -1342,6 +1366,60 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                 ) : (
                                     <div className="p-4 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/40 text-center text-xs text-zinc-500">
                                         <p className="text-[11px]">Pegá una URL de Spotify para verificarla con la API y activar el reproductor interactivo.</p>
+                                    </div>
+                                )}
+
+                                {/* 1-Click Set Spotify as Entrance Music Button */}
+                                {spotifyUrl && (
+                                    <div className={`p-3.5 rounded-xl border transition-all ${
+                                        (!backgroundMusicUrl && !backgroundMusicFile)
+                                            ? 'bg-emerald-500/10 border-emerald-500/30'
+                                            : 'bg-zinc-900 border-zinc-800'
+                                    }`}>
+                                        {(!backgroundMusicUrl && !backgroundMusicFile) ? (
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                    <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                        <Sparkles className="w-4 h-4" />
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-xs font-bold text-emerald-300 block">
+                                                            Spotify configurado como música de entrada
+                                                        </span>
+                                                        <span className="text-[10px] text-zinc-400 block">
+                                                            El reproductor interactivo de Spotify comenzará a sonar al tocar el sobre.
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full shrink-0">
+                                                    ✓ Suena al Entrar
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <span className="text-xs font-bold text-white block">
+                                                        ¿Querés que esta música de Spotify suene al entrar?
+                                                    </span>
+                                                    <span className="text-[10px] text-zinc-400 block">
+                                                        Actualmente hay una melodía/archivo configurado en la Sección 1.
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setBackgroundMusicUrl('');
+                                                        setCustomAudioUrl('');
+                                                        setBackgroundMusicFile(null);
+                                                        setIsMusicRemoved(true);
+                                                    }}
+                                                    className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-all active:scale-95 shrink-0 flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                                                >
+                                                    <Play className="w-3.5 h-3.5 fill-current" />
+                                                    <span>Usar como música de entrada</span>
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
