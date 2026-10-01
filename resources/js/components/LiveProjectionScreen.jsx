@@ -85,12 +85,15 @@ export default function LiveProjectionScreen({ eventId }) {
 
     // 2. High-Performance Magical Canvas Particle Engine (Bokeh & Confetti)
     useEffect(() => {
+        if (loading) return;
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
+        if (!ctx) return;
         let animId;
 
         const resize = () => {
+            if (!canvas) return;
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         };
@@ -99,8 +102,8 @@ export default function LiveProjectionScreen({ eventId }) {
 
         // Ambient floating golden and romantic orbs
         const ambientOrbs = Array.from({ length: 25 }, () => ({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
+            x: Math.random() * (window.innerWidth || 1920),
+            y: Math.random() * (window.innerHeight || 1080),
             radius: Math.random() * 4 + 1.5,
             vx: (Math.random() - 0.5) * 0.4,
             vy: (Math.random() - 0.5) * 0.3 - 0.2,
@@ -182,34 +185,43 @@ export default function LiveProjectionScreen({ eventId }) {
             window.removeEventListener('resize', resize);
             cancelAnimationFrame(animId);
         };
-    }, []);
+    }, [loading]);
 
     // Trigger celebration burst (Confetti & Sparkles explosion)
-    const triggerCelebration = useCallback(() => {
-        if (!enableConfetti) return;
-        const colors = ['#F59E0B', '#FBBF24', '#EC4899', '#F43F5E', '#10B981', '#38BDF8', '#FFFFFF', '#A855F7'];
+    const triggerCelebration = useCallback((force = false) => {
+        if (!enableConfetti && !force) return;
+        const colors = ['#F59E0B', '#FBBF24', '#EC4899', '#F43F5E', '#10B981', '#38BDF8', '#FFFFFF', '#A855F7', '#E11D48', '#8B5CF6'];
         const shapes = ['rect', 'circle', 'star'];
-        const burstCount = 80;
-        const width = window.innerWidth;
-        const height = window.innerHeight;
+        const width = window.innerWidth || 1920;
+        const height = window.innerHeight || 1080;
 
-        const newParticles = Array.from({ length: burstCount }, () => {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = Math.random() * 12 + 4;
-            return {
-                x: width / 2 + (Math.random() - 0.5) * 200,
-                y: height / 2 + (Math.random() - 0.5) * 100,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - 4,
-                gravity: 0.22,
-                rotation: Math.random() * Math.PI * 2,
-                vRot: (Math.random() - 0.5) * 0.2,
-                size: Math.random() * 9 + 4,
-                color: colors[Math.floor(Math.random() * colors.length)],
-                shape: shapes[Math.floor(Math.random() * shapes.length)],
-                life: 1.0,
-                decay: Math.random() * 0.015 + 0.008
-            };
+        const newParticles = [];
+        // Burst from multiple launch cannons across the screen
+        const origins = [
+            { x: width * 0.2, y: height * 0.75 },
+            { x: width * 0.5, y: height * 0.55 },
+            { x: width * 0.8, y: height * 0.75 },
+        ];
+
+        origins.forEach(origin => {
+            for (let i = 0; i < 45; i++) {
+                const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.8;
+                const speed = Math.random() * 18 + 8;
+                newParticles.push({
+                    x: origin.x + (Math.random() - 0.5) * 60,
+                    y: origin.y + (Math.random() - 0.5) * 40,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 5,
+                    gravity: 0.24,
+                    rotation: Math.random() * Math.PI * 2,
+                    vRot: (Math.random() - 0.5) * 0.25,
+                    size: Math.random() * 10 + 6,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    shape: shapes[Math.floor(Math.random() * shapes.length)],
+                    life: 1.0,
+                    decay: Math.random() * 0.012 + 0.006
+                });
+            }
         });
 
         particlesRef.current = [...particlesRef.current, ...newParticles];
@@ -339,7 +351,7 @@ export default function LiveProjectionScreen({ eventId }) {
                 setIsMuted(prev => !prev);
             } else if (e.key === 'c' || e.key === 'C') {
                 e.preventDefault();
-                triggerCelebration();
+                triggerCelebration(true);
             }
         };
 
@@ -389,7 +401,7 @@ export default function LiveProjectionScreen({ eventId }) {
             {/* CANVAS PARTICLES & BOKEH OVERLAY */}
             <canvas 
                 ref={canvasRef} 
-                className="absolute inset-0 pointer-events-none z-10"
+                className="fixed inset-0 pointer-events-none z-30"
             />
 
             {/* Ambient Animated Gradients */}
@@ -414,7 +426,7 @@ export default function LiveProjectionScreen({ eventId }) {
             )}
 
             {/* TOP BAR: EVENT HEADER & LIVE INDICATOR */}
-            <header className={`relative z-20 px-8 py-5 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+            <header className={`relative z-40 px-8 py-5 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="flex items-center gap-3">
                     <div className="p-2.5 bg-gradient-to-br from-amber-400 to-rose-500 rounded-2xl shadow-lg shadow-amber-500/20">
                         <Heart className="w-6 h-6 text-zinc-950 fill-zinc-950" />
@@ -436,8 +448,8 @@ export default function LiveProjectionScreen({ eventId }) {
                     {/* Confetti Trigger */}
                     <button
                         type="button"
-                        onClick={triggerCelebration}
-                        className="p-3 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/60 rounded-2xl text-amber-400 transition-all hover:scale-105 shadow-xl cursor-pointer"
+                        onClick={() => triggerCelebration(true)}
+                        className="p-3 bg-zinc-900/80 hover:bg-zinc-800 active:scale-95 border border-zinc-700/60 rounded-2xl text-amber-400 transition-all hover:scale-105 shadow-xl cursor-pointer"
                         title="Lanzar lluvia de confeti festivo (Tecla C)"
                     >
                         <PartyPopper className="w-5 h-5" />
@@ -631,7 +643,7 @@ export default function LiveProjectionScreen({ eventId }) {
             </main>
 
             {/* BOTTOM BAR: DEDICATIONS PROGRESS, OPERATOR HUD & CORNER QR */}
-            <footer className={`relative z-20 px-8 py-5 flex items-center justify-between bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+            <footer className={`relative z-40 px-8 py-5 flex items-center justify-between bg-gradient-to-t from-black/95 via-black/50 to-transparent transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                 {/* Dedications Counter & Index Indicator */}
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-bold text-zinc-400">
