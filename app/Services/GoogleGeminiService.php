@@ -8,14 +8,16 @@ class GoogleGeminiService
 {
     protected ?string $apiKey;
     protected array $fallbackModels = [
-        'gemini-1.5-flash',
-        'gemini-2.0-flash',
-        'gemini-1.5-pro',
+        'gemini-3.5-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3-flash-preview',
+        'gemini-flash-latest',
     ];
 
     public function __construct()
     {
-        $this->apiKey = env('GEMINI_API_KEY');
+        $this->apiKey = config('services.gemini.api_key') ?: env('GEMINI_API_KEY');
     }
 
     /**
@@ -23,7 +25,7 @@ class GoogleGeminiService
      */
     public static function isConfigured(): bool
     {
-        return !empty(env('GEMINI_API_KEY'));
+        return !empty(config('services.gemini.api_key') ?: env('GEMINI_API_KEY'));
     }
 
     /**
@@ -121,14 +123,18 @@ EOT;
         $rawJson = $this->generateContent($prompt, 'Responde estrictamente con JSON puro, sin formato markdown.');
         if (!$rawJson) return null;
 
-        if (preg_match('/\{[\s\S]*\}/', $rawJson, $matches)) {
+        $cleaned = trim($rawJson);
+        $cleaned = preg_replace('/^```(?:json)?\s*/i', '', $cleaned);
+        $cleaned = preg_replace('/\s*```$/i', '', $cleaned);
+
+        if (preg_match('/\{[\s\S]*\}/', $cleaned, $matches)) {
             $decoded = json_decode($matches[0], true);
             if (is_array($decoded)) {
                 return $decoded;
             }
         }
 
-        $decoded = json_decode($rawJson, true);
+        $decoded = json_decode($cleaned, true);
         return is_array($decoded) ? $decoded : null;
     }
 
@@ -152,14 +158,18 @@ EOT;
         $rawJson = $this->generateContent($prompt, 'Responde estrictamente con JSON puro, sin markdown.');
         if (!$rawJson) return null;
 
-        if (preg_match('/\{[\s\S]*\}/', $rawJson, $matches)) {
+        $cleaned = trim($rawJson);
+        $cleaned = preg_replace('/^```(?:json)?\s*/i', '', $cleaned);
+        $cleaned = preg_replace('/\s*```$/i', '', $cleaned);
+
+        if (preg_match('/\{[\s\S]*\}/', $cleaned, $matches)) {
             $decoded = json_decode($matches[0], true);
             if (is_array($decoded)) {
                 return $decoded;
             }
         }
 
-        $decoded = json_decode($rawJson, true);
+        $decoded = json_decode($cleaned, true);
         return is_array($decoded) ? $decoded : null;
     }
 

@@ -41,4 +41,8 @@ return [
         'api_key' => env('SPOTIFY_API_KEY', env('SPOTIFYAPIKEY')),
     ],
 
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+    ],
+
 ];
