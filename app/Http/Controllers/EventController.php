@@ -406,6 +406,62 @@ class EventController extends Controller
         return response()->json(['success' => false, 'message' => 'No encontrado'], 404);
     }
 
+    public function createSongRequest(\Illuminate\Http\Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $validated = $request->validate([
+            'song_title' => 'required|string|max:255',
+            'artist' => 'nullable|string|max:255',
+            'requester_name' => 'nullable|string|max:255',
+            'spotify_id' => 'nullable|string|max:255',
+            'spotify_uri' => 'nullable|string|max:255',
+            'image_url' => 'nullable|string|max:500',
+            'external_url' => 'nullable|string|max:500',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
+                $item = \App\Models\EventSongRequest::create([
+                    'event_id' => $event->id,
+                    'requester_name' => $validated['requester_name'] ?? 'DJ / Anfitrión',
+                    'song_title' => $validated['song_title'],
+                    'artist' => $validated['artist'] ?? null,
+                    'spotify_id' => $validated['spotify_id'] ?? null,
+                    'spotify_uri' => $validated['spotify_uri'] ?? null,
+                    'image_url' => $validated['image_url'] ?? null,
+                    'external_url' => $validated['external_url'] ?? null,
+                    'note' => $validated['note'] ?? null,
+                    'is_played' => false,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'suggestion' => [
+                        'id' => $item->id,
+                        'is_rich' => true,
+                        'song_title' => $item->song_title,
+                        'artist' => $item->artist,
+                        'song_suggestion' => $item->artist ? "{$item->song_title} - {$item->artist}" : $item->song_title,
+                        'name' => $item->requester_name,
+                        'image_url' => $item->image_url,
+                        'spotify_id' => $item->spotify_id,
+                        'spotify_uri' => $item->spotify_uri,
+                        'external_url' => $item->external_url,
+                        'note' => $item->note,
+                        'is_played' => false,
+                        'created_at' => 'Recién',
+                    ]
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Error creating song request: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        return response()->json(['success' => false, 'message' => 'Tabla no disponible'], 400);
+    }
+
     public function getDedications($id)
     {
         $event = Event::findOrFail($id);

@@ -83,6 +83,7 @@ Route::prefix('api')->group(function () {
     Route::match(['get', 'post'], '/events/{id}/ai-invitation-copy', [EventController::class, 'generateAiInvitationCopy']);
     Route::post('/rsvp/suggest-dedication', [RsvpController::class, 'suggestDedication']);
     Route::get('/events/{id}/song-suggestions', [EventController::class, 'getSongSuggestions']);
+    Route::post('/events/{id}/song-requests', [EventController::class, 'createSongRequest']);
     Route::post('/events/{id}/song-requests/{requestId}/toggle-played', [EventController::class, 'toggleSongRequestPlayed']);
     Route::delete('/events/{id}/song-requests/{requestId}', [EventController::class, 'deleteSongRequest']);
     Route::get('/events/{id}/dedications', [EventController::class, 'getDedications']);

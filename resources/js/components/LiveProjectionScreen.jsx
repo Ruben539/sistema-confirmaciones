@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
     Sparkles, Maximize2, Minimize2, Volume2, VolumeX, QrCode, Heart, 
     Camera, Film, RefreshCw, X, Play, Pause, ChevronLeft, ChevronRight, 
-    PartyPopper, Sliders, Check
+    PartyPopper, Sliders, Check, Wand2, Zap, Clock
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -19,13 +19,18 @@ export default function LiveProjectionScreen({ eventId }) {
 
     // Playback settings (configurable by operator)
     const [photoDuration, setPhotoDuration] = useState(8); // seconds
-    const [videoRepeatCount, setVideoRepeatCount] = useState(2); // Repeat short videos 2 times
+    const [videoRepeatCount, setVideoRepeatCount] = useState(1); // Repeat short videos
+    const [videoHoldDuration, setVideoHoldDuration] = useState(4); // seconds to celebrate after video
+    const [transitionEffect, setTransitionEffect] = useState('gala'); // 'gala', 'flash', 'zoom', 'fade'
+    const [enableKenBurns, setEnableKenBurns] = useState(true);
     const [enableConfetti, setEnableConfetti] = useState(true);
 
     // Playback animation & loop tracking
     const [currentVideoLoop, setCurrentVideoLoop] = useState(0);
     const [isHoldingEnd, setIsHoldingEnd] = useState(false);
+    const [holdRemainingSeconds, setHoldRemainingSeconds] = useState(4);
     const [isTransitioning, setIsTransitioning] = useState(false);
+    const [isFlashActive, setIsFlashActive] = useState(false);
     const [progressPercent, setProgressPercent] = useState(0);
     const [newDedicationNotice, setNewDedicationNotice] = useState(null);
 
@@ -214,6 +219,13 @@ export default function LiveProjectionScreen({ eventId }) {
     const goToNextSlide = useCallback(() => {
         if (dedications.length <= 1) return;
         setIsTransitioning(true);
+        if (transitionEffect === 'flash') {
+            setIsFlashActive(true);
+            setTimeout(() => setIsFlashActive(false), 550);
+        }
+
+        const transitionDelay = transitionEffect === 'gala' ? 450 : transitionEffect === 'zoom' ? 500 : 350;
+
         setTimeout(() => {
             setCurrentIndex(prev => (prev + 1) % dedications.length);
             setCurrentVideoLoop(0);
@@ -221,20 +233,27 @@ export default function LiveProjectionScreen({ eventId }) {
             setProgressPercent(0);
             setIsTransitioning(false);
             triggerCelebration();
-        }, 350);
-    }, [dedications.length, triggerCelebration]);
+        }, transitionDelay);
+    }, [dedications.length, transitionEffect, triggerCelebration]);
 
     const goToPrevSlide = useCallback(() => {
         if (dedications.length <= 1) return;
         setIsTransitioning(true);
+        if (transitionEffect === 'flash') {
+            setIsFlashActive(true);
+            setTimeout(() => setIsFlashActive(false), 550);
+        }
+
+        const transitionDelay = transitionEffect === 'gala' ? 450 : transitionEffect === 'zoom' ? 500 : 350;
+
         setTimeout(() => {
             setCurrentIndex(prev => (prev - 1 + dedications.length) % dedications.length);
             setCurrentVideoLoop(0);
             setIsHoldingEnd(false);
             setProgressPercent(0);
             setIsTransitioning(false);
-        }, 350);
-    }, [dedications.length]);
+        }, transitionDelay);
+    }, [dedications.length, transitionEffect]);
 
     // 4. Slide Progression & Video Repeat Handling
     useEffect(() => {
@@ -278,12 +297,25 @@ export default function LiveProjectionScreen({ eventId }) {
                 videoRef.current.play().catch(() => {});
             }
         } else {
-            // Finished loops: hold on celebratory screen for 3 seconds with confetti before transitioning!
+            // Finished loops: hold on celebratory screen for videoHoldDuration seconds with confetti!
             setIsHoldingEnd(true);
+            setHoldRemainingSeconds(videoHoldDuration);
             triggerCelebration();
+
+            let remaining = videoHoldDuration;
+            const interval = setInterval(() => {
+                remaining -= 1;
+                setHoldRemainingSeconds(Math.max(0, remaining));
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                }
+            }, 1000);
+
+            if (timerRef.current) clearTimeout(timerRef.current);
             timerRef.current = setTimeout(() => {
+                clearInterval(interval);
                 goToNextSlide();
-            }, 3000);
+            }, videoHoldDuration * 1000);
         }
     };
 
@@ -364,6 +396,11 @@ export default function LiveProjectionScreen({ eventId }) {
             <div className="absolute inset-0 bg-radial-gradient from-zinc-900/60 via-black to-black pointer-events-none" />
             <div className="absolute -top-32 -left-32 w-96 h-96 bg-amber-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
             <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-rose-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
+
+            {/* Flash Effect on Transition */}
+            {isFlashActive && (
+                <div className="fixed inset-0 bg-white pointer-events-none z-50 animate-flash-glow" />
+            )}
 
             {/* LIVE BANNER FOR NEW DEDICATION */}
             {newDedicationNotice && (
@@ -475,11 +512,17 @@ export default function LiveProjectionScreen({ eventId }) {
                         </div>
                     </div>
                 ) : (
-                    <div className={`w-full max-w-5xl h-full flex flex-col items-center justify-center transition-all duration-500 ${isTransitioning ? 'opacity-0 scale-95 blur-sm' : 'opacity-100 scale-100 blur-0'}`}>
+                    <div className={`w-full max-w-5xl h-full flex flex-col items-center justify-center transition-all ${
+                        transitionEffect === 'zoom'
+                            ? (isTransitioning ? 'opacity-0 scale-75 blur-md duration-500' : 'opacity-100 scale-100 blur-0 duration-500')
+                            : transitionEffect === 'flash'
+                                ? (isTransitioning ? 'opacity-20 scale-100 duration-300' : 'opacity-100 scale-100 duration-300')
+                                : (isTransitioning ? 'opacity-0 scale-95 blur-sm duration-500' : 'opacity-100 scale-100 blur-0 duration-500')
+                    }`}>
                         {/* CURRENT SLIDE CONTENT WITH CELEBRATION GLOW BORDER */}
                         <div className="relative w-full max-h-[70vh] flex items-center justify-center">
                             {currentItem?.type === 'video' ? (
-                                <div className="relative max-h-[68vh] rounded-3xl overflow-hidden border-2 border-amber-500/60 shadow-[0_0_50px_rgba(245,158,11,0.3)] bg-zinc-950 flex items-center justify-center group">
+                                <div className="relative max-h-[68vh] rounded-3xl overflow-hidden border-2 border-amber-500/60 shadow-[0_0_60px_rgba(245,158,11,0.35)] bg-zinc-950 flex items-center justify-center group">
                                     <video
                                         ref={videoRef}
                                         key={currentItem.media_url}
@@ -488,7 +531,9 @@ export default function LiveProjectionScreen({ eventId }) {
                                         playsInline
                                         muted={isMuted}
                                         onEnded={handleVideoEnded}
-                                        className="max-h-[68vh] max-w-full rounded-2xl object-contain shadow-2xl"
+                                        className={`max-h-[68vh] max-w-full rounded-2xl object-contain shadow-2xl transition-all duration-700 ${
+                                            isHoldingEnd ? 'filter brightness-50 contrast-125' : ''
+                                        }`}
                                     />
 
                                     {/* Video Badge with Repeat Counter */}
@@ -504,23 +549,40 @@ export default function LiveProjectionScreen({ eventId }) {
 
                                     {/* Celebratory Hold Card when Video finishes before next slide */}
                                     {isHoldingEnd && (
-                                        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-fade-in space-y-3">
-                                            <div className="p-3 bg-gradient-to-r from-amber-400 to-rose-500 rounded-full text-zinc-950 shadow-xl">
-                                                <Heart className="w-8 h-8 fill-zinc-950" />
+                                        <div className="absolute inset-0 bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-6 sm:p-8 text-center animate-fade-in space-y-4 border-2 border-amber-400/80 rounded-3xl shadow-[0_0_80px_rgba(245,158,11,0.5)]">
+                                            <div className="p-3.5 bg-gradient-to-tr from-amber-400 via-rose-500 to-amber-300 rounded-3xl text-zinc-950 shadow-2xl animate-bounce">
+                                                <PartyPopper className="w-9 h-9" />
                                             </div>
-                                            <h3 className="text-2xl font-black text-white">¡Muchas Gracias {currentItem.author_name}!</h3>
-                                            <p className="text-xs text-amber-300 font-bold uppercase tracking-wider">
-                                                Proyectando siguiente recuerdo...
-                                            </p>
+                                            <div className="space-y-2 max-w-lg">
+                                                <span className="text-xs font-black uppercase tracking-widest text-amber-400 flex items-center justify-center gap-1.5">
+                                                    <Sparkles className="w-4 h-4" />
+                                                    <span>Recuerdo Inolvidable</span>
+                                                    <Sparkles className="w-4 h-4" />
+                                                </span>
+                                                <h3 className="text-2xl sm:text-3xl font-black text-white">
+                                                    ¡Muchas Gracias, {currentItem.author_name}!
+                                                </h3>
+                                                {currentItem.message && (
+                                                    <p className="text-base sm:text-lg text-zinc-200 italic font-medium leading-relaxed">
+                                                        "{currentItem.message}"
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2 pt-2 text-xs font-bold text-amber-300/90">
+                                                <Sparkles className="w-4 h-4 animate-spin-slow" />
+                                                <span>Siguiente recuerdo en {holdRemainingSeconds}s...</span>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
                             ) : currentItem?.type === 'photo' ? (
-                                <div className="relative max-h-[68vh] rounded-3xl overflow-hidden border-2 border-amber-400/40 shadow-[0_0_50px_rgba(251,191,36,0.25)] bg-zinc-950 flex items-center justify-center">
+                                <div className="relative max-h-[68vh] rounded-3xl overflow-hidden border-2 border-amber-400/50 shadow-[0_0_60px_rgba(251,191,36,0.3)] bg-zinc-950 flex items-center justify-center">
                                     <img
                                         src={currentItem.media_url}
                                         alt={`Foto de ${currentItem.author_name}`}
-                                        className="max-h-[68vh] max-w-full rounded-2xl object-contain shadow-2xl transition-transform duration-[8000ms] ease-out scale-100 hover:scale-105"
+                                        className={`max-h-[68vh] max-w-full rounded-2xl object-contain shadow-2xl transition-all duration-700 ${
+                                            enableKenBurns ? 'animate-kenburns' : ''
+                                        }`}
                                     />
                                     <div className="absolute top-4 left-4 px-3.5 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-xs font-black text-amber-300 flex items-center gap-1.5 shadow-lg">
                                         <Camera className="w-3.5 h-3.5 text-amber-400" />
@@ -662,7 +724,35 @@ export default function LiveProjectionScreen({ eventId }) {
                             </button>
                         </div>
 
-                        {/* Setting 1: Photo Slide Duration */}
+                        {/* Setting 1: Transition Style */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-zinc-300 block">
+                                Efecto de Transición entre Recuerdos:
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { id: 'gala', label: '✨ Gala & Destellos' },
+                                    { id: 'flash', label: '📸 Flash Alfombra Roja' },
+                                    { id: 'zoom', label: '🔍 Zoom Cinematográfico' },
+                                    { id: 'fade', label: '🎞️ Desvanecimiento Suave' },
+                                ].map((t) => (
+                                    <button
+                                        key={t.id}
+                                        type="button"
+                                        onClick={() => setTransitionEffect(t.id)}
+                                        className={`p-2.5 rounded-xl text-xs font-bold text-left transition-all ${
+                                            transitionEffect === t.id
+                                                ? 'bg-amber-500 text-zinc-950 font-black shadow-md shadow-amber-500/30'
+                                                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                                        }`}
+                                    >
+                                        {t.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Setting 2: Photo Slide Duration */}
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-zinc-300 block">
                                 Tiempo de permanencia de Fotos:
@@ -685,42 +775,57 @@ export default function LiveProjectionScreen({ eventId }) {
                             </div>
                         </div>
 
-                        {/* Setting 2: Short Video Repeats (Loops) */}
+                        {/* Setting 3: Post-Video Celebration Hold */}
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-zinc-300 block">
-                                Repetición de Videos Cortos (para no cortar de golpe):
+                                Pausa de Agradecimiento tras Video (con dedicatoria):
                             </label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {[1, 2, 3].map((count) => (
+                            <div className="grid grid-cols-4 gap-2">
+                                {[2, 4, 6, 8].map((sec) => (
                                     <button
-                                        key={count}
+                                        key={sec}
                                         type="button"
-                                        onClick={() => setVideoRepeatCount(count)}
+                                        onClick={() => setVideoHoldDuration(sec)}
                                         className={`p-2 rounded-xl text-xs font-black transition-colors ${
-                                            videoRepeatCount === count
+                                            videoHoldDuration === sec
                                                 ? 'bg-rose-500 text-white font-black'
                                                 : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
                                         }`}
                                     >
-                                        {count === 1 ? '1 vez' : `${count} veces`}
+                                        {sec}s
                                     </button>
                                 ))}
                             </div>
                             <span className="text-[10px] text-zinc-400 block">
-                                Los videos cortos se reproducirán {videoRepeatCount} veces con una pausa celebratoria antes de pasar al siguiente.
+                                Muestra una tarjeta emotiva agradeciendo al autor del video antes de pasar a la siguiente foto.
                             </span>
                         </div>
 
-                        {/* Setting 3: Confetti celebration on transitions */}
+                        {/* Setting 4: Ken Burns effect toggle */}
                         <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-800/60 border border-zinc-700">
                             <div>
-                                <span className="text-xs font-bold text-white block">Efectos de Confeti & Chispas</span>
-                                <span className="text-[10px] text-zinc-400">Lanza destellos en cada nuevo saludo</span>
+                                <span className="text-xs font-bold text-white block">Efecto Ken Burns en Fotos</span>
+                                <span className="text-[10px] text-zinc-400">Zoom lento y paneo cinematográfico</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setEnableKenBurns(!enableKenBurns)}
+                                className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${enableKenBurns ? 'bg-amber-500' : 'bg-zinc-700'}`}
+                            >
+                                <div className={`w-5 h-5 rounded-full bg-white transition-transform ${enableKenBurns ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+
+                        {/* Setting 5: Confetti celebration on transitions */}
+                        <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-800/60 border border-zinc-700">
+                            <div>
+                                <span className="text-xs font-bold text-white block">Lluvia de Confeti & Chispas</span>
+                                <span className="text-[10px] text-zinc-400">Partículas y chispas doradas en cada cambio</span>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setEnableConfetti(!enableConfetti)}
-                                className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${enableConfetti ? 'bg-amber-500' : 'bg-zinc-700'}`}
+                                className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${enableConfetti ? 'bg-amber-500' : 'bg-zinc-700'}`}
                             >
                                 <div className={`w-5 h-5 rounded-full bg-white transition-transform ${enableConfetti ? 'translate-x-6' : 'translate-x-0'}`} />
                             </button>
@@ -728,7 +833,7 @@ export default function LiveProjectionScreen({ eventId }) {
 
                         {/* Keyboard shortcut guide */}
                         <div className="text-[11px] text-zinc-400 p-3 bg-zinc-950 rounded-xl space-y-1">
-                            <div className="font-bold text-zinc-300 text-xs mb-1">Atajos de teclado para el DJ:</div>
+                            <div className="font-bold text-zinc-300 text-xs mb-1">Atajos de teclado para el DJ / Operador:</div>
                             <div>• <kbd className="text-amber-400 font-mono">Espacio</kbd>: Pausar / Reanudar</div>
                             <div>• <kbd className="text-amber-400 font-mono">← / →</kbd>: Saludo Anterior / Siguiente</div>
                             <div>• <kbd className="text-amber-400 font-mono">M</kbd>: Silenciar / Activar audio</div>
