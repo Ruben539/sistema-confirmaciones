@@ -125,6 +125,10 @@ class Event extends Model
             return $this->background_music_path;
         }
 
+        if (str_starts_with($this->background_music_path, '/')) {
+            return url($this->background_music_path);
+        }
+
         return \Illuminate\Support\Facades\Storage::disk('public')->url($this->background_music_path);
     }
 

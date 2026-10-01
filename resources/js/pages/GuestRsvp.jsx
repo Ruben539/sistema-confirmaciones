@@ -3,7 +3,7 @@ import {
     Heart, Calendar, MapPin, CheckCircle2, XCircle, Utensils, Send, Sparkles, AlertCircle, 
     Sun, Moon, Music, Disc, Gift, Copy, Check, ExternalLink, Camera, Film, Navigation, 
     Share2, Compass, Clock, Shirt, MessageSquare, Play, Pause, Volume2, VolumeX, Upload, 
-    ChevronRight, Mail, MailOpen, Search, Loader2, Maximize2, Minimize2
+    ChevronRight, Mail, MailOpen, Search, Loader2, Maximize2, Minimize2, ChevronDown
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -114,8 +114,32 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         background_music: true,
     };
     const giftSettings = event?.gift_settings || {};
-    const hasBackgroundMusic = Boolean(event?.background_music_url);
-    const isEnvelopeEnabled = (features?.background_music !== false) && hasBackgroundMusic;
+    const hasAudioMusic = Boolean(event?.background_music_url);
+    const hasSpotifyMusic = Boolean(event?.spotify_url);
+    const hasAnyMusic = hasAudioMusic || hasSpotifyMusic;
+    const isEnvelopeEnabled = ((features?.background_music !== false) || (features?.spotify !== false)) && hasAnyMusic;
+
+    // Music Selector State for Guests & Dynamic Background Audio
+    const [currentAudioUrl, setCurrentAudioUrl] = useState('');
+    const [currentAudioTitle, setCurrentAudioTitle] = useState('Guitarra Acústica Romántica');
+    const [showMusicChooser, setShowMusicChooser] = useState(false);
+
+    useEffect(() => {
+        if (event?.background_music_url) {
+            setCurrentAudioUrl(event.background_music_url);
+            if (event.background_music_url.includes('piano')) {
+                setCurrentAudioTitle('Piano Emotivo de Boda');
+            } else if (event.background_music_url.includes('acoustic')) {
+                setCurrentAudioTitle('Guitarra Acústica Romántica');
+            } else {
+                setCurrentAudioTitle('Música de los Novios');
+            }
+        } else if (event?.spotify_url) {
+            // Default to acoustic background track so sound is immediate, while Spotify is ready
+            setCurrentAudioUrl('/audio/wedding-acoustic.mp3');
+            setCurrentAudioTitle('Guitarra Acústica Romántica');
+        }
+    }, [event?.background_music_url, event?.spotify_url]);
 
     // Live Countdown
     useEffect(() => {
@@ -484,9 +508,13 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             audioRef.current.pause();
             setIsPlayingAudio(false);
         } else {
+            if (spotifyControllerRef.current && isSpotifyPlaying) {
+                spotifyControllerRef.current.pause();
+                setIsSpotifyPlaying(false);
+            }
             audioRef.current.play()
                 .then(() => setIsPlayingAudio(true))
-                .catch(err => console.log('Audio playback error:', err));
+                .catch(() => {});
         }
     };
 
@@ -496,10 +524,52 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         setIsMuted(!isMuted);
     };
 
+    const handleSelectMusicOption = (option) => {
+        if (option.type === 'ambient') {
+            if (spotifyControllerRef.current && isSpotifyPlaying) {
+                spotifyControllerRef.current.pause();
+                setIsSpotifyPlaying(false);
+            }
+            setCurrentAudioUrl(option.url);
+            setCurrentAudioTitle(option.title);
+            setShowMusicChooser(false);
+            setTimeout(() => {
+                if (audioRef.current) {
+                    audioRef.current.load();
+                    audioRef.current.play()
+                        .then(() => setIsPlayingAudio(true))
+                        .catch(() => {});
+                }
+            }, 100);
+        } else if (option.type === 'spotify') {
+            if (audioRef.current && isPlayingAudio) {
+                audioRef.current.pause();
+                setIsPlayingAudio(false);
+            }
+            setShowMusicChooser(false);
+            setShowMusicPlayer(true);
+            if (spotifyControllerRef.current) {
+                spotifyControllerRef.current.play();
+                setIsSpotifyPlaying(true);
+            }
+        } else if (option.type === 'mute') {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                setIsPlayingAudio(false);
+            }
+            if (spotifyControllerRef.current) {
+                spotifyControllerRef.current.pause();
+                setIsSpotifyPlaying(false);
+            }
+            setShowMusicChooser(false);
+        }
+    };
+
     const handleOpenEnvelope = () => {
         setIsOpeningEnvelope(true);
 
-        if (audioRef.current) {
+        // 1. Try starting HTML5 background audio
+        if (audioRef.current && currentAudioUrl) {
             audioRef.current.volume = 0;
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
@@ -519,6 +589,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                 });
             }
         } else if (spotifyControllerRef.current) {
+            // 2. Try starting Spotify controller if no MP3
             try {
                 spotifyControllerRef.current.play();
                 setIsSpotifyPlaying(true);
@@ -533,25 +604,33 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         }, 750);
     };
 
-    // First user gesture fallback: if the envelope was skipped or already open, any click/tap attempts playback gracefully
+    // First user gesture fallback: starts playback on very first tap/click/scroll anywhere
     useEffect(() => {
-        if (!event?.background_music_url) return;
+        if (!hasAnyMusic) return;
+
         const handleInteraction = () => {
-            if (audioRef.current && audioRef.current.paused && (isEnvelopeOpen || !isEnvelopeEnabled)) {
+            if (audioRef.current && currentAudioUrl && audioRef.current.paused && (isEnvelopeOpen || !isEnvelopeEnabled)) {
                 audioRef.current.play()
                     .then(() => setIsPlayingAudio(true))
                     .catch(() => {});
+            } else if (spotifyControllerRef.current && !isSpotifyPlaying && (isEnvelopeOpen || !isEnvelopeEnabled)) {
+                try {
+                    spotifyControllerRef.current.play();
+                    setIsSpotifyPlaying(true);
+                } catch (e) {}
             }
         };
 
         window.addEventListener('click', handleInteraction, { once: true });
         window.addEventListener('touchstart', handleInteraction, { once: true });
+        window.addEventListener('scroll', handleInteraction, { once: true });
 
         return () => {
             window.removeEventListener('click', handleInteraction);
             window.removeEventListener('touchstart', handleInteraction);
+            window.removeEventListener('scroll', handleInteraction);
         };
-    }, [event?.background_music_url, isEnvelopeOpen, isEnvelopeEnabled]);
+    }, [hasAnyMusic, currentAudioUrl, isEnvelopeOpen, isEnvelopeEnabled, isSpotifyPlaying]);
 
     if (loading) {
         return (
@@ -599,10 +678,10 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         >
             
             {/* HIDDEN BACKGROUND AUDIO ELEMENT */}
-            {hasBackgroundMusic && (
+            {currentAudioUrl && (
                 <audio
                     ref={audioRef}
-                    src={event.background_music_url}
+                    src={currentAudioUrl}
                     loop
                     preload="auto"
                     onPlay={() => setIsPlayingAudio(true)}
@@ -725,47 +804,198 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
             {/* FLOATING TOP CONTROLS (THEME, BACKGROUND MUSIC & SPOTIFY BUTTON) */}
             <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-                {/* Floating Background Music Widget */}
-                {hasBackgroundMusic && isEnvelopeOpen && (
-                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-900/90 dark:bg-zinc-800/90 backdrop-blur-md border border-amber-500/30 shadow-xl text-white">
-                        <button
-                            type="button"
-                            onClick={toggleAudioPlay}
-                            className="flex items-center gap-1.5 text-xs font-bold text-amber-300 hover:text-amber-200 transition-colors"
-                            title={isPlayingAudio ? 'Pausar música' : 'Reproducir música'}
-                        >
-                            {isPlayingAudio ? (
-                                <>
-                                    <Pause className="w-3.5 h-3.5 text-amber-400" />
-                                    <div className="flex items-end gap-0.5 h-3.5 px-0.5">
-                                        <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-1" />
-                                        <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-2" />
-                                        <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-3" />
-                                        <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-4" />
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <Play className="w-3.5 h-3.5 text-zinc-400" />
-                                    <span className="text-[11px] text-zinc-400">Play</span>
-                                </>
-                            )}
-                        </button>
+                {/* Floating Interactive Music Player with Chooser */}
+                {hasAnyMusic && isEnvelopeOpen && (
+                    <div className="relative">
+                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-zinc-900/90 dark:bg-zinc-800/90 backdrop-blur-md border border-amber-500/40 shadow-xl text-white">
+                            <button
+                                type="button"
+                                onClick={toggleAudioPlay}
+                                className="flex items-center gap-1.5 text-xs font-bold text-amber-300 hover:text-amber-200 transition-colors"
+                                title={isPlayingAudio ? 'Pausar música' : 'Reproducir música'}
+                            >
+                                {isPlayingAudio ? (
+                                    <>
+                                        <Pause className="w-3.5 h-3.5 text-amber-400" />
+                                        <div className="flex items-end gap-0.5 h-3.5 px-0.5">
+                                            <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-1" />
+                                            <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-2" />
+                                            <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-3" />
+                                            <span className="w-0.5 bg-amber-400 rounded-full animate-soundwave-4" />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play className="w-3.5 h-3.5 text-zinc-400" />
+                                        <span className="text-[11px] text-zinc-400">Play</span>
+                                    </>
+                                )}
+                            </button>
 
-                        <div className="w-px h-3.5 bg-zinc-700 mx-0.5" />
+                            <div className="w-px h-3.5 bg-zinc-700 mx-0.5" />
 
-                        <button
-                            type="button"
-                            onClick={toggleAudioMute}
-                            className="text-zinc-400 hover:text-white transition-colors"
-                            title={isMuted ? 'Activar sonido' : 'Silenciar'}
-                        >
-                            {isMuted ? (
-                                <VolumeX className="w-3.5 h-3.5 text-rose-400" />
-                            ) : (
-                                <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
-                            )}
-                        </button>
+                            {/* Music Chooser Popover Trigger */}
+                            <button
+                                type="button"
+                                onClick={() => setShowMusicChooser(!showMusicChooser)}
+                                className="flex items-center gap-1 text-[11px] font-bold text-zinc-300 hover:text-amber-300 transition-colors max-w-[120px] sm:max-w-[160px] truncate"
+                                title="Cambiar canción o estilo musical"
+                            >
+                                <span className="truncate">
+                                    {isPlayingAudio ? currentAudioTitle : (isSpotifyPlaying ? (spotifyMeta?.title || 'Spotify') : 'Música')}
+                                </span>
+                                <ChevronDown className="w-3 h-3 shrink-0 text-amber-400" />
+                            </button>
+
+                            <div className="w-px h-3.5 bg-zinc-700 mx-0.5" />
+
+                            <button
+                                type="button"
+                                onClick={toggleAudioMute}
+                                className="text-zinc-400 hover:text-white transition-colors"
+                                title={isMuted ? 'Activar sonido' : 'Silenciar'}
+                            >
+                                {isMuted ? (
+                                    <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                                ) : (
+                                    <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Dropdown / Popover to choose music */}
+                        {showMusicChooser && (
+                            <div className="absolute right-0 top-full mt-2 w-72 bg-zinc-950/95 backdrop-blur-xl border border-amber-500/40 rounded-2xl shadow-2xl p-3 z-50 animate-fade-in space-y-2 text-white">
+                                <div className="flex items-center justify-between pb-1.5 border-b border-zinc-800 text-[10px] font-black uppercase tracking-wider text-amber-400">
+                                    <span className="flex items-center gap-1.5">
+                                        <Music className="w-3 h-3" /> Opciones de Música
+                                    </span>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowMusicChooser(false)}
+                                        className="text-zinc-400 hover:text-white"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                <div className="space-y-1">
+                                    {/* Option 1: Acoustic Guitar */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSelectMusicOption({
+                                            type: 'ambient',
+                                            url: '/audio/wedding-acoustic.mp3',
+                                            title: 'Guitarra Acústica Romántica'
+                                        })}
+                                        className={`w-full p-2 rounded-xl flex items-center justify-between text-left text-xs transition-colors ${
+                                            currentAudioUrl === '/audio/wedding-acoustic.mp3' && isPlayingAudio
+                                                ? 'bg-amber-500/20 text-amber-300 font-bold'
+                                                : 'hover:bg-zinc-900 text-zinc-300'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span>🎸</span>
+                                            <div>
+                                                <div className="font-bold">Guitarra Acústica</div>
+                                                <div className="text-[10px] text-zinc-400">Romántica y cálida</div>
+                                            </div>
+                                        </div>
+                                        {currentAudioUrl === '/audio/wedding-acoustic.mp3' && isPlayingAudio && (
+                                            <Check className="w-3.5 h-3.5 text-amber-400" />
+                                        )}
+                                    </button>
+
+                                    {/* Option 2: Emotional Piano */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSelectMusicOption({
+                                            type: 'ambient',
+                                            url: '/audio/wedding-piano.mp3',
+                                            title: 'Piano Emotivo de Boda'
+                                        })}
+                                        className={`w-full p-2 rounded-xl flex items-center justify-between text-left text-xs transition-colors ${
+                                            currentAudioUrl === '/audio/wedding-piano.mp3' && isPlayingAudio
+                                                ? 'bg-amber-500/20 text-amber-300 font-bold'
+                                                : 'hover:bg-zinc-900 text-zinc-300'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span>🎹</span>
+                                            <div>
+                                                <div className="font-bold">Piano Emotivo</div>
+                                                <div className="text-[10px] text-zinc-400">Delicado y elegante</div>
+                                            </div>
+                                        </div>
+                                        {currentAudioUrl === '/audio/wedding-piano.mp3' && isPlayingAudio && (
+                                            <Check className="w-3.5 h-3.5 text-amber-400" />
+                                        )}
+                                    </button>
+
+                                    {/* Option 3: Custom Upload from Host (if different from presets) */}
+                                    {event?.background_music_url && !event.background_music_url.includes('wedding-') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSelectMusicOption({
+                                                type: 'ambient',
+                                                url: event.background_music_url,
+                                                title: 'Canción de los Novios'
+                                            })}
+                                            className={`w-full p-2 rounded-xl flex items-center justify-between text-left text-xs transition-colors ${
+                                                currentAudioUrl === event.background_music_url && isPlayingAudio
+                                                    ? 'bg-amber-500/20 text-amber-300 font-bold'
+                                                    : 'hover:bg-zinc-900 text-zinc-300'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span>🎵</span>
+                                                <div>
+                                                    <div className="font-bold">Canción de los Novios</div>
+                                                    <div className="text-[10px] text-zinc-400">Subida para el evento</div>
+                                                </div>
+                                            </div>
+                                            {currentAudioUrl === event.background_music_url && isPlayingAudio && (
+                                                <Check className="w-3.5 h-3.5 text-amber-400" />
+                                            )}
+                                        </button>
+                                    )}
+
+                                    {/* Option 4: Spotify Official Playlist */}
+                                    {features.spotify && (event.spotify_url || spotifyEmbedUrl) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSelectMusicOption({ type: 'spotify' })}
+                                            className={`w-full p-2 rounded-xl flex items-center justify-between text-left text-xs transition-colors ${
+                                                isSpotifyPlaying
+                                                    ? 'bg-emerald-500/20 text-emerald-300 font-bold'
+                                                    : 'hover:bg-zinc-900 text-zinc-300'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Disc className="w-4 h-4 text-emerald-400 shrink-0" />
+                                                <div className="truncate">
+                                                    <div className="font-bold truncate">{spotifyMeta?.title || 'Playlist de Spotify'}</div>
+                                                    <div className="text-[10px] text-zinc-400 truncate">Lista oficial de la fiesta</div>
+                                                </div>
+                                            </div>
+                                            {isSpotifyPlaying && (
+                                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                            )}
+                                        </button>
+                                    )}
+
+                                    {/* Option 5: Pause / Silence */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSelectMusicOption({ type: 'mute' })}
+                                        className="w-full p-2 rounded-xl flex items-center gap-2 text-left text-xs text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors pt-2 border-t border-zinc-800"
+                                    >
+                                        <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                                        <span>Pausar música / Silencio</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

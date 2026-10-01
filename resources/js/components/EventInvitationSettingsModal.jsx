@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
     X, Music, Gift, Shirt, Image, Sparkles, Check, Plus, Trash2, Upload, 
     AlertCircle, Save, ExternalLink, Volume2, Play, Disc, FileAudio,
-    Palette, Wand2, Eye, Sliders, RefreshCw, Loader2
+    Palette, Wand2, Eye, Sliders, RefreshCw, Loader2, Search, Radio, Headphones
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -99,6 +99,52 @@ const THEME_PRESETS = [
     },
 ];
 
+const AMBIENT_MUSIC_PRESETS = [
+    {
+        id: 'acoustic',
+        name: 'Guitarra Acústica Romántica',
+        desc: 'Melodía suave, íntima y emotiva (ideal para bodas y momentos de entrada)',
+        path: '/audio/wedding-acoustic.mp3',
+        icon: '🎸',
+        badge: 'Recomendada',
+    },
+    {
+        id: 'piano',
+        name: 'Piano Emotivo de Gala',
+        desc: 'Piano de cola delicado y conmovedor, estilo vals y ceremonia',
+        path: '/audio/wedding-piano.mp3',
+        icon: '🎹',
+        badge: 'Clásica',
+    },
+];
+
+const SPOTIFY_PLAYLIST_PRESETS = [
+    {
+        name: 'Vals & Entrada Imperial',
+        desc: 'Clásicos y vals de ceremonia',
+        url: 'https://open.spotify.com/playlist/37i9dQZF1DX4sWSpwq3LiO',
+        icon: '👑',
+    },
+    {
+        name: 'Romance Acústico',
+        desc: 'Baladas acústicas e íntimas',
+        url: 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+        icon: '🤍',
+    },
+    {
+        name: 'Fiesta & Cachengue VIP',
+        desc: 'Hits de fiesta, cumbia y baile',
+        url: 'https://open.spotify.com/playlist/37i9dQZF1DX10zKzsJ2jva',
+        icon: '🎉',
+    },
+    {
+        name: 'Cóctel & Jazz Lounge',
+        desc: 'Bossa nova, chill y jazz moderno',
+        url: 'https://open.spotify.com/playlist/37i9dQZF1DXbITWG1ZJKYt',
+        icon: '🍸',
+    },
+];
+
 export default function EventInvitationSettingsModal({ event, onClose, onUpdated }) {
     const [activeTab, setActiveTab] = useState('styles'); // Default to styles!
     const [saving, setSaving] = useState(false);
@@ -125,6 +171,58 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
     const [dressCode, setDressCode] = useState(event.dress_code || 'elegante');
     const [dressCodeNotes, setDressCodeNotes] = useState(event.dress_code_notes || '');
     const [welcomeMessage, setWelcomeMessage] = useState(event.welcome_message || '');
+
+    // Live Spotify Search state in modal
+    const searchSpotifyDebounceRef = useRef(null);
+    const [spotifySearchQuery, setSpotifySearchQuery] = useState('');
+    const [spotifySearchResults, setSpotifySearchResults] = useState([]);
+    const [isSearchingSpotify, setIsSearchingSpotify] = useState(false);
+    const [showSpotifySearchDropdown, setShowSpotifySearchDropdown] = useState(false);
+
+    const handleSpotifySearchChange = (e) => {
+        const val = e.target.value;
+        setSpotifySearchQuery(val);
+
+        if (searchSpotifyDebounceRef.current) {
+            clearTimeout(searchSpotifyDebounceRef.current);
+        }
+
+        if (val.trim().length >= 2) {
+            setIsSearchingSpotify(true);
+            searchSpotifyDebounceRef.current = setTimeout(async () => {
+                try {
+                    const { ok, json } = await apiFetch(`/api/spotify/search?q=${encodeURIComponent(val.trim())}&limit=6`);
+                    if (ok && Array.isArray(json?.results)) {
+                        setSpotifySearchResults(json.results);
+                        setShowSpotifySearchDropdown(true);
+                    }
+                } catch (err) {
+                    console.error(err);
+                } finally {
+                    setIsSearchingSpotify(false);
+                }
+            }, 300);
+        } else {
+            setSpotifySearchResults([]);
+            setShowSpotifySearchDropdown(false);
+            setIsSearchingSpotify(false);
+        }
+    };
+
+    const handleSelectSpotifySearchResult = (track) => {
+        if (track.url) {
+            setSpotifyUrl(track.url);
+        }
+        setShowSpotifySearchDropdown(false);
+        setSpotifySearchQuery('');
+    };
+
+    const handleSelectAmbientPreset = (preset) => {
+        setCustomAudioUrl(preset.path);
+        setBackgroundMusicUrl(preset.path);
+        setBackgroundMusicFile(null);
+        setIsMusicRemoved(false);
+    };
 
     // Live Spotify Resolution Effect
     useEffect(() => {
@@ -918,6 +1016,45 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                     )}
                                 </div>
 
+                                {/* 1-Click Ambient Music Presets */}
+                                <div>
+                                    <label className="block text-[11px] font-bold text-zinc-300 uppercase tracking-wider mb-2">
+                                        Elegir melodía instrumental de entrada (1 clic):
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        {AMBIENT_MUSIC_PRESETS.map((preset) => {
+                                            const isSelected = backgroundMusicUrl.includes(preset.path) || customAudioUrl.includes(preset.path);
+                                            return (
+                                                <button
+                                                    key={preset.id}
+                                                    type="button"
+                                                    onClick={() => handleSelectAmbientPreset(preset)}
+                                                    className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/30 shadow-md'
+                                                            : 'bg-zinc-900/90 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-850'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-lg">{preset.icon}</span>
+                                                            <span className="text-xs font-bold text-white">{preset.name}</span>
+                                                        </div>
+                                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                                            isSelected 
+                                                                ? 'bg-amber-400 text-zinc-950' 
+                                                                : 'bg-zinc-800 text-zinc-400'
+                                                        }`}>
+                                                            {isSelected ? '✓ Seleccionada' : preset.badge}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] text-zinc-400 leading-snug">{preset.desc}</p>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
                                 {/* Active Music Preview Player */}
                                 {backgroundMusicUrl ? (
                                     <div className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 space-y-2">
@@ -925,13 +1062,17 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                             <div className="flex items-center gap-2 font-bold text-zinc-200 truncate">
                                                 <FileAudio className="w-4 h-4 text-amber-400 shrink-0" />
                                                 <span className="truncate">
-                                                    {backgroundMusicFile ? backgroundMusicFile.name : 'Pista de audio configurada'}
+                                                    {backgroundMusicFile ? backgroundMusicFile.name : (
+                                                        backgroundMusicUrl.includes('wedding-acoustic') 
+                                                            ? 'Guitarra Acústica Romántica'
+                                                            : (backgroundMusicUrl.includes('wedding-piano') ? 'Piano Emotivo de Gala' : 'Pista de audio configurada')
+                                                    )}
                                                 </span>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={handleRemoveMusic}
-                                                className="text-[11px] text-rose-400 hover:text-rose-300 flex items-center gap-1 font-bold transition-colors shrink-0 ml-2"
+                                                className="text-[11px] text-rose-400 hover:text-rose-300 flex items-center gap-1 font-bold transition-colors shrink-0 ml-2 cursor-pointer"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                                 Quitar
@@ -946,86 +1087,184 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                 ) : (
                                     <div className="text-center py-2">
                                         <p className="text-[11px] text-zinc-500">
-                                            No hay música de fondo configurada. Podés subir un archivo MP3 de tu canción favorita.
+                                            No hay música de fondo configurada. Elegí una melodía recomendada arriba o subí tu propio MP3.
                                         </p>
                                     </div>
                                 )}
 
                                 {/* Upload & Link controls */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                                    {/* Upload MP3 button */}
-                                    <div>
-                                        <input
-                                            type="file"
-                                            id="bg-music-input"
-                                            accept="audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac,audio/*"
-                                            onChange={handleMusicFileChange}
-                                            className="hidden"
-                                        />
-                                        <label
-                                            htmlFor="bg-music-input"
-                                            className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 text-amber-300 text-xs font-bold cursor-pointer transition-all active:scale-95"
-                                        >
-                                            <Upload className="w-4 h-4" />
-                                            <span>{backgroundMusicUrl ? 'Cambiar archivo MP3' : 'Subir canción MP3 / WAV'}</span>
-                                        </label>
-                                        <span className="block text-[10px] text-zinc-500 text-center mt-1">
-                                            Hasta 30MB (MP3, WAV, M4A)
-                                        </span>
-                                    </div>
+                                <div className="pt-2 border-t border-zinc-800/80">
+                                    <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                                        O subir tu propia canción MP3 / WAV personalizada:
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {/* Upload MP3 button */}
+                                        <div>
+                                            <input
+                                                type="file"
+                                                id="bg-music-input"
+                                                accept="audio/mp3,audio/wav,audio/ogg,audio/m4a,audio/aac,audio/*"
+                                                onChange={handleMusicFileChange}
+                                                className="hidden"
+                                            />
+                                            <label
+                                                htmlFor="bg-music-input"
+                                                className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10 text-amber-300 text-xs font-bold cursor-pointer transition-all active:scale-95"
+                                            >
+                                                <Upload className="w-4 h-4" />
+                                                <span>{backgroundMusicFile ? 'Cambiar archivo MP3' : 'Subir archivo MP3 / WAV'}</span>
+                                            </label>
+                                            <span className="block text-[10px] text-zinc-500 text-center mt-1">
+                                                Hasta 30MB (MP3, WAV, M4A)
+                                            </span>
+                                        </div>
 
-                                    {/* Direct MP3 URL */}
-                                    <div>
-                                        <input
-                                            type="url"
-                                            value={customAudioUrl}
-                                            onChange={(e) => {
-                                                const url = e.target.value.trim();
-                                                if (url.includes('spotify.com')) {
-                                                    setSpotifyUrl(url);
-                                                    setCustomAudioUrl('');
-                                                    setError('Detectamos un enlace de Spotify. Lo colocamos automáticamente en "Playlist de Spotify" (abajo). Para la música con sobre digital, por favor subí un archivo de audio MP3.');
-                                                    return;
-                                                }
-                                                setCustomAudioUrl(url);
-                                                if (url) {
-                                                    setBackgroundMusicUrl(url);
-                                                    setBackgroundMusicFile(null);
-                                                    setIsMusicRemoved(false);
-                                                } else {
-                                                    setBackgroundMusicUrl('');
-                                                }
-                                            }}
-                                            placeholder="O pegá un link directo a un archivo .mp3"
-                                            className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-800 text-white p-3 font-medium outline-none focus:ring-2 focus:ring-amber-500"
-                                        />
-                                        <span className="block text-[10px] text-zinc-500 text-center mt-1">
-                                            Ej: https://miservidor.com/vals.mp3
-                                        </span>
+                                        {/* Direct MP3 URL */}
+                                        <div>
+                                            <input
+                                                type="url"
+                                                value={customAudioUrl}
+                                                onChange={(e) => {
+                                                    const url = e.target.value.trim();
+                                                    if (url.includes('spotify.com')) {
+                                                        setSpotifyUrl(url);
+                                                        setCustomAudioUrl('');
+                                                        setError('Detectamos un enlace de Spotify. Lo colocamos automáticamente en "Playlist de Spotify" (abajo). Para la música con sobre digital, por favor elegí una melodía o subí un archivo MP3.');
+                                                        return;
+                                                    }
+                                                    setCustomAudioUrl(url);
+                                                    if (url) {
+                                                        setBackgroundMusicUrl(url);
+                                                        setBackgroundMusicFile(null);
+                                                        setIsMusicRemoved(false);
+                                                    } else {
+                                                        setBackgroundMusicUrl('');
+                                                    }
+                                                }}
+                                                placeholder="O pegá un link directo a un archivo .mp3"
+                                                className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-800 text-white p-3 font-medium outline-none focus:ring-2 focus:ring-amber-500"
+                                            />
+                                            <span className="block text-[10px] text-zinc-500 text-center mt-1">
+                                                Ej: https://miservidor.com/vals.mp3
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* SECTION 2: SPOTIFY PLAYLIST OR TRACK EMBED */}
-                            <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800 space-y-3">
+                            <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800 space-y-4">
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
                                             <Disc className="w-4 h-4" />
                                         </div>
                                         <label className="text-xs font-black text-zinc-200 uppercase tracking-wider">
-                                            Playlist o Tema de Spotify
+                                            Playlist o Canción Oficial de Spotify
                                         </label>
                                     </div>
-                                    <p className="text-[11px] text-zinc-400 mb-2">
-                                        Pegá el link de Spotify de la playlist del evento para que los invitados puedan explorarla y abrirla en su app.
+                                    <p className="text-[11px] text-zinc-400">
+                                        Los invitados pueden explorar la lista del evento y reproducirla desde la app de Spotify o el reproductor web.
                                     </p>
+                                </div>
+
+                                {/* 1-Click Curated Spotify Presets */}
+                                <div>
+                                    <label className="block text-[11px] font-bold text-zinc-300 uppercase tracking-wider mb-2">
+                                        Playlists recomendadas listas para usar (1 clic):
+                                    </label>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                        {SPOTIFY_PLAYLIST_PRESETS.map((preset, idx) => {
+                                            const isSelected = spotifyUrl === preset.url;
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => setSpotifyUrl(preset.url)}
+                                                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-emerald-500/20 border-emerald-400 ring-2 ring-emerald-400/30'
+                                                            : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-850'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-base">{preset.icon}</span>
+                                                        {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                                    </div>
+                                                    <div className="font-bold text-[11px] text-white truncate">{preset.name}</div>
+                                                    <div className="text-[9px] text-zinc-400 truncate">{preset.desc}</div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Live Spotify Search Bar */}
+                                <div className="relative">
+                                    <label className="block text-[11px] font-bold text-zinc-300 uppercase tracking-wider mb-1">
+                                        Buscar canción o playlist en Spotify:
+                                    </label>
+                                    <div className="relative">
+                                        <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-3 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            value={spotifySearchQuery}
+                                            onChange={handleSpotifySearchChange}
+                                            placeholder="Buscar por artista o canción (ej: Perfect Ed Sheeran, Abel Pintos, Vals vienés)..."
+                                            className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-900 text-white pl-9 pr-8 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500"
+                                        />
+                                        {isSearchingSpotify && (
+                                            <Loader2 className="w-4 h-4 text-emerald-400 animate-spin absolute right-3 top-2.5" />
+                                        )}
+                                    </div>
+
+                                    {/* Live Search Autocomplete Dropdown */}
+                                    {showSpotifySearchDropdown && (
+                                        <div className="absolute left-0 right-0 top-full mt-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-zinc-800 max-h-60 overflow-y-auto">
+                                            {spotifySearchResults.length > 0 ? (
+                                                spotifySearchResults.map((track) => (
+                                                    <button
+                                                        key={track.id}
+                                                        type="button"
+                                                        onClick={() => handleSelectSpotifySearchResult(track)}
+                                                        className="w-full p-2.5 flex items-center gap-3 text-left hover:bg-zinc-800 transition-colors cursor-pointer"
+                                                    >
+                                                        {track.image ? (
+                                                            <img src={track.image} alt={track.name} className="w-9 h-9 rounded object-cover shrink-0" />
+                                                        ) : (
+                                                            <div className="w-9 h-9 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                                                <Disc className="w-4 h-4" />
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-xs font-bold text-white truncate">{track.name}</div>
+                                                            <div className="text-[10px] text-zinc-400 truncate">{track.artist}</div>
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-emerald-400 px-2 py-0.5 rounded bg-emerald-500/10 shrink-0">
+                                                            Elegir
+                                                        </span>
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className="p-3 text-center text-xs text-zinc-400">
+                                                    No se encontraron resultados en Spotify.
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Direct URL Input */}
+                                <div>
+                                    <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                                        O pegar link directo de Spotify:
+                                    </label>
                                     <div className="flex gap-2">
                                         <input
                                             type="url"
                                             value={spotifyUrl}
                                             onChange={(e) => setSpotifyUrl(e.target.value)}
-                                            placeholder="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+                                            placeholder="https://open.spotify.com/playlist/... o https://open.spotify.com/track/..."
                                             className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-800 text-white p-3 font-medium outline-none focus:ring-2 focus:ring-emerald-500"
                                         />
                                         {spotifyUrl && (
