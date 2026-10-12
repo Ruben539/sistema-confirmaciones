@@ -548,6 +548,7 @@ class GuestController extends Controller
         $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
         $lock = $throttle->lock();
         $skipThrottle = $request->boolean('skip_throttle', false);
+        $wait = $lock ? $throttle->secondsUntilAllowed() : 30;
         if ($wait > 0 && !$skipThrottle) {
             $lock?->release();
             return response()->json([
