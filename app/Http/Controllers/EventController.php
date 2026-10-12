@@ -191,6 +191,26 @@ class EventController extends Controller
         ]);
     }
 
+    public function removeCoverPhoto($id)
+    {
+        $event = Event::findOrFail($id);
+
+        if ($event->cover_photo_path) {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            if ($disk->exists($event->cover_photo_path)) {
+                $disk->delete($event->cover_photo_path);
+            }
+            $event->update(['cover_photo_path' => null]);
+        }
+
+        return response()->json([
+            'message' => 'Foto eliminada con éxito',
+            'cover_photo_path' => null,
+            'cover_photo_url' => null,
+            'event' => $event->fresh()
+        ]);
+    }
+
     public function uploadBackgroundMusic(Request $request, $id)
     {
         $event = Event::findOrFail($id);

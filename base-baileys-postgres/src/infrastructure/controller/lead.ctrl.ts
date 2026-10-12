@@ -6,8 +6,8 @@ class LeadCtrl {
 
   public sendCtrl = async ({ body }: Request, res: Response) => {
     try {
-      const { message, phone, groupJid } = body;
-      const response = await this.leadCreator.sendMessageAndSave({ message, phone, groupJid });
+      const { message, phone, groupJid, mediaUrl } = body;
+      const response = await this.leadCreator.sendMessageAndSave({ message, phone, groupJid, mediaUrl });
       res.send(response);
     } catch (error) {
       console.error("[LeadCtrl] Error al enviar mensaje:", error);

@@ -557,12 +557,27 @@ class GuestController extends Controller
             ], 429);
         }
 
+        $mediaUrl = null;
+        if (!empty($event->cover_photo_path)) {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            if ($disk->exists($event->cover_photo_path)) {
+                $mediaUrl = $disk->path($event->cover_photo_path);
+            } elseif ($event->cover_photo_url) {
+                $mediaUrl = $event->cover_photo_url;
+            }
+        }
+
         try {
-            $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
+            $payload = [
                 'phone' => preg_replace('/[^\d]/', '', $guest->phone),
                 'message' => $message,
                 'session_id' => $event->user_id ? "planner_{$event->user_id}" : "default"
-            ]);
+            ];
+            if ($mediaUrl) {
+                $payload['mediaUrl'] = $mediaUrl;
+            }
+
+            $response = \Illuminate\Support\Facades\Http::timeout(15)->post($botUrl, $payload);
 
             if ($response->successful()) {
                 $throttle->recordSent();

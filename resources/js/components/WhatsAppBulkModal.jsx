@@ -218,6 +218,21 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                     </div>
                 )}
 
+                {/* Active Flyer Notification */}
+                {event?.cover_photo_url && (
+                    <div className="px-6 py-2.5 bg-rose-50/70 dark:bg-rose-950/30 border-b border-rose-100 dark:border-rose-900/40 flex items-center gap-3">
+                        <img
+                            src={event.cover_photo_url}
+                            alt="Flyer"
+                            className="w-8 h-10 object-cover rounded-lg shadow-sm border border-rose-200 dark:border-rose-800"
+                        />
+                        <div className="text-xs">
+                            <span className="font-bold text-rose-700 dark:text-rose-300">Flyer de Invitación Activo: </span>
+                            <span className="text-zinc-600 dark:text-zinc-400">El bot enviará automáticamente esta tarjeta con tu texto debajo como pie de foto.</span>
+                        </div>
+                    </div>
+                )}
+
                 {/* Filter & Subheader */}
                 <div className="px-6 py-3 bg-zinc-100/60 dark:bg-zinc-800/20 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-4 flex-wrap">

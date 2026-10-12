@@ -123,12 +123,27 @@ class SendWhatsAppMessageJob implements ShouldQueue
     {
         $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
+        $mediaUrl = null;
+        if (!empty($guest->event?->cover_photo_path)) {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            if ($disk->exists($guest->event->cover_photo_path)) {
+                $mediaUrl = $disk->path($guest->event->cover_photo_path);
+            } elseif ($guest->event->cover_photo_url) {
+                $mediaUrl = $guest->event->cover_photo_url;
+            }
+        }
+
         try {
-            $response = Http::timeout(10)->post(config('whatsapp.bot_url'), [
+            $payload = [
                 'phone' => $cleanPhone,
                 'message' => WhatsAppMessage::build($guest, $this->messageMode),
                 'session_id' => WhatsAppThrottle::sessionForEvent($guest->event),
-            ]);
+            ];
+            if ($mediaUrl) {
+                $payload['mediaUrl'] = $mediaUrl;
+            }
+
+            $response = Http::timeout(15)->post(config('whatsapp.bot_url'), $payload);
         } catch (ConnectionException $e) {
             if (str_contains($e->getMessage(), 'cURL error 7')) {
                 // Bot not reachable: nothing was sent, safe to retry later

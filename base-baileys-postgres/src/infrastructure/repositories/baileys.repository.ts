@@ -304,9 +304,16 @@ export class BaileysTransporter implements LeadExternal {
         throw new Error(`No se pudo determinar un JID válido para el número "${phone}"`);
       }
 
-      const messageContent = mediaUrl
-        ? { image: { url: mediaUrl }, caption: message }
-        : { text: message };
+      let messageContent: any;
+      if (mediaUrl && typeof mediaUrl === 'string' && mediaUrl.trim().length > 0) {
+        if (fs.existsSync(mediaUrl)) {
+          messageContent = { image: fs.readFileSync(mediaUrl), caption: message };
+        } else {
+          messageContent = { image: { url: mediaUrl }, caption: message };
+        }
+      } else {
+        messageContent = { text: message };
+      }
 
       console.log(`[Baileys] >>> Destino final resolved JID: ${jid}${sendOptions.quoted ? " (con cita / quoted)" : ""}${mediaUrl ? " (con imagen QR)" : ""}`);
       const response = await this.connection.sendMessage(jid, messageContent, sendOptions);

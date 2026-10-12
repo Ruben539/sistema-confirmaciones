@@ -76,6 +76,7 @@ Route::prefix('api')->group(function () {
 
     // Admin: Interactive Invitation, Dedications & Spotify / Song Suggestions
     Route::post('/events/{id}/cover-photo', [EventController::class, 'uploadCoverPhoto']);
+    Route::delete('/events/{id}/cover-photo', [EventController::class, 'removeCoverPhoto']);
     Route::post('/events/{id}/background-music', [EventController::class, 'uploadBackgroundMusic']);
     Route::delete('/events/{id}/background-music', [EventController::class, 'removeBackgroundMusic']);
     Route::post('/events/{id}/styles', [EventController::class, 'saveInvitationStyles']);

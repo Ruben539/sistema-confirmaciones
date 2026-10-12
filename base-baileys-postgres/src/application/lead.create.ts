@@ -14,10 +14,12 @@ export class LeadCreate {
     message,
     phone,
     groupJid,
+    mediaUrl,
   }: {
     message: string;
     phone: string;
     groupJid?: string;
+    mediaUrl?: string;
   }) {
     let responseDbSave = null;
     try {
@@ -26,7 +28,7 @@ export class LeadCreate {
       console.warn("[Baileys DB Notice] Error al guardar en base local (se continúa el envío):", dbErr?.message || dbErr);
     }
 
-    const responseExSave = await this.leadExternal.sendMsg({ message, phone, groupJid });
+    const responseExSave = await this.leadExternal.sendMsg({ message, phone, groupJid, mediaUrl });
     return { responseDbSave, responseExSave };
   }
 }
