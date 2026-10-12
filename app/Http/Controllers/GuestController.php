@@ -547,11 +547,11 @@ class GuestController extends Controller
         // Manual sends count against the same per-number pacing and daily limit as bulk sends
         $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
         $lock = $throttle->lock();
-        $wait = $lock ? $throttle->secondsUntilAllowed() : 30;
-        if ($wait > 0) {
+        $skipThrottle = $request->boolean('skip_throttle', false);
+        if ($wait > 0 && !$skipThrottle) {
             $lock?->release();
             return response()->json([
-                'message' => $throttle->waitReason() . ' Intentá de nuevo en ' . ($wait >= 120 ? ceil($wait / 60) . ' minutos' : "{$wait} segundos") . ', o usá el envío masivo para que se programe solo.',
+                'message' => $throttle->waitReason() . ' Intentá de nuevo en ' . ($wait >= 120 ? ceil($wait / 60) . ' minutos' : "{$wait} segundos") . '.',
                 'retry_after' => $wait,
                 'guest' => $guest
             ], 429);
