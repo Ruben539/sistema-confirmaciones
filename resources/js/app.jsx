@@ -19,6 +19,7 @@ import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import EventTiming from './components/EventTiming';
 import EventTypesManagement from './components/EventTypesManagement';
 import EventInteractivePanel from './components/EventInteractivePanel';
+import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
 import PublicDedicationPage from './components/PublicDedicationPage';
 import GuestRsvp from './pages/GuestRsvp';
@@ -573,8 +574,9 @@ function App() {
     const projectionMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/proyeccion$/);
     const publicDedicationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/dedicatoria$/);
     const publicInvitationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/invitacion$/);
+    const demoInvitationMatch = path === '/demo/invitacion';
 
-    const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch;
+    const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch || demoInvitationMatch;
 
     useEffect(() => {
         if (!isPublicRoute) {
@@ -612,6 +614,10 @@ function App() {
     // Public routes that bypass login:
     if (rsvpMatch && rsvpMatch[1]) {
         return <GuestRsvp token={rsvpMatch[1]} />;
+    }
+
+    if (demoInvitationMatch) {
+        return <GuestRsvp demo={buildDemoInvitation(new URLSearchParams(window.location.search))} />;
     }
 
     if (publicInvitationMatch && publicInvitationMatch[1]) {

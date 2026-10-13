@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
-export default function GuestRsvp({ token, eventId, isPublic = false }) {
+// demo: sample data (see demoInvitation.js). Renders a full invitation with no API calls and nothing saved.
+export default function GuestRsvp({ token, eventId, isPublic = false, demo = null }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
@@ -102,7 +103,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const fetchRsvp = async () => {
         try {
             const url = token ? `/api/rsvp/${token}` : `/api/events/${eventId}/public-invitation`;
-            const { ok, json } = await apiFetch(url);
+            const { ok, json } = demo ? { ok: true, json: demo } : await apiFetch(url);
 
             if (ok && json) {
                 setData(json);
@@ -204,6 +205,10 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     // Handle RSVP Submit
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (demo) {
+            setSubmitted(true);
+            return;
+        }
         if (!token) return;
 
         setSubmitting(true);
@@ -439,6 +444,22 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
         e.preventDefault();
         if (!selectedDjTrack) return;
 
+        if (demo) {
+            setSongRequests(prev => [{
+                id: Date.now(),
+                requester_name: (djRequesterName || guest?.name || 'Invitado Especial').trim(),
+                song_title: selectedDjTrack.name,
+                artist: selectedDjTrack.artist,
+                image_url: selectedDjTrack.image,
+            }, ...prev]);
+            setDjSongSuccess(true);
+            setSelectedDjTrack(null);
+            setDjSongQuery('');
+            setDjSongNote('');
+            setTimeout(() => setDjSongSuccess(false), 5000);
+            return;
+        }
+
         setIsSubmittingDjSong(true);
         try {
             const endpoint = token ? `/api/rsvp/${token}/song-request` : `/api/events/${event.public_code}/public-song-request`;
@@ -620,6 +641,10 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
     // AI Dedication Suggestion Handler
     const handleSuggestDedication = async () => {
+        if (demo) {
+            setDedicationMsg(`¡Que este amor que hoy celebran los acompañe siempre! Gracias por dejarnos ser parte de este día tan especial, ${event?.couple_names || 'queridos novios'} 💕`);
+            return;
+        }
         setIsGeneratingDedication(true);
         try {
             const { ok, json } = await apiFetch('/api/rsvp/suggest-dedication', {
@@ -644,6 +669,31 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     // Dedication submit
     const handleDedicationSubmit = async (e) => {
         e.preventDefault();
+
+        if (demo) {
+            // Show it right away in the wall, using the local preview for photos/videos
+            setData(prev => ({
+                ...prev,
+                dedications: [{
+                    id: Date.now(),
+                    type: dedicationFile ? dedicationType : 'text',
+                    author_name: dedicationAuthor.trim() || guest?.name || 'Invitado Especial',
+                    message: dedicationMsg.trim(),
+                    media_url: dedicationFile ? dedicationPreview : null,
+                }, ...(prev?.dedications || [])],
+            }));
+            setDedicationPending(false);
+            setDedicationSuccess(true);
+            setTimeout(() => {
+                setShowDedicationModal(false);
+                setDedicationSuccess(false);
+                setDedicationFile(null);
+                setDedicationPreview(null);
+                setDedicationMsg('');
+            }, 2000);
+            return;
+        }
+
         setDedicationUploading(true);
 
         try {
@@ -1050,6 +1100,12 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             }}
         >
             
+            {demo && (
+                <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999] px-4 py-1.5 rounded-full bg-zinc-950/85 text-white text-[11px] font-bold shadow-xl backdrop-blur border border-amber-400/40 whitespace-nowrap">
+                    ✨ Invitación de demostración · nada de lo que hagas se guarda
+                </div>
+            )}
+
             {/* HIDDEN BACKGROUND AUDIO ELEMENT */}
             {currentAudioUrl && (
                 <audio

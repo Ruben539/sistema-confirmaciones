@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     Sparkles, Music, Gift, Tv, Heart, Calendar, MapPin, Disc,
-    CheckCircle2, MessageSquare, Send, Clock, ShieldCheck, Link2, HelpCircle, Camera, Star
+    CheckCircle2, MessageSquare, Send, Clock, ShieldCheck, Link2, HelpCircle, Camera, Star, Eye, ExternalLink
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -97,6 +97,15 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
 
     const hosts = event.couple_names || event.title || 'Sofía & Mateo';
 
+    // The demo invitation is personalized with this event's names, date and place
+    const demoUrl = (() => {
+        const params = new URLSearchParams({ n: hosts });
+        const date = /^\d{4}-\d{2}-\d{2}/.exec(event.event_date || '');
+        if (date) params.set('f', date[0]);
+        if (event.location) params.set('l', event.location);
+        return `/demo/invitacion?${params.toString()}`;
+    })();
+
     return (
         <div className="space-y-6 font-sans animate-fade-in">
             {/* Header */}
@@ -112,6 +121,15 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
                     Podés sumarla a este evento sin cambiar nada de cómo trabajás hoy: las confirmaciones siguen llegando por WhatsApp,
                     y los invitados además reciben una invitación que los entusiasma, les responde todas sus dudas y los hace parte de la fiesta.
                 </p>
+                <a
+                    href={demoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-zinc-950 text-xs font-black shadow-lg transition-all hover:scale-105"
+                >
+                    <Eye className="w-4 h-4" /> Ver invitación de demo con los datos de este evento
+                    <ExternalLink className="w-3.5 h-3.5" />
+                </a>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
@@ -143,9 +161,14 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
                             <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-[10px] font-bold text-amber-700 dark:text-amber-300">
                                 <Gift className="w-3.5 h-3.5" /> Alias: boda.sofia.mateo <span className="ml-auto underline">Copiar</span>
                             </div>
-                            <div className="w-full py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 text-white text-xs font-black text-center">
-                                Confirmar asistencia
-                            </div>
+                            <a
+                                href={demoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full py-2 rounded-xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-black flex items-center justify-center gap-1.5 transition-all"
+                            >
+                                <Eye className="w-3.5 h-3.5" /> Ver demo
+                            </a>
                         </div>
                     </div>
                 </div>
