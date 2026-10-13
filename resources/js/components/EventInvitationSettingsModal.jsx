@@ -582,7 +582,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 font-sans">
             <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl text-white overflow-hidden animate-fade-in">
                 {/* Header */}
-                <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60">
+                <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="p-2.5 rounded-2xl bg-gradient-to-br from-amber-400 via-rose-500 to-amber-600 text-zinc-950 shadow-lg">
                             <Sparkles className="w-5 h-5 font-black" />
@@ -605,11 +605,11 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-zinc-800 bg-zinc-950/40 px-6 gap-2 overflow-x-auto select-none">
+                <div className="flex border-b border-zinc-800 bg-zinc-950/80 px-4 sm:px-6 gap-2 overflow-x-auto select-none shrink-0 min-h-[48px] items-center">
                     <button
                         type="button"
                         onClick={() => setActiveTab('styles')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                             activeTab === 'styles' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -619,7 +619,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     <button
                         type="button"
                         onClick={() => setActiveTab('spotify')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                             activeTab === 'spotify' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -629,7 +629,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     <button
                         type="button"
                         onClick={() => setActiveTab('gifts')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                             activeTab === 'gifts' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -639,7 +639,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     <button
                         type="button"
                         onClick={() => setActiveTab('dress_code')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                             activeTab === 'dress_code' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -649,7 +649,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     <button
                         type="button"
                         onClick={() => setActiveTab('cover')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors ${
                             activeTab === 'cover' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -659,7 +659,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     <button
                         type="button"
                         onClick={() => setActiveTab('trivia')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                             activeTab === 'trivia' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -669,7 +669,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     <button
                         type="button"
                         onClick={() => setActiveTab('features')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                             activeTab === 'features' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -679,7 +679,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                 </div>
 
                 {/* Content */}
-                <div className="p-6 overflow-y-auto flex-1 space-y-5">
+                <div className="p-6 overflow-y-auto flex-1 min-h-0 space-y-5">
                     {error && (
                         <div className="p-3.5 rounded-2xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-2">
                             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1946,7 +1946,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                 </div>
 
                 {/* Footer Buttons */}
-                <div className="p-5 border-t border-zinc-800 flex items-center justify-end gap-3 bg-zinc-950/60">
+                <div className="p-5 border-t border-zinc-800 flex items-center justify-end gap-3 bg-zinc-950/60 shrink-0">
                     <button
                         type="button"
                         onClick={onClose}
