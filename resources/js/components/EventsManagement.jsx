@@ -222,9 +222,11 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                                     </div>
 
                                     {/* Deadline RSVP Badge */}
-                                    {ev.event_date && (
+                                    {(ev.event_date || ev.rsvp_deadline_date) && (
                                         <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 px-3 py-1.5 rounded-xl border border-blue-200/60 dark:border-blue-800/60 font-bold" title="Límite para confirmar asistencia">
-                                            <span>⏰ RSVP: {ev.rsvp_deadline_days ?? 7} días antes</span>
+                                            <span>⏰ RSVP: {ev.rsvp_deadline_date
+                                                ? `hasta el ${ev.rsvp_deadline_date.split('-').reverse().join('/')}`
+                                                : `${ev.rsvp_deadline_days ?? 7} días antes`}</span>
                                         </div>
                                     )}
 

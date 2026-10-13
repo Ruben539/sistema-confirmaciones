@@ -17,7 +17,7 @@ class ProcessRsvpDeadlines extends Command
     {
         $this->info('Iniciando procesamiento de plazos y recordatorios de confirmación...');
 
-        $events = Event::whereNotNull('event_date')
+        $events = Event::where(fn ($q) => $q->whereNotNull('event_date')->orWhereNotNull('rsvp_deadline_date'))
             ->whereIn('status', ['active', 'confirmed'])
             ->get();
 
@@ -25,9 +25,7 @@ class ProcessRsvpDeadlines extends Command
         $autoDeclinedCount = 0;
 
         foreach ($events as $event) {
-            $deadlineDays = $event->rsvp_deadline_days ?? 7;
-            $eventDate = Carbon::parse($event->event_date)->startOfDay();
-            $deadlineDate = $eventDate->copy()->subDays($deadlineDays)->endOfDay();
+            $deadlineDate = $event->rsvpDeadline();
             $reminderStartDate = $deadlineDate->copy()->subDay()->startOfDay();
 
             // 1. Escenario A: El plazo límite HA VENCIDO -> Autocancelar pendientes

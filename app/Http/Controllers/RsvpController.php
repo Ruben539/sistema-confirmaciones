@@ -16,10 +16,8 @@ class RsvpController extends Controller
         $isExpired = false;
         $deadlineDateFormatted = null;
 
-        if ($event && $event->event_date) {
-            $deadlineDays = $event->rsvp_deadline_days ?? 7;
-            $deadlineDate = \Carbon\Carbon::parse($event->event_date)->subDays($deadlineDays)->endOfDay();
-            $deadlineDateFormatted = \Carbon\Carbon::parse($event->event_date)->subDays($deadlineDays)->format('d/m/Y');
+        if ($event && ($deadlineDate = $event->rsvpDeadline())) {
+            $deadlineDateFormatted = $deadlineDate->format('d/m/Y');
             $isExpired = now()->greaterThan($deadlineDate);
 
             if ($isExpired && $guest->status === 'pending' && ($event->auto_decline_expired ?? true)) {
@@ -74,11 +72,9 @@ class RsvpController extends Controller
         $guest = Guest::with('event')->where('token', $token)->firstOrFail();
         $event = $guest->event;
 
-        if ($event && $event->event_date) {
-            $deadlineDays = $event->rsvp_deadline_days ?? 7;
-            $deadlineDate = \Carbon\Carbon::parse($event->event_date)->subDays($deadlineDays)->endOfDay();
+        if ($event && ($deadlineDate = $event->rsvpDeadline())) {
             if (now()->greaterThan($deadlineDate)) {
-                $formattedDeadline = \Carbon\Carbon::parse($event->event_date)->subDays($deadlineDays)->format('d/m/Y');
+                $formattedDeadline = $deadlineDate->format('d/m/Y');
                 return response()->json([
                     'message' => "El plazo límite para confirmar asistencia a este evento venció el {$formattedDeadline}. Para cualquier modificación, por favor contactá a la organización."
                 ], 422);

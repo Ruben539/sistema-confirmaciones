@@ -63,6 +63,7 @@ class Event extends Model
         'max_guests',
         'payment_status', // 'pending', 'paid'
         'rsvp_deadline_days', // Days before event date (e.g. 7)
+        'rsvp_deadline_date', // Fixed RSVP deadline date; overrides rsvp_deadline_days when set
         'auto_decline_expired', // Boolean
         'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
         'timing', // JSON Array of timeline items [{time, title, description, completed}]
@@ -84,6 +85,7 @@ class Event extends Model
         'auto_decline_expired' => 'boolean',
         'max_guests' => 'integer',
         'rsvp_deadline_days' => 'integer',
+        'rsvp_deadline_date' => 'date:Y-m-d',
         'milestones_notified' => 'array',
         'timing' => 'array',
         'venue_layout' => 'array',
@@ -130,6 +132,23 @@ class Event extends Model
         }
 
         return \Illuminate\Support\Facades\Storage::disk('public')->url($this->background_music_path);
+    }
+
+    /**
+     * Fin del plazo para confirmar asistencia: la fecha fija si se configuró,
+     * si no la fecha del evento menos rsvp_deadline_days. Null si no hay fechas.
+     */
+    public function rsvpDeadline(): ?\Carbon\Carbon
+    {
+        if ($this->rsvp_deadline_date) {
+            return \Carbon\Carbon::parse($this->rsvp_deadline_date)->endOfDay();
+        }
+
+        if ($this->event_date) {
+            return \Carbon\Carbon::parse($this->event_date)->subDays($this->rsvp_deadline_days ?? 7)->endOfDay();
+        }
+
+        return null;
     }
 
     public function getIsActiveAttribute(): bool

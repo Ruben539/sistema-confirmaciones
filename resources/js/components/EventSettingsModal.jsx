@@ -8,6 +8,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
         title: '',
         couple_names: '',
         event_date: '',
+        rsvp_deadline_date: '',
         location: '',
         message_template: '',
         user_id: '',
@@ -30,6 +31,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                 title: event.title || '',
                 couple_names: event.couple_names || '',
                 event_date: event.event_date || '',
+                rsvp_deadline_date: event.rsvp_deadline_date || '',
                 location: event.location || '',
                 message_template: event.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
                 user_id: event.user_id || '',
@@ -247,6 +249,22 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                     onChange={(e) => setFormData({ ...formData, event_date: e.target.value })}
                                     className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-rose-500 outline-none"
                                 />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                                    <Calendar className="w-3.5 h-3.5 text-amber-500" /> Fecha Límite de Confirmación (RSVP)
+                                </label>
+                                <input
+                                    type="date"
+                                    value={formData.rsvp_deadline_date}
+                                    max={formData.event_date || undefined}
+                                    onChange={(e) => setFormData({ ...formData, rsvp_deadline_date: e.target.value })}
+                                    className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+                                />
+                                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
+                                    Los invitados pueden confirmar hasta las 23:59 de este día. Si lo dejás vacío se usa el plazo de {event?.rsvp_deadline_days ?? 7} días antes del evento.
+                                </p>
                             </div>
                         </div>
 

@@ -50,10 +50,10 @@ class WhatsAppMessage
 
     private static function deadlineText($event): string
     {
-        if (!$event->event_date) {
+        $deadline = $event->rsvpDeadline();
+        if (!$deadline) {
             return '';
         }
-        $deadline = Carbon::parse($event->event_date)->subDays($event->rsvp_deadline_days ?? 7);
         return ' (' . $deadline->format('d/m/Y') . ')';
     }
 }

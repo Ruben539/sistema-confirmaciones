@@ -114,7 +114,12 @@ class SendWhatsAppMessageJob implements ShouldQueue
     {
         if ($this->messageMode === 'reminder') {
             // Guest answered in the meantime: no reminder needed
-            return $guest->status !== 'pending';
+            if ($guest->status !== 'pending') {
+                return true;
+            }
+            // The throttle may have delayed it past the RSVP deadline: a reminder no longer makes sense
+            $deadline = $guest->event?->rsvpDeadline();
+            return $deadline !== null && now()->greaterThan($deadline);
         }
         return $guest->whatsapp_status === 'sent';
     }

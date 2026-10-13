@@ -57,6 +57,7 @@ class EventController extends Controller
             'max_guests' => 'nullable|integer|min:1|required_if:plan_type,custom',
             'payment_status' => 'nullable|string|in:pending,paid',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
+            'rsvp_deadline_date' => 'nullable|date',
             'auto_decline_expired' => 'nullable|boolean',
         ]);
 
@@ -80,6 +81,7 @@ class EventController extends Controller
             'max_guests' => $maxGuests,
             'payment_status' => $validated['payment_status'] ?? 'paid',
             'rsvp_deadline_days' => $validated['rsvp_deadline_days'] ?? 7,
+            'rsvp_deadline_date' => $validated['rsvp_deadline_date'] ?? null,
             'auto_decline_expired' => $validated['auto_decline_expired'] ?? true,
         ]);
 
@@ -115,6 +117,7 @@ class EventController extends Controller
             'max_guests' => 'nullable|integer|min:1',
             'payment_status' => 'nullable|string|in:pending,paid',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
+            'rsvp_deadline_date' => 'nullable|date',
             'auto_decline_expired' => 'nullable|boolean',
             'spotify_url' => 'nullable|string|max:500',
             'background_music_path' => 'nullable|string|max:500',
