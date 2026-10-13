@@ -568,9 +568,10 @@ function App() {
 
     const path = window.location.pathname;
     const rsvpMatch = path.match(/^\/confirmar\/(.+)$/);
-    const projectionMatch = path.match(/^\/evento\/(\d+)\/proyeccion$/);
-    const publicDedicationMatch = path.match(/^\/evento\/(\d+)\/dedicatoria$/);
-    const publicInvitationMatch = path.match(/^\/evento\/(\d+)\/invitacion$/);
+    // Public links use the event's random public_code, never the sequential id
+    const projectionMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/proyeccion$/);
+    const publicDedicationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/dedicatoria$/);
+    const publicInvitationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/invitacion$/);
 
     const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch;
 

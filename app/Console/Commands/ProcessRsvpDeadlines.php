@@ -26,7 +26,6 @@ class ProcessRsvpDeadlines extends Command
 
         foreach ($events as $event) {
             $deadlineDate = $event->rsvpDeadline();
-            $reminderStartDate = $deadlineDate->copy()->subDay()->startOfDay();
 
             // 1. Escenario A: El plazo límite HA VENCIDO -> Autocancelar pendientes
             if (now()->greaterThan($deadlineDate) && ($event->auto_decline_expired ?? true)) {
@@ -48,12 +47,9 @@ class ProcessRsvpDeadlines extends Command
                 }
             }
 
-            // 2. Escenario B: Faltan 1 día o menos para el vencimiento (y aún no ha pasado el plazo) -> Enviar recordatorio
-            if (now()->greaterThanOrEqualTo($reminderStartDate) && now()->lessThanOrEqualTo($deadlineDate) && $event->is_enabled) {
-                $guestsToRemind = Guest::where('event_id', $event->id)
-                    ->where('status', 'pending')
-                    ->whereNull('reminder_sent_at')
-                    ->get();
+            // 2. Escenario B: Plazo vigente -> Enviar recordatorios según la frecuencia configurada en el evento
+            if (now()->lessThanOrEqualTo($deadlineDate) && $event->is_enabled) {
+                $guestsToRemind = $this->guestsDueForReminder($event, $deadlineDate);
 
                 // Queue reminders through the throttled job (per-number pacing, daily limit,
                 // sending window) instead of firing them all at once
@@ -70,5 +66,41 @@ class ProcessRsvpDeadlines extends Command
 
         $this->info("Procesamiento completado: {$remindersCount} recordatorios programados, {$autoDeclinedCount} invitados autocancelados.");
         return 0;
+    }
+
+    /**
+     * Invitados pendientes a los que les toca un recordatorio en esta ejecución.
+     * - reminder_interval_days null: un solo recordatorio desde el día anterior al límite (comportamiento original).
+     * - 0: el evento no envía recordatorios.
+     * - N: cada N días desde la invitación o el último recordatorio, hasta reminder_max_count por invitado.
+     */
+    private function guestsDueForReminder(Event $event, Carbon $deadlineDate)
+    {
+        $interval = $event->reminder_interval_days;
+
+        if ($interval === 0) {
+            return collect();
+        }
+
+        $query = Guest::where('event_id', $event->id)->where('status', 'pending');
+
+        if ($interval === null) {
+            if (now()->lessThan($deadlineDate->copy()->subDay()->startOfDay())) {
+                return collect();
+            }
+            return $query->whereNull('reminder_sent_at')->get();
+        }
+
+        // Solo a quienes ya recibieron la invitación: el intervalo se cuenta desde el último contacto
+        $cutoff = now()->subDays($interval);
+
+        return $query
+            ->where('whatsapp_status', 'sent')
+            ->where('reminder_count', '<', $event->reminder_max_count ?? 3)
+            ->where(function ($q) use ($cutoff) {
+                $q->where(fn ($q) => $q->whereNull('reminder_sent_at')->where('last_sent_at', '<=', $cutoff))
+                  ->orWhere('reminder_sent_at', '<=', $cutoff);
+            })
+            ->get();
     }
 }

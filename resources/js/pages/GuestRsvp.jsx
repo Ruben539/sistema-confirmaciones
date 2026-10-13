@@ -36,6 +36,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
     const [dedicationType, setDedicationType] = useState('photo');
     const [dedicationUploading, setDedicationUploading] = useState(false);
     const [dedicationSuccess, setDedicationSuccess] = useState(false);
+    const [dedicationPending, setDedicationPending] = useState(false);
     const [isGeneratingDedication, setIsGeneratingDedication] = useState(false);
 
     // VIP Features States: Photobooth Frame, Seating Modal, Trivia Mini-game
@@ -440,7 +441,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
 
         setIsSubmittingDjSong(true);
         try {
-            const endpoint = token ? `/api/rsvp/${token}/song-request` : `/api/events/${event.id}/public-song-request`;
+            const endpoint = token ? `/api/rsvp/${token}/song-request` : `/api/events/${event.public_code}/public-song-request`;
             const { ok, json } = await apiFetch(endpoint, {
                 method: 'POST',
                 body: JSON.stringify({
@@ -651,7 +652,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             if (dedicationMsg.trim()) formData.append('message', dedicationMsg.trim());
             if (dedicationFile) formData.append('media', dedicationFile);
 
-            let endpoint = token ? `/api/rsvp/${token}/dedication` : `/api/events/${event.id}/public-dedication`;
+            let endpoint = token ? `/api/rsvp/${token}/dedication` : `/api/events/${event.public_code}/public-dedication`;
             if (!token) {
                 formData.append('author_name', dedicationAuthor.trim() || 'Invitado Especial');
             }
@@ -665,6 +666,8 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
             });
 
             if (res.ok) {
+                const json = await res.json().catch(() => null);
+                setDedicationPending(Boolean(json?.pending_approval));
                 setDedicationSuccess(true);
                 setTimeout(() => {
                     setShowDedicationModal(false);
@@ -2624,7 +2627,11 @@ export default function GuestRsvp({ token, eventId, isPublic = false }) {
                             <div className="text-center py-6 space-y-3">
                                 <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto animate-bounce" />
                                 <h4 className="text-base font-black text-zinc-900 dark:text-white">¡Dedicatoria Enviada!</h4>
-                                <p className="text-xs text-zinc-500">Gracias por tu mensaje cariñoso.</p>
+                                <p className="text-xs text-zinc-500">
+                                    {dedicationPending
+                                        ? 'Gracias por tu mensaje cariñoso. Se mostrará en la pantalla cuando el equipo del evento lo apruebe.'
+                                        : 'Gracias por tu mensaje cariñoso.'}
+                                </p>
                             </div>
                         ) : (
                             <form onSubmit={handleDedicationSubmit} className="space-y-4">

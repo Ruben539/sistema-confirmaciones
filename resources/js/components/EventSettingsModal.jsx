@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Save, X, Sparkles, MessageSquare, Heart, Calendar, MapPin, User, ShieldCheck, Image as ImageIcon, Upload, Trash2, Eye, Smartphone, Check } from 'lucide-react';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import DateInput from './DateInput';
+import { getPlan, planIncludesDigitalInvitation } from '../plans';
 import { apiFetch } from '../api';
 
 export default function EventSettingsModal({ isOpen, onClose, event, user, onSave }) {
@@ -10,9 +11,12 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
         couple_names: '',
         event_date: '',
         rsvp_deadline_date: '',
+        reminder_interval_days: '',
+        reminder_max_count: 3,
         location: '',
         message_template: '',
         user_id: '',
+        digital_invitation_addon: false,
     });
     const [planners, setPlanners] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -33,9 +37,12 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                 couple_names: event.couple_names || '',
                 event_date: event.event_date || '',
                 rsvp_deadline_date: event.rsvp_deadline_date || '',
+                reminder_interval_days: event.reminder_interval_days ?? '',
+                reminder_max_count: event.reminder_max_count ?? 3,
                 location: event.location || '',
                 message_template: event.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
                 user_id: event.user_id || '',
+                digital_invitation_addon: Boolean(event.digital_invitation_addon),
             });
             setCoverPreview(event.cover_photo_url || null);
             setCoverPhotoFile(null);
@@ -265,7 +272,81 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                     Los invitados pueden confirmar hasta las 23:59 de este día. Si lo dejás vacío se usa el plazo de {event?.rsvp_deadline_days ?? 7} días antes del evento.
                                 </p>
                             </div>
+
+                            <div className={formData.reminder_interval_days > 0 ? '' : 'sm:col-span-2'}>
+                                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                                    <MessageSquare className="w-3.5 h-3.5 text-amber-500" /> Recordatorios a invitados pendientes
+                                </label>
+                                <select
+                                    value={formData.reminder_interval_days}
+                                    onChange={(e) => setFormData({ ...formData, reminder_interval_days: e.target.value === '' ? '' : Number(e.target.value) })}
+                                    className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+                                >
+                                    <option value="">Uno solo, el día antes de la fecha límite</option>
+                                    <option value={1}>Cada 1 día</option>
+                                    <option value={2}>Cada 2 días</option>
+                                    <option value={3}>Cada 3 días</option>
+                                    <option value={5}>Cada 5 días</option>
+                                    <option value={7}>Cada 7 días</option>
+                                    <option value={0}>No enviar recordatorios</option>
+                                </select>
+                            </div>
+
+                            {formData.reminder_interval_days > 0 && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                                        Máximo de recordatorios por invitado
+                                    </label>
+                                    <select
+                                        value={formData.reminder_max_count}
+                                        onChange={(e) => setFormData({ ...formData, reminder_max_count: Number(e.target.value) })}
+                                        className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+                                    >
+                                        {[1, 2, 3, 4, 5].map((n) => (
+                                            <option key={n} value={n}>{n} {n === 1 ? 'recordatorio' : 'recordatorios'}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <p className="sm:col-span-2 text-[10px] text-zinc-500 dark:text-zinc-400 -mt-2">
+                                {formData.reminder_interval_days > 0
+                                    ? `Se envía a quienes recibieron la invitación y no respondieron, cada ${formData.reminder_interval_days} ${formData.reminder_interval_days === 1 ? 'día' : 'días'} desde el último mensaje, hasta la fecha límite.`
+                                    : formData.reminder_interval_days === 0
+                                        ? 'No se enviarán recordatorios automáticos para este evento.'
+                                        : 'Se envía un único recordatorio a los pendientes el día anterior a la fecha límite.'}
+                                {' '}Siempre se respetan las pausas entre mensajes, el límite diario y el horario de envío (9 a 21 h).
+                            </p>
                         </div>
+
+                        {/* Invitación Digital: incluida según el plan o habilitada como adicional pago */}
+                        {isAdmin && (
+                            <div className="p-3.5 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40">
+                                {planIncludesDigitalInvitation(event?.plan_type) ? (
+                                    <div className="flex items-center gap-2 text-xs font-bold text-amber-900 dark:text-amber-300">
+                                        <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                                        <span>Invitación Digital incluida en el {getPlan(event?.plan_type).label}</span>
+                                    </div>
+                                ) : (
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.digital_invitation_addon}
+                                            onChange={(e) => setFormData({ ...formData, digital_invitation_addon: e.target.checked })}
+                                            className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500"
+                                        />
+                                        <div>
+                                            <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                                                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Habilitar Invitación Digital (adicional)
+                                            </span>
+                                            <span className="text-[10px] text-amber-700 dark:text-amber-400 block">
+                                                El {getPlan(event?.plan_type).label} no la incluye. Activala solo si el cliente pagó el adicional.
+                                            </span>
+                                        </div>
+                                    </label>
+                                )}
+                            </div>
+                        )}
 
                         {/* Google Maps Location Search & Map Picker */}
                         <div className="pt-1">

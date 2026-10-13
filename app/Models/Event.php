@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Event extends Model
 {
@@ -13,11 +14,12 @@ class Event extends Model
      * Guest capacity per plan. 'custom' has no fixed cap: max_guests is set by hand.
      */
     public const PLANS = [
-        'initial' => ['label' => 'Plan Inicial', 'max_guests' => 100],
-        'medium' => ['label' => 'Plan Medio', 'max_guests' => 150],
-        'pro' => ['label' => 'Plan Pro', 'max_guests' => 180],
-        'premium' => ['label' => 'Plan Premium', 'max_guests' => 300],
-        'custom' => ['label' => 'Personalizado', 'max_guests' => null],
+        // digital_invitation: el plan incluye la Invitación Digital; si no, se contrata como adicional
+        'initial' => ['label' => 'Plan Inicial', 'max_guests' => 100, 'digital_invitation' => false],
+        'medium' => ['label' => 'Plan Medio', 'max_guests' => 150, 'digital_invitation' => true],
+        'pro' => ['label' => 'Plan Pro', 'max_guests' => 180, 'digital_invitation' => true],
+        'premium' => ['label' => 'Plan Premium', 'max_guests' => 300, 'digital_invitation' => true],
+        'custom' => ['label' => 'Personalizado', 'max_guests' => null, 'digital_invitation' => true],
     ];
 
     public static function planKeys(): string
@@ -29,6 +31,11 @@ class Event extends Model
     {
         $plan = array_key_exists($plan ?? '', self::PLANS) ? $plan : 'initial';
         return self::PLANS[$plan]['max_guests'];
+    }
+
+    public static function planIncludesDigitalInvitation(?string $plan): bool
+    {
+        return (bool) (self::PLANS[$plan ?? 'initial']['digital_invitation'] ?? false);
     }
 
     public static function planLabel(?string $plan, ?int $maxGuests = null): string
@@ -62,8 +69,11 @@ class Event extends Model
         'plan_type', // see Event::PLANS
         'max_guests',
         'payment_status', // 'pending', 'paid'
+        'digital_invitation_addon', // Boolean: Invitación Digital contratada como adicional
         'rsvp_deadline_days', // Days before event date (e.g. 7)
         'rsvp_deadline_date', // Fixed RSVP deadline date; overrides rsvp_deadline_days when set
+        'reminder_interval_days', // null = single reminder the day before the deadline, 0 = none, N = every N days
+        'reminder_max_count', // Max reminders per guest when reminder_interval_days > 0
         'auto_decline_expired', // Boolean
         'milestones_notified', // JSON Array: [25, 50, 75, 90, 100]
         'timing', // JSON Array of timeline items [{time, title, description, completed}]
@@ -77,15 +87,20 @@ class Event extends Model
         'background_music_path',
         'google_drive_folder_id',
         'features_enabled', // JSON: { spotify, gifts, music_suggestions, countdown, guest_dedications, dress_code }
+        'dedications_require_approval', // Boolean: new dedications wait for approval before reaching the big screen
         'invitation_styles', // JSON: { preset, mode, primary_color, secondary_color, font_family, background_type, background_value, ... }
     ];
 
     protected $casts = [
         'is_enabled' => 'boolean',
+        'dedications_require_approval' => 'boolean',
+        'digital_invitation_addon' => 'boolean',
         'auto_decline_expired' => 'boolean',
         'max_guests' => 'integer',
         'rsvp_deadline_days' => 'integer',
         'rsvp_deadline_date' => 'date:Y-m-d',
+        'reminder_interval_days' => 'integer',
+        'reminder_max_count' => 'integer',
         'milestones_notified' => 'array',
         'timing' => 'array',
         'venue_layout' => 'array',
@@ -94,7 +109,7 @@ class Event extends Model
         'invitation_styles' => 'array',
     ];
 
-    protected $appends = ['is_active', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
+    protected $appends = ['is_active', 'has_digital_invitation', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
 
     public function getGoogleDriveFolderUrlAttribute(): ?string
     {
@@ -149,6 +164,79 @@ class Event extends Model
         }
 
         return null;
+    }
+
+    protected static function booted()
+    {
+        static::creating(function ($event) {
+            if (empty($event->public_code)) {
+                $event->public_code = Str::random(12);
+            }
+        });
+    }
+
+    public static function findByPublicCodeOrFail(string $code): self
+    {
+        return self::where('public_code', $code)->firstOrFail();
+    }
+
+    /**
+     * Datos del evento que pueden ver los invitados en las páginas públicas (sin login).
+     * Nunca incluye datos internos: plan, pago, planner, plantilla de mensajes, ids, etc.
+     */
+    public function toPublicArray(): array
+    {
+        return $this->only([
+            'public_code', 'title', 'couple_names', 'event_type', 'event_date', 'location',
+            'cover_photo_url', 'background_music_url', 'spotify_url', 'gift_settings',
+            'dress_code', 'dress_code_notes', 'welcome_message', 'features_enabled', 'invitation_styles',
+        ]);
+    }
+
+    // Fields that only exist for the Digital Invitation module
+    public const DIGITAL_INVITATION_FIELDS = [
+        'spotify_url', 'background_music_path', 'gift_settings', 'dress_code', 'dress_code_notes',
+        'welcome_message', 'features_enabled', 'invitation_styles', 'dedications_require_approval',
+    ];
+
+    public function hasDigitalInvitation(): bool
+    {
+        return (bool) $this->digital_invitation_addon || self::planIncludesDigitalInvitation($this->plan_type);
+    }
+
+    public function getHasDigitalInvitationAttribute(): bool
+    {
+        return $this->hasDigitalInvitation();
+    }
+
+    public function ensureDigitalInvitation(): void
+    {
+        abort_unless(
+            $this->hasDigitalInvitation(),
+            403,
+            'La Invitación Digital no está incluida en el plan de este evento. Contactá a la administración para habilitarla.'
+        );
+    }
+
+    /**
+     * Quita (sin guardar) los datos de la Invitación Digital para mostrar al invitado
+     * solo la página básica de confirmación.
+     */
+    public function withoutDigitalInvitation(): self
+    {
+        foreach (self::DIGITAL_INVITATION_FIELDS as $field) {
+            $this->setAttribute($field, null);
+        }
+        $this->setAttribute('features_enabled', [
+            'spotify' => false,
+            'gifts' => false,
+            'music_suggestions' => false,
+            'countdown' => false,
+            'guest_dedications' => false,
+            'dress_code' => false,
+            'background_music' => false,
+        ]);
+        return $this;
     }
 
     public function getIsActiveAttribute(): bool

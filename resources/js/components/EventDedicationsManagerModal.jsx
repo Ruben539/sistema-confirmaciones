@@ -6,10 +6,33 @@ export default function EventDedicationsManagerModal({ event, onClose }) {
     const [dedications, setDedications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [actionLoadingId, setActionLoadingId] = useState(null);
+    const [requireApproval, setRequireApproval] = useState(Boolean(event.dedications_require_approval));
+    const [savingApproval, setSavingApproval] = useState(false);
 
     useEffect(() => {
         fetchDedications();
+        // Keep the list fresh during the party so new uploads show up for moderation
+        const poll = setInterval(fetchDedications, 10000);
+        return () => clearInterval(poll);
     }, [event.id]);
+
+    const handleToggleRequireApproval = async () => {
+        const next = !requireApproval;
+        setSavingApproval(true);
+        try {
+            const { ok } = await apiFetch(`/api/event/${event.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ dedications_require_approval: next })
+            });
+            if (ok) setRequireApproval(next);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setSavingApproval(false);
+        }
+    };
+
+    const pendingCount = dedications.filter(d => !d.is_approved).length;
 
     const fetchDedications = async () => {
         try {
@@ -57,7 +80,7 @@ export default function EventDedicationsManagerModal({ event, onClose }) {
         }
     };
 
-    const liveProjectionUrl = `/evento/${event.id}/proyeccion`;
+    const liveProjectionUrl = `/evento/${event.public_code}/proyeccion`;
 
     return (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 font-sans">
@@ -100,14 +123,35 @@ export default function EventDedicationsManagerModal({ event, onClose }) {
                     </div>
                 </div>
 
-                {/* Info Note */}
-                <div className="px-6 py-3 bg-zinc-950/40 border-b border-zinc-800 text-xs text-zinc-400 flex items-center justify-between">
-                    <span>
-                        Podés moderar los saludos antes o durante la fiesta. Solo los marcados como <strong>'Aprobados'</strong> saldrán en el proyector.
-                    </span>
-                    <span className="text-[11px] font-bold text-amber-400">
-                        {dedications.filter(d => d.is_approved).length} aprobados para emitir
-                    </span>
+                {/* Moderation mode */}
+                <div className="px-6 py-3 bg-zinc-950/40 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={requireApproval}
+                            disabled={savingApproval}
+                            onChange={handleToggleRequireApproval}
+                            className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500"
+                        />
+                        <div>
+                            <span className="text-xs font-bold text-white block">Revisar dedicatorias antes de proyectarlas</span>
+                            <span className="text-[11px] text-zinc-400 block">
+                                {requireApproval
+                                    ? 'Las nuevas quedan pendientes y solo salen en pantalla cuando las aprobás.'
+                                    : 'Las nuevas salen en pantalla al instante. Podés ocultarlas después.'}
+                            </span>
+                        </div>
+                    </label>
+                    <div className="flex items-center gap-2 shrink-0 text-[11px] font-bold">
+                        {pendingCount > 0 && (
+                            <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-zinc-950 animate-pulse">
+                                {pendingCount} {pendingCount === 1 ? 'pendiente' : 'pendientes'} de revisión
+                            </span>
+                        )}
+                        <span className="text-emerald-400">
+                            {dedications.filter(d => d.is_approved).length} aprobados para emitir
+                        </span>
+                    </div>
                 </div>
 
                 {/* Dedications Grid */}
@@ -189,7 +233,7 @@ export default function EventDedicationsManagerModal({ event, onClose }) {
                                             ) : (
                                                 <>
                                                     <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
-                                                    <span>Oculto</span>
+                                                    <span>Oculto · Aprobar</span>
                                                 </>
                                             )}
                                         </button>

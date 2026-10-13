@@ -57,9 +57,16 @@ class RsvpController extends Controller
             $songRequests = [];
         }
 
+        // Sin Invitación Digital en el plan: el invitado ve solo la página básica de confirmación
+        if ($event && !$event->hasDigitalInvitation()) {
+            $event->withoutDigitalInvitation();
+            $dedications = [];
+            $songRequests = [];
+        }
+
         return response()->json([
             'guest' => $guest->fresh(),
-            'event' => $event,
+            'event' => $event?->toPublicArray(),
             'is_expired' => $isExpired,
             'deadline_date' => $deadlineDateFormatted,
             'dedications' => $dedications,
@@ -165,6 +172,7 @@ class RsvpController extends Controller
     {
         $guest = Guest::with('event')->where('token', $token)->firstOrFail();
         $event = $guest->event;
+        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'message' => 'nullable|string|max:1000',
@@ -196,18 +204,16 @@ class RsvpController extends Controller
             'type' => $validated['type'],
             'media_path' => $mediaPath,
             'message' => $validated['message'] ?? null,
-            'is_approved' => true,
+            'is_approved' => !$event->dedications_require_approval,
         ]);
 
-        return response()->json([
-            'message' => '¡Dedicatoria publicada con éxito!',
-            'dedication' => $dedication
-        ]);
+        return $this->dedicationCreatedResponse($dedication);
     }
 
-    public function uploadPublicDedication(Request $request, $eventId)
+    public function uploadPublicDedication(Request $request, $code)
     {
-        $event = \App\Models\Event::findOrFail($eventId);
+        $event = \App\Models\Event::findByPublicCodeOrFail($code);
+        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'author_name' => 'required|string|max:120',
@@ -240,18 +246,29 @@ class RsvpController extends Controller
             'type' => $validated['type'],
             'media_path' => $mediaPath,
             'message' => $validated['message'] ?? null,
-            'is_approved' => true,
+            'is_approved' => !$event->dedications_require_approval,
         ]);
 
+        return $this->dedicationCreatedResponse($dedication);
+    }
+
+    private function dedicationCreatedResponse(\App\Models\EventDedication $dedication)
+    {
+        $pending = !$dedication->is_approved;
+
         return response()->json([
-            'message' => '¡Dedicatoria publicada con éxito!',
-            'dedication' => $dedication
+            'message' => $pending
+                ? '¡Gracias! Tu dedicatoria se mostrará en la pantalla cuando el equipo del evento la apruebe.'
+                : '¡Dedicatoria publicada con éxito!',
+            'pending_approval' => $pending,
+            'dedication' => $dedication,
         ]);
     }
 
-    public function publicInvitation($eventId)
+    public function publicInvitation($code)
     {
-        $event = \App\Models\Event::findOrFail($eventId);
+        $event = \App\Models\Event::findByPublicCodeOrFail($code);
+        $event->ensureDigitalInvitation();
 
         $dedications = [];
         try {
@@ -279,7 +296,7 @@ class RsvpController extends Controller
         }
 
         return response()->json([
-            'event' => $event,
+            'event' => $event->toPublicArray(),
             'dedications' => $dedications,
             'song_requests' => $songRequests,
         ]);
@@ -615,6 +632,7 @@ class RsvpController extends Controller
     {
         $guest = \App\Models\Guest::where('token', $token)->firstOrFail();
         $event = $guest->event;
+        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'song_title' => 'required|string|max:255',
@@ -658,9 +676,10 @@ class RsvpController extends Controller
         ]);
     }
 
-    public function storePublicSongRequest(Request $request, $eventId)
+    public function storePublicSongRequest(Request $request, $code)
     {
-        $event = \App\Models\Event::findOrFail($eventId);
+        $event = \App\Models\Event::findByPublicCodeOrFail($code);
+        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'requester_name' => 'required|string|max:150',

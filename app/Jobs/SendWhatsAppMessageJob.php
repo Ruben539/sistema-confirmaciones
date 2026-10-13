@@ -117,6 +117,10 @@ class SendWhatsAppMessageJob implements ShouldQueue
             if ($guest->status !== 'pending') {
                 return true;
             }
+            // A newer reminder was queued or sent after this one (job delayed longer than the interval)
+            if ($guest->reminder_sent_at && $guest->reminder_sent_at->timestamp > $this->queuedAt) {
+                return true;
+            }
             // The throttle may have delayed it past the RSVP deadline: a reminder no longer makes sense
             $deadline = $guest->event?->rsvpDeadline();
             return $deadline !== null && now()->greaterThan($deadline);
@@ -166,7 +170,10 @@ class SendWhatsAppMessageJob implements ShouldQueue
         if ($response->successful()) {
             $throttle->recordSent();
             if ($this->messageMode === 'reminder') {
-                $guest->update(['reminder_sent_at' => now()]);
+                $guest->update([
+                    'reminder_sent_at' => now(),
+                    'reminder_count' => (int) $guest->reminder_count + 1,
+                ]);
             } else {
                 $guest->update([
                     'whatsapp_status' => 'sent',

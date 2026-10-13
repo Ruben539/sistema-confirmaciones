@@ -56,8 +56,11 @@ class EventController extends Controller
             'plan_type' => 'nullable|string|in:' . Event::planKeys(),
             'max_guests' => 'nullable|integer|min:1|required_if:plan_type,custom',
             'payment_status' => 'nullable|string|in:pending,paid',
+            'digital_invitation_addon' => 'nullable|boolean',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
             'rsvp_deadline_date' => 'nullable|date',
+            'reminder_interval_days' => 'nullable|integer|min:0|max:30',
+            'reminder_max_count' => 'nullable|integer|min:1|max:10',
             'auto_decline_expired' => 'nullable|boolean',
         ]);
 
@@ -80,8 +83,11 @@ class EventController extends Controller
             'plan_type' => $planType,
             'max_guests' => $maxGuests,
             'payment_status' => $validated['payment_status'] ?? 'paid',
+            'digital_invitation_addon' => $validated['digital_invitation_addon'] ?? false,
             'rsvp_deadline_days' => $validated['rsvp_deadline_days'] ?? 7,
             'rsvp_deadline_date' => $validated['rsvp_deadline_date'] ?? null,
+            'reminder_interval_days' => $validated['reminder_interval_days'] ?? null,
+            'reminder_max_count' => $validated['reminder_max_count'] ?? 3,
             'auto_decline_expired' => $validated['auto_decline_expired'] ?? true,
         ]);
 
@@ -116,8 +122,11 @@ class EventController extends Controller
             'plan_type' => 'nullable|string|in:' . Event::planKeys(),
             'max_guests' => 'nullable|integer|min:1',
             'payment_status' => 'nullable|string|in:pending,paid',
+            'digital_invitation_addon' => 'nullable|boolean',
             'rsvp_deadline_days' => 'nullable|integer|min:0|max:180',
             'rsvp_deadline_date' => 'nullable|date',
+            'reminder_interval_days' => 'nullable|integer|min:0|max:30',
+            'reminder_max_count' => 'nullable|integer|min:1|max:10',
             'auto_decline_expired' => 'nullable|boolean',
             'spotify_url' => 'nullable|string|max:500',
             'background_music_path' => 'nullable|string|max:500',
@@ -126,6 +135,7 @@ class EventController extends Controller
             'dress_code_notes' => 'nullable|string',
             'welcome_message' => 'nullable|string',
             'features_enabled' => 'nullable',
+            'dedications_require_approval' => 'nullable|boolean',
             'invitation_styles' => 'nullable',
         ]);
 
@@ -136,6 +146,17 @@ class EventController extends Controller
             unset($validated['max_guests']);
             unset($validated['payment_status']);
             unset($validated['is_enabled']);
+            unset($validated['digital_invitation_addon']);
+
+            // "Configurar Evento" (datos, plazo de confirmación y recordatorios) es exclusivo del admin;
+            // la planner solo edita la invitación digital (música, vestimenta, regalos, estilos)
+            foreach ([
+                'title', 'event_type', 'couple_names', 'event_date', 'location', 'message_template', 'status',
+                'rsvp_deadline_days', 'rsvp_deadline_date', 'auto_decline_expired',
+                'reminder_interval_days', 'reminder_max_count',
+            ] as $adminOnlyField) {
+                unset($validated[$adminOnlyField]);
+            }
         }
 
         // Fixed plans always use their own capacity; only 'custom' takes a hand-set max_guests
@@ -148,6 +169,13 @@ class EventController extends Controller
         } elseif (isset($validated['max_guests']) && (int) $validated['max_guests'] !== Event::planMaxGuests($event->plan_type)) {
             // A capacity that doesn't match the current plan turns it into a custom plan
             $validated['plan_type'] = 'custom';
+        }
+
+        // Invitación Digital: solo si el plan la incluye o se contrató como adicional (evaluado con los valores nuevos)
+        $sendsInvitationFields = array_intersect(array_keys($validated), Event::DIGITAL_INVITATION_FIELDS);
+        if ($sendsInvitationFields) {
+            $event->fill(array_intersect_key($validated, array_flip(['plan_type', 'digital_invitation_addon'])));
+            $event->ensureDigitalInvitation();
         }
 
         $event->update($validated);
@@ -217,6 +245,7 @@ class EventController extends Controller
     public function uploadBackgroundMusic(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $event->ensureDigitalInvitation();
         $request->validate([
             'music' => 'required|file|mimes:mp3,wav,ogg,m4a,aac,webm|max:30720', // max 30MB
         ]);
@@ -253,6 +282,7 @@ class EventController extends Controller
     public function saveInvitationStyles(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $event->ensureDigitalInvitation();
         $validated = $request->validate([
             'styles' => 'required|array',
         ]);
@@ -271,6 +301,7 @@ class EventController extends Controller
     public function generateAiStylePalette(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $event->ensureDigitalInvitation();
         $gemini = new \App\Services\GoogleGeminiService();
         $vibe = $request->input('vibe');
         $eventType = $event->event_type ?: 'boda';
@@ -292,6 +323,7 @@ class EventController extends Controller
     public function generateAiInvitationCopy(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $event->ensureDigitalInvitation();
         $gemini = new \App\Services\GoogleGeminiService();
         $tone = $request->input('tone', 'romantic');
         $eventType = $event->event_type ?: 'boda';
@@ -432,6 +464,7 @@ class EventController extends Controller
     public function createSongRequest(\Illuminate\Http\Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $event->ensureDigitalInvitation();
         $validated = $request->validate([
             'song_title' => 'required|string|max:255',
             'artist' => 'nullable|string|max:255',
@@ -526,9 +559,10 @@ class EventController extends Controller
         ]);
     }
 
-    public function getLiveProjectionFeed($id)
+    public function getLiveProjectionFeed($code)
     {
-        $event = Event::findOrFail($id);
+        $event = Event::findByPublicCodeOrFail($code);
+        $event->ensureDigitalInvitation();
         $dedications = [];
         try {
             if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
@@ -543,9 +577,9 @@ class EventController extends Controller
         }
 
         return response()->json([
-            'event' => $event,
+            'event' => $event->toPublicArray(),
             'dedications' => $dedications,
-            'upload_url' => url("/evento/{$event->id}/dedicatoria"),
+            'upload_url' => url("/evento/{$event->public_code}/dedicatoria"),
         ]);
     }
 

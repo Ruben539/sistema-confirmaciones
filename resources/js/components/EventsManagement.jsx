@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Heart, MapPin, User, Plus, Edit2, CheckCircle2, ShieldCheck, RefreshCw, Trash2, Eye, Sparkles, Music, Tv, Copy, Check, ExternalLink } from 'lucide-react';
+import { Calendar, Heart, MapPin, User, Plus, Edit2, CheckCircle2, ShieldCheck, RefreshCw, Trash2, Eye, Sparkles, Music, Tv, Copy, Check, ExternalLink, Lock } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import EventInvitationSettingsModal from './EventInvitationSettingsModal';
 import EventSongSuggestionsModal from './EventSongSuggestionsModal';
@@ -272,7 +272,13 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                                     </div>
                                 </div>
 
-                                {/* Interactive Tools Buttons */}
+                                {/* Interactive Tools Buttons (Invitación Digital: según plan o adicional) */}
+                                {!ev.has_digital_invitation ? (
+                                    <div className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-dashed border-zinc-300 dark:border-zinc-700 text-[11px] font-bold text-zinc-500 dark:text-zinc-400" title="Habilitala en Configurar Evento si el cliente contrató el adicional">
+                                        <Lock className="w-3.5 h-3.5" />
+                                        <span>Invitación Digital no incluida en el plan</span>
+                                    </div>
+                                ) : (
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
                                         type="button"
@@ -304,6 +310,7 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                                         <span>Proyector</span>
                                     </button>
                                 </div>
+                                )}
 
                                 {/* Select Event Action */}
                                 <button

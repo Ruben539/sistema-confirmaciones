@@ -61,18 +61,19 @@ Route::prefix('api')->group(function () {
     Route::post('/tables/assign', [TableController::class, 'assignGuest']);
     Route::put('/events/{eventId}/tables/layout', [TableController::class, 'saveLayout']);
 
-    // Public Guest Interactive Invitation & RSVP Routes
+    // Public Guest Interactive Invitation & RSVP Routes (sin login: el token / public_code del link es la llave).
+    // Límites por IP generosos: en el salón muchos invitados comparten el mismo WiFi (misma IP pública).
     Route::post('/rsvp/incoming-whatsapp', [RsvpController::class, 'handleIncomingWhatsApp']);
-    Route::get('/rsvp/{token}', [RsvpController::class, 'show']);
-    Route::post('/rsvp/{token}', [RsvpController::class, 'submit']);
-    Route::post('/rsvp/{token}/dedication', [RsvpController::class, 'uploadDedication']);
-    Route::post('/rsvp/{token}/song-request', [RsvpController::class, 'storeSongRequest']);
-    Route::get('/events/{eventId}/public-invitation', [RsvpController::class, 'publicInvitation']);
-    Route::post('/events/{eventId}/public-dedication', [RsvpController::class, 'uploadPublicDedication']);
-    Route::post('/events/{eventId}/public-song-request', [RsvpController::class, 'storePublicSongRequest']);
+    Route::get('/rsvp/{token}', [RsvpController::class, 'show'])->middleware('throttle:60,1');
+    Route::post('/rsvp/{token}', [RsvpController::class, 'submit'])->middleware('throttle:20,1');
+    Route::post('/rsvp/{token}/dedication', [RsvpController::class, 'uploadDedication'])->middleware('throttle:20,1');
+    Route::post('/rsvp/{token}/song-request', [RsvpController::class, 'storeSongRequest'])->middleware('throttle:30,1');
+    Route::get('/events/{code}/public-invitation', [RsvpController::class, 'publicInvitation'])->middleware('throttle:60,1');
+    Route::post('/events/{code}/public-dedication', [RsvpController::class, 'uploadPublicDedication'])->middleware('throttle:20,1');
+    Route::post('/events/{code}/public-song-request', [RsvpController::class, 'storePublicSongRequest'])->middleware('throttle:30,1');
 
-    // Live Projection Screen Route (for Projector / DJ / Big Screen)
-    Route::get('/events/{eventId}/live-feed', [EventController::class, 'getLiveProjectionFeed']);
+    // Live Projection Screen Route (for Projector / DJ / Big Screen) — polls every 10s
+    Route::get('/events/{code}/live-feed', [EventController::class, 'getLiveProjectionFeed'])->middleware('throttle:60,1');
 
     // Admin: Interactive Invitation, Dedications & Spotify / Song Suggestions
     Route::post('/events/{id}/cover-photo', [EventController::class, 'uploadCoverPhoto']);
@@ -82,7 +83,7 @@ Route::prefix('api')->group(function () {
     Route::post('/events/{id}/styles', [EventController::class, 'saveInvitationStyles']);
     Route::match(['get', 'post'], '/events/{id}/ai-style-palette', [EventController::class, 'generateAiStylePalette']);
     Route::match(['get', 'post'], '/events/{id}/ai-invitation-copy', [EventController::class, 'generateAiInvitationCopy']);
-    Route::post('/rsvp/suggest-dedication', [RsvpController::class, 'suggestDedication']);
+    Route::post('/rsvp/suggest-dedication', [RsvpController::class, 'suggestDedication'])->middleware('throttle:15,1'); // IA (Gemini): tiene costo
     Route::get('/events/{id}/song-suggestions', [EventController::class, 'getSongSuggestions']);
     Route::post('/events/{id}/song-requests', [EventController::class, 'createSongRequest']);
     Route::post('/events/{id}/song-requests/{requestId}/toggle-played', [EventController::class, 'toggleSongRequestPlayed']);
@@ -92,8 +93,8 @@ Route::prefix('api')->group(function () {
     Route::delete('/events/{id}/dedications/{dedicationId}', [EventController::class, 'deleteDedication']);
 
     // Spotify Integration & Real-Time DJ Music Search Routes
-    Route::get('/spotify/resolve', [SpotifyController::class, 'resolve']);
-    Route::get('/spotify/search', [SpotifyController::class, 'search']);
+    Route::get('/spotify/resolve', [SpotifyController::class, 'resolve'])->middleware('throttle:120,1');
+    Route::get('/spotify/search', [SpotifyController::class, 'search'])->middleware('throttle:120,1');
 
     // Door Accreditation / Check-In QR Scan Route
     Route::post('/check-in/scan', [GuestController::class, 'scanQrCheckIn']);

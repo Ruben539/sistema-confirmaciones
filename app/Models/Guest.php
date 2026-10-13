@@ -32,6 +32,7 @@ class Guest extends Model
         'whatsapp_status',
         'last_sent_at',
         'reminder_sent_at',
+        'reminder_count',
         'attended_at',
         'token',
         'song_suggestion',

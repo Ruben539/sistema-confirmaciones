@@ -12,6 +12,7 @@ export default function PublicDedicationPage({ eventId }) {
     const [previewUrl, setPreviewUrl] = useState(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+    const [pendingApproval, setPendingApproval] = useState(false);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [error, setError] = useState(null);
 
@@ -160,6 +161,7 @@ export default function PublicDedicationPage({ eventId }) {
             }
 
             if (res.ok) {
+                setPendingApproval(Boolean(json?.pending_approval));
                 setSubmitted(true);
             } else {
                 if (res.status === 413) {
@@ -212,7 +214,9 @@ export default function PublicDedicationPage({ eventId }) {
                         </div>
                         <h2 className="text-2xl font-black text-white">¡Dedicatoria Enviada!</h2>
                         <p className="text-xs text-zinc-300 max-w-sm mx-auto leading-relaxed">
-                            ¡Muchas gracias, <strong>{authorName}</strong>! Tu dedicatoria ha sido enviada para proyectarse en la pantalla gigante.
+                            ¡Muchas gracias, <strong>{authorName}</strong>! {pendingApproval
+                                ? 'Tu dedicatoria se mostrará en la pantalla gigante cuando el equipo del evento la apruebe.'
+                                : 'Tu dedicatoria ha sido enviada para proyectarse en la pantalla gigante.'}
                         </p>
                         <button
                             onClick={() => {
