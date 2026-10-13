@@ -43,50 +43,65 @@ export default function AppReleases({ user, showToast, onReleasesChanged }) {
         setTimeout(() => onReleasesChanged && onReleasesChanged(), 1500);
     };
 
-    // XMLHttpRequest instead of fetch to show upload progress (APKs can weigh tens of MB)
-    const handleUpload = (e) => {
+    // The APK goes from the browser straight to Google Drive (never through the server, so there is
+    // no PHP/nginx size limit): 1) ask the server for a Drive upload URL, 2) PUT the file there
+    // (XMLHttpRequest to show progress), 3) register the version with the Drive file id.
+    const uploadToDrive = (uploadUrl, apk) =>
+        new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', uploadUrl);
+            xhr.setRequestHeader('Content-Type', 'application/vnd.android.package-archive');
+            xhr.upload.onprogress = (evt) => {
+                if (evt.lengthComputable) setProgress(Math.round((evt.loaded / evt.total) * 100));
+            };
+            xhr.onload = () => {
+                let json = null;
+                try { json = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+                if (xhr.status >= 200 && xhr.status < 300 && json?.id) resolve(json.id);
+                else reject(new Error('Google Drive rechazó la subida del archivo.'));
+            };
+            xhr.onerror = () => reject(new Error('Se perdió la conexión durante la subida a Google Drive.'));
+            xhr.send(apk);
+        });
+
+    const handleUpload = async (e) => {
         e.preventDefault();
         if (!file) return;
         setError(null);
         setProgress(0);
 
-        const form = new FormData();
-        form.append('apk', file);
-        form.append('version', version.trim());
-        if (notes.trim()) form.append('notes', notes.trim());
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/app-releases');
-        xhr.setRequestHeader('Accept', 'application/json');
-        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-        const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        if (csrf) xhr.setRequestHeader('X-CSRF-TOKEN', csrf);
-        xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) setProgress(Math.round((evt.loaded / evt.total) * 100));
-        };
-        xhr.onload = () => {
-            setProgress(null);
-            let json = null;
-            try { json = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
-            if (xhr.status >= 200 && xhr.status < 300) {
-                setFile(null);
-                setVersion('');
-                setNotes('');
-                if (fileRef.current) fileRef.current.value = '';
-                showToast && showToast(json?.message || 'Versión publicada.');
-                load();
-                onReleasesChanged && onReleasesChanged();
-            } else if (xhr.status === 413) {
-                setError('El archivo supera el tamaño máximo permitido por el servidor (revisar upload_max_filesize, post_max_size y client_max_body_size).');
-            } else {
-                setError(json?.errors ? Object.values(json.errors).flat()[0] : json?.message || 'No se pudo subir el APK.');
+        try {
+            const session = await apiFetch('/api/app-releases/upload-session', {
+                method: 'POST',
+                body: JSON.stringify({ file_name: file.name, file_size: file.size }),
+            });
+            if (!session.ok || !session.json?.upload_url) {
+                throw new Error(session.json?.errors ? Object.values(session.json.errors).flat()[0] : session.json?.message || 'No se pudo iniciar la subida.');
             }
-        };
-        xhr.onerror = () => {
+
+            const driveFileId = await uploadToDrive(session.json.upload_url, file);
+
+            setProgress(100);
+            const { ok, json } = await apiFetch('/api/app-releases', {
+                method: 'POST',
+                body: JSON.stringify({ drive_file_id: driveFileId, version: version.trim(), notes: notes.trim() || null }),
+            });
+            if (!ok) {
+                throw new Error(json?.errors ? Object.values(json.errors).flat()[0] : json?.message || 'No se pudo registrar la versión.');
+            }
+
+            setFile(null);
+            setVersion('');
+            setNotes('');
+            if (fileRef.current) fileRef.current.value = '';
+            showToast && showToast(json?.message || 'Versión publicada.');
+            load();
+            onReleasesChanged && onReleasesChanged();
+        } catch (err) {
+            setError(err.message);
+        } finally {
             setProgress(null);
-            setError('Se perdió la conexión durante la subida.');
-        };
-        xhr.send(form);
+        }
     };
 
     const handleDelete = async (release) => {
@@ -166,6 +181,9 @@ export default function AppReleases({ user, showToast, onReleasesChanged }) {
                         <div className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
                             <ShieldCheck className="w-4 h-4 text-amber-500" /> Publicar nueva versión
                         </div>
+                        <p className="text-xs text-zinc-500 -mt-2">
+                            El APK se sube directo a Google Drive (carpeta privada “Wedding Check - App”): no ocupa espacio en el servidor y no tiene límite de tamaño de subida.
+                        </p>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div className="sm:col-span-2">
                                 <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Archivo APK</label>
@@ -190,7 +208,9 @@ export default function AppReleases({ user, showToast, onReleasesChanged }) {
                                 <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
                                     <div className="h-full bg-gradient-to-r from-rose-500 to-amber-500 transition-all" style={{ width: `${progress}%` }} />
                                 </div>
-                                <div className="text-[11px] text-zinc-500 font-bold">Subiendo... {progress}%</div>
+                                <div className="text-[11px] text-zinc-500 font-bold">
+                                    {progress < 100 ? `Subiendo a Google Drive... ${progress}%` : 'Verificando el archivo...'}
+                                </div>
                             </div>
                         )}
                         {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}

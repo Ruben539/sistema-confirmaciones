@@ -437,6 +437,81 @@ class GoogleDriveService
     }
 
     /**
+     * Starts a resumable upload so the BROWSER sends the file straight to Google Drive
+     * (the file never goes through PHP/nginx, so their upload size limits don't apply).
+     * $origin must be the web panel's origin: Google then allows the browser's PUT (CORS).
+     * Returns the upload session URL, valid for about a week.
+     */
+    public function createResumableUpload(string $name, string $mimeType, int $size, ?string $folderId, string $origin): ?string
+    {
+        if (!$this->service) {
+            $this->initClient();
+            if (!$this->service) {
+                return null;
+            }
+        }
+
+        try {
+            $http = $this->client->authorize();
+            $response = $http->request('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType', [
+                'headers' => [
+                    'Content-Type' => 'application/json; charset=UTF-8',
+                    'X-Upload-Content-Type' => $mimeType,
+                    'X-Upload-Content-Length' => (string) $size,
+                    'Origin' => $origin,
+                ],
+                'body' => json_encode([
+                    'name' => $name,
+                    'parents' => $folderId ? [$folderId] : [],
+                ]),
+                'http_errors' => false,
+            ]);
+
+            if ($response->getStatusCode() !== 200 || !$response->hasHeader('Location')) {
+                $this->lastError = 'Google Drive rejected the upload session: ' . $response->getStatusCode() . ' ' . $response->getBody();
+                Log::error($this->lastError);
+                return null;
+            }
+
+            return $response->getHeaderLine('Location');
+        } catch (\Throwable $e) {
+            $this->lastError = 'Google Drive upload session failed: ' . $e->getMessage();
+            Log::error($this->lastError);
+            return null;
+        }
+    }
+
+    /**
+     * Basic metadata of a Drive file (id, name, size, mimeType, parents), or null if it doesn't exist.
+     */
+    public function getFileMeta(string $fileId): ?array
+    {
+        if (!$this->service) {
+            $this->initClient();
+            if (!$this->service) {
+                return null;
+            }
+        }
+
+        try {
+            $file = $this->service->files->get($fileId, ['fields' => 'id, name, size, mimeType, parents, trashed']);
+            if ($file->getTrashed()) {
+                return null;
+            }
+            return [
+                'id' => $file->getId(),
+                'name' => $file->getName(),
+                'size' => (int) $file->getSize(),
+                'mimeType' => $file->getMimeType(),
+                'parents' => $file->getParents() ?? [],
+            ];
+        } catch (\Throwable $e) {
+            $this->lastError = 'Google Drive metadata failed: ' . $e->getMessage();
+            return null;
+        }
+    }
+
+    /**
      * Delete a file from Google Drive by its file ID.
      */
     public function deleteFile(string $fileId): bool

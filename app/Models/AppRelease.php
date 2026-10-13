@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class AppRelease extends Model
 {
     protected $fillable = [
-        'version', 'notes', 'file_path', 'original_name', 'file_size', 'uploaded_by', 'downloads',
+        'version', 'notes', 'drive_file_id', 'file_path', 'original_name', 'file_size', 'uploaded_by', 'downloads',
     ];
 
     protected $casts = [
@@ -15,8 +15,8 @@ class AppRelease extends Model
         'downloads' => 'integer',
     ];
 
-    // file_path is internal (private disk): never sent to the browser
-    protected $hidden = ['file_path'];
+    // Internal storage references: never sent to the browser (downloads go through the API)
+    protected $hidden = ['file_path', 'drive_file_id'];
 
     // Newest uploaded version (the one planners and hostesses should install)
     public static function current(): ?self

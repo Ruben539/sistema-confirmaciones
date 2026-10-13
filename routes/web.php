@@ -75,6 +75,7 @@ Route::prefix('api')->group(function () {
 
         // Aplicación móvil: el admin sube el APK, planners y anfitrionas lo descargan
         Route::get('/app-releases', [AppReleaseController::class, 'index']);
+        Route::post('/app-releases/upload-session', [AppReleaseController::class, 'uploadSession']);
         Route::post('/app-releases', [AppReleaseController::class, 'store']);
         Route::post('/app-releases/seen', [AppReleaseController::class, 'markSeen']);
         Route::get('/app-releases/{id}/download', [AppReleaseController::class, 'download']);
