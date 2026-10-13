@@ -22,6 +22,7 @@ class User extends Authenticatable
         'role', // 'admin', 'planner', 'hostess'
         'planner_id', // hostess only: planner who created her
         'is_active',
+        'seen_app_release_id',
     ];
 
     protected $hidden = [

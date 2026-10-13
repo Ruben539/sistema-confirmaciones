@@ -6,6 +6,7 @@ use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HostessController;
 use App\Http\Controllers\RsvpController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AppReleaseController;
 use App\Http\Controllers\PlannerController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\PlanRequestController;
@@ -71,6 +72,13 @@ Route::prefix('api')->group(function () {
         Route::post('/planners', [PlannerController::class, 'store']);
         Route::put('/planners/{id}', [PlannerController::class, 'update']);
         Route::delete('/planners/{id}', [PlannerController::class, 'destroy']);
+
+        // Aplicación móvil: el admin sube el APK, planners y anfitrionas lo descargan
+        Route::get('/app-releases', [AppReleaseController::class, 'index']);
+        Route::post('/app-releases', [AppReleaseController::class, 'store']);
+        Route::post('/app-releases/seen', [AppReleaseController::class, 'markSeen']);
+        Route::get('/app-releases/{id}/download', [AppReleaseController::class, 'download']);
+        Route::delete('/app-releases/{id}', [AppReleaseController::class, 'destroy']);
 
         // Anfitrionas (las crea la planner y las asigna a sus eventos)
         Route::get('/hostesses', [HostessController::class, 'index']);

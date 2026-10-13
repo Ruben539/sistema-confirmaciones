@@ -19,6 +19,7 @@ import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import EventTiming from './components/EventTiming';
 import EventTypesManagement from './components/EventTypesManagement';
 import HostessesManagement from './components/HostessesManagement';
+import AppReleases from './components/AppReleases';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
@@ -38,8 +39,22 @@ function Dashboard({ user, onLogout }) {
     const [activeTab, setActiveTab] = useState(isHostess ? 'guests' : 'dashboard');
 
     useEffect(() => {
-        if (isHostess && activeTab !== 'guests') setActiveTab('guests');
+        if (isHostess && !['guests', 'app'].includes(activeTab)) setActiveTab('guests');
     }, [isHostess, activeTab]);
+
+    // New mobile app version not downloaded / dismissed yet (planners and hostesses)
+    const [appUpdate, setAppUpdate] = useState({ has_update: false, latest: null });
+    const loadAppUpdate = async () => {
+        const { ok, json } = await apiFetch('/api/app-releases');
+        if (ok && json) setAppUpdate({ has_update: Boolean(json.has_update), latest: json.latest });
+    };
+    useEffect(() => {
+        loadAppUpdate();
+    }, []);
+    const dismissAppUpdate = async () => {
+        setAppUpdate((prev) => ({ ...prev, has_update: false }));
+        await apiFetch('/api/app-releases/seen', { method: 'POST' });
+    };
     const [toastMessage, setToastMessage] = useState(null);
     const [preselectedPlannerId, setPreselectedPlannerId] = useState(null);
     const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
@@ -259,6 +274,7 @@ function Dashboard({ user, onLogout }) {
                 theme={theme}
                 onToggleTheme={handleToggleTheme}
                 pendingRequestsCount={pendingRequestsCount}
+                hasAppUpdate={appUpdate.has_update}
             />
 
             {/* Main Area */}
@@ -285,8 +301,31 @@ function Dashboard({ user, onLogout }) {
                         </div>
                     )}
 
+                    {/* New app version notice */}
+                    {appUpdate.has_update && appUpdate.latest && activeTab !== 'app' && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-xl bg-white/20"><Sparkles className="w-5 h-5" /></div>
+                                <div>
+                                    <div className="text-sm font-black">Nueva versión de la app: {appUpdate.latest.version}</div>
+                                    <div className="text-xs text-white/85">Descargala e instalala en tu celular para tener las últimas mejoras.</div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button onClick={() => setActiveTab('app')} className="px-4 py-2 rounded-xl bg-white text-rose-600 text-xs font-black hover:bg-rose-50">
+                                    Ver y descargar
+                                </button>
+                                <button onClick={dismissAppUpdate} className="px-3 py-2 rounded-xl text-xs font-bold text-white/90 hover:bg-white/15">
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Active View based on activeTab */}
-                    {activeTab === 'hostesses' && (user?.role === 'admin' || user?.role === 'planner') ? (
+                    {activeTab === 'app' ? (
+                        <AppReleases user={user} showToast={showToast} onReleasesChanged={loadAppUpdate} />
+                    ) : activeTab === 'hostesses' && (user?.role === 'admin' || user?.role === 'planner') ? (
                         <HostessesManagement user={user} events={events} showToast={showToast} />
                     ) : activeTab === 'planners' && user?.role === 'admin' ? (
                         <PlannersManagement

@@ -25,6 +25,10 @@ class EnforceRoleAccess
         'POST api/check-in/scan',
         'POST api/check-in/{token}',
         'GET api/events/{eventId}/tables',
+        // Download the mobile app
+        'GET api/app-releases',
+        'GET api/app-releases/{id}/download',
+        'POST api/app-releases/seen',
     ];
 
     public function handle(Request $request, Closure $next): Response

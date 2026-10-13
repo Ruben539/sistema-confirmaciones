@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone } from 'lucide-react';
 
 export default function Sidebar({
     user,
@@ -14,7 +14,8 @@ export default function Sidebar({
     onLogout,
     theme,
     onToggleTheme,
-    pendingRequestsCount = 0
+    pendingRequestsCount = 0,
+    hasAppUpdate = false
 }) {
     const [collapsed, setCollapsed] = useState(false);
     const [showEventsList, setShowEventsList] = useState(false);
@@ -144,6 +145,22 @@ export default function Sidebar({
                         </button>
                     )}
                     </>)}
+
+                    {/* Mobile app download (every role); "Nuevo" when there is a version not downloaded yet */}
+                    <button
+                        onClick={() => setActiveTab('app')}
+                        className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'app' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                    >
+                        <span className="flex items-center gap-3">
+                            <Smartphone className="w-4 h-4 shrink-0" />
+                            {!collapsed && <span>Aplicación</span>}
+                        </span>
+                        {hasAppUpdate && (
+                            collapsed
+                                ? <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                                : <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-600 text-white animate-pulse">Nuevo</span>
+                        )}
+                    </button>
 
                     {/* Admin Navigation Options */}
                     {isAdmin && (
