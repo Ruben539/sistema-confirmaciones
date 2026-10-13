@@ -272,13 +272,14 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                                     </div>
                                 </div>
 
-                                {/* Interactive Tools Buttons (Invitación Digital: según plan o adicional) */}
-                                {!ev.has_digital_invitation ? (
-                                    <div className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-dashed border-zinc-300 dark:border-zinc-700 text-[11px] font-bold text-zinc-500 dark:text-zinc-400" title="Habilitala en Configurar Evento si el cliente contrató el adicional">
+                                {/* Interactive Tools Buttons: this screen is admin-only, who always has the full suite */}
+                                {!ev.has_digital_invitation && (
+                                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-500 dark:text-zinc-400" title="Los invitados ven la página básica y la planner la demo hasta que se habilite">
                                         <Lock className="w-3.5 h-3.5" />
-                                        <span>Invitación Digital no contratada</span>
+                                        <span>Invitación Digital no contratada (solo visible para el admin)</span>
                                     </div>
-                                ) : (
+                                )}
+                                {(
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
                                         type="button"

@@ -48,12 +48,30 @@ const formatDate = (iso) => {
  * Shown instead of the Digital Invitation suite when the event doesn't have it:
  * a preview of what it offers and, for planners, a button to request it.
  */
-export default function DigitalInvitationDemo({ event, user, showToast }) {
+export default function DigitalInvitationDemo({ event, user, showToast, onEnabled }) {
     const isAdmin = user?.role === 'admin';
     const [pendingRequest, setPendingRequest] = useState(null);
     const [notes, setNotes] = useState('');
     const [sending, setSending] = useState(false);
     const [directWhatsAppUrl, setDirectWhatsAppUrl] = useState(null);
+    const [enabling, setEnabling] = useState(false);
+
+    // Admin: enable the add-on right here (same as the checkbox in "Configurar Evento")
+    const handleEnable = async () => {
+        if (!window.confirm(`¿Habilitar la Invitación Digital para el evento de ${event.couple_names || event.title}? Hacelo cuando el cliente la haya contratado.`)) return;
+        setEnabling(true);
+        const { ok, json } = await apiFetch(`/api/event/${event.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ digital_invitation_addon: true }),
+        });
+        setEnabling(false);
+        if (ok && json?.event) {
+            if (showToast) showToast('Invitación Digital habilitada para este evento.');
+            if (onEnabled) onEnabled(json.event);
+        } else if (showToast) {
+            showToast(json?.message || 'No se pudo habilitar la Invitación Digital.');
+        }
+    };
 
     useEffect(() => {
         if (!isAdmin) fetchPendingRequest();
@@ -192,12 +210,23 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
 
                     <div className="p-5 rounded-3xl bg-gradient-to-br from-amber-50 to-rose-50 dark:from-amber-950/30 dark:to-rose-950/30 border border-amber-200/70 dark:border-amber-900/40 space-y-3">
                         {isAdmin ? (
-                            <div className="flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
-                                <ShieldCheck className="w-5 h-5 text-amber-500 shrink-0" />
-                                <span>
-                                    Este evento no tiene la Invitación Digital. Cuando el cliente la contrate, habilitala desde
-                                    <strong> Configurar Evento</strong> o aprobando la solicitud de la planner.
-                                </span>
+                            <div className="space-y-3">
+                                <div className="flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
+                                    <ShieldCheck className="w-5 h-5 text-amber-500 shrink-0" />
+                                    <span>
+                                        Estás viendo lo mismo que ve la planner: este evento <strong>no tiene la Invitación Digital</strong>,
+                                        porque ningún plan la incluye y se habilita por evento cuando el cliente la contrata.
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleEnable}
+                                    disabled={enabling}
+                                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-black shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                                >
+                                    <Sparkles className="w-4 h-4" />
+                                    <span>{enabling ? 'Habilitando...' : 'Habilitar Invitación Digital en este evento'}</span>
+                                </button>
                             </div>
                         ) : pendingRequest ? (
                             <div className="space-y-2">

@@ -70,9 +70,26 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
         );
     }
 
-    if (!event.has_digital_invitation) {
-        return <DigitalInvitationDemo event={event} user={user} showToast={showToast} />;
+    const isAdmin = user?.role === 'admin';
+
+    // Planners see the demo until the add-on is enabled; the admin always gets the full suite
+    if (!event.has_digital_invitation && !isAdmin) {
+        return <DigitalInvitationDemo event={event} user={user} showToast={showToast} onEnabled={onUpdateEvent} />;
     }
+
+    const handleEnableAddon = async () => {
+        if (!window.confirm(`¿Habilitar la Invitación Digital para el evento de ${event.couple_names || event.title}? Desde ese momento la ven los invitados y la planner puede configurarla.`)) return;
+        const { ok, json } = await apiFetch(`/api/event/${event.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ digital_invitation_addon: true }),
+        });
+        if (ok && json?.event) {
+            if (showToast) showToast('Invitación Digital habilitada para este evento.');
+            if (onUpdateEvent) onUpdateEvent(json.event);
+        } else if (showToast) {
+            showToast(json?.message || 'No se pudo habilitar la Invitación Digital.');
+        }
+    };
 
     const publicInvitationUrl = `${window.location.origin}/evento/${event.public_code}/invitacion`;
     const projectionUrl = `${window.location.origin}/evento/${event.public_code}/proyeccion`;
@@ -90,6 +107,26 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
 
     return (
         <div className="space-y-6 font-sans animate-fade-in">
+            {/* Admin preparing the invitation of an event without the add-on */}
+            {!event.has_digital_invitation && isAdmin && (
+                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
+                        <ShieldCheck className="w-5 h-5 text-amber-500 shrink-0" />
+                        <span>
+                            <strong>Este evento no tiene la Invitación Digital habilitada.</strong> Como admin podés configurarla y dejarla lista,
+                            pero los invitados ven la página básica de confirmación y la planner ve la demo hasta que la habilites.
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleEnableAddon}
+                        className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white text-xs font-black shadow-md"
+                    >
+                        Habilitar para este evento
+                    </button>
+                </div>
+            )}
+
             {/* Header Banner */}
             <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-zinc-900 via-zinc-850 to-zinc-900 text-white border border-zinc-800 shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                 <div className="space-y-2 relative z-10">

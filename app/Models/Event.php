@@ -218,6 +218,12 @@ class Event extends Model
 
     public function ensureDigitalInvitation(): void
     {
+        // The admin always has the full suite (e.g. to prepare the invitation before the client pays
+        // for it); planners and guests only get it once the add-on is enabled for the event
+        if (auth()->user()?->isAdmin()) {
+            return;
+        }
+
         abort_unless(
             $this->hasDigitalInvitation(),
             403,
