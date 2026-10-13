@@ -334,15 +334,24 @@ class RsvpController extends Controller
 
         // Use last 9 digits to match phone numbers regardless of country code (595, +54) or leading zeros
         $cleanPhone = strlen($rawDigits) >= 9 ? substr($rawDigits, -9) : $rawDigits;
+        $last8 = strlen($rawDigits) >= 8 ? substr($rawDigits, -8) : $rawDigits;
 
         $guest = Guest::with('event')
-            ->where('phone', 'LIKE', "%{$cleanPhone}%")
+            ->where(function ($q) use ($rawDigits, $cleanPhone, $last8) {
+                $q->where('phone', 'LIKE', "%{$cleanPhone}%")
+                  ->orWhere('phone', 'LIKE', "%{$last8}%")
+                  ->orWhere('phone', 'LIKE', "%{$rawDigits}%")
+                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$cleanPhone}%"]);
+            })
             ->orderBy('created_at', 'desc')
             ->first();
 
         if (!$guest) {
+            \Illuminate\Support\Facades\Log::warning("[RSVP WhatsApp] Invitado no encontrado para teléfono entrante: {$rawDigits} (clean: {$cleanPhone})");
             return response()->json(['processed' => false, 'reason' => 'Guest not found']);
         }
+
+        \Illuminate\Support\Facades\Log::info("[RSVP WhatsApp] Mensaje entrante de {$guest->name} ({$rawDigits}): '{$message}'");
 
         $event = $guest->event;
 
@@ -401,7 +410,10 @@ class RsvpController extends Controller
         }
 
         // 3. Check for direct confirm command ("1", "si", "confirmar")
-        if (in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'si', 'sí', 'asistire', 'asistiré'])) {
+        $isConfirm = in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'si', 'sí', 'asistire', 'asistiré'])
+            || preg_match('/^(1\b|1️⃣|confirmar|confirmo|si\b|sí\b|asistire|asistiré)/i', $msgClean);
+
+        if ($isConfirm) {
             $guest->update([
                 'status' => 'confirmed',
                 'conversation_state' => 'awaiting_dietary',
@@ -426,7 +438,10 @@ class RsvpController extends Controller
         }
 
         // 4. Check for direct decline command ("2", "no", "cancelar")
-        if (in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré'])) {
+        $isDecline = in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré'])
+            || preg_match('/^(2\b|2️⃣|cancelar|rechazar|no podre|no podré)/i', $msgClean);
+
+        if ($isDecline) {
             $guest->update([
                 'status' => 'declined',
                 'conversation_state' => 'completed',

@@ -90,16 +90,26 @@ export class BaileysTransporter implements LeadExternal {
       }
       this.connection.ev.on("creds.update", saveCreds);
       this.connection.ev.on("messages.upsert", async ({ messages, type }) => {
-        // "append" = mensajes históricos al reconectar — ignorar para evitar doble procesamiento
-        if (type === "append") {
-          console.log(`[Baileys] Ignorando ${messages.length} mensaje(s) histórico(s) del downtime.`);
-          return;
-        }
+        const nowSeconds = Math.floor(Date.now() / 1000);
+
         for (const msg of messages) {
           if (msg.key.fromMe) continue;
 
+          // Si el mensaje tiene más de 10 minutos (600s) de antigüedad, ignorarlo para no procesar chats históricos
+          const rawTimestamp = msg.messageTimestamp;
+          const msgTimestamp = typeof rawTimestamp === "number"
+            ? rawTimestamp
+            : Number((rawTimestamp as any)?.low || (rawTimestamp as any) || 0);
+
+          if (msgTimestamp > 0 && (nowSeconds - msgTimestamp) > 600) {
+            console.log(`[Baileys] Ignorando mensaje antiguo (${nowSeconds - msgTimestamp}s de antigüedad) de ${msg.key.remoteJid}`);
+            continue;
+          }
+
           const remoteJid = msg.key.remoteJid ?? "";
           // Ignorar mensajes de estados/broadcast de WhatsApp
+          if (remoteJid === "status@broadcast" || remoteJid.includes("@broadcast")) continue;
+
           const isGroup = remoteJid.endsWith("@g.us");
           let senderJid = isGroup ? (msg.key.participant ?? "") : remoteJid;
 
@@ -114,13 +124,17 @@ export class BaileysTransporter implements LeadExternal {
 
           // Limpiar cualquier sufijo @dominio para obtener solo el número
           const phone = senderJid.replace(/@[a-z.]+$/, "");
+          const cleanPhone = phone.replace(/[^\d]/g, "");
           const groupJid = isGroup ? remoteJid : undefined;
 
-          if (phone) {
+          if (cleanPhone) {
+            this.lastMsgMap.set(cleanPhone, msg);
+          }
+          if (phone && phone !== cleanPhone) {
             this.lastMsgMap.set(phone, msg);
           }
 
-          console.log(`[Baileys] Key:`, JSON.stringify({ remoteJid: msg.key.remoteJid, senderPn: keyAny.senderPn, participantPn: keyAny.participantPn, participant: msg.key.participant }), `-> phone: ${phone}`);
+          console.log(`[Baileys] Recibido [${type}]:`, JSON.stringify({ remoteJid: msg.key.remoteJid, senderPn: keyAny.senderPn, participantPn: keyAny.participantPn, participant: msg.key.participant }), `-> phone: ${phone}`);
 
           // El caption de imagen/video también cuenta como texto
           const text =

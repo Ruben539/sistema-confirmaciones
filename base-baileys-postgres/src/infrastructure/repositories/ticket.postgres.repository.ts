@@ -49,7 +49,7 @@ export class TicketPostgresRepository {
 
     private notificarLaravel(ticketId: number): Promise<void> {
         return new Promise((resolve, reject) => {
-            const laravelUrl = process.env.LARAVEL_URL ?? 'http://192.168.100.20:8000';
+            const laravelUrl = process.env.LARAVEL_URL ?? 'https://confirmaciones.factosystem.com.py';
             const url = new URL(`/api/chatbot/tickets/${ticketId}/notificar`, laravelUrl);
             const lib = url.protocol === 'https:' ? https : http;
 

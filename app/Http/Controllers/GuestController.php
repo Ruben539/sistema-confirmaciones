@@ -644,7 +644,7 @@ class GuestController extends Controller
             ], 400);
         }
 
-        // Clean token if full URL was scanned (e.g. http://192.168.100.20:8000/confirmar/ABC123XYZ)
+        // Clean token if full URL was scanned (e.g. https://confirmaciones.factosystem.com.py/confirmar/ABC123XYZ)
         $cleanToken = $inputToken;
         if (str_contains($cleanToken, '/confirmar/')) {
             $cleanToken = substr($cleanToken, strrpos($cleanToken, '/') + 1);
