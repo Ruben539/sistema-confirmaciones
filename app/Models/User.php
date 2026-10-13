@@ -19,7 +19,9 @@ class User extends Authenticatable
         'email',
         'phone',
         'password',
-        'role', // 'admin', 'planner'
+        'role', // 'admin', 'planner', 'hostess'
+        'planner_id', // hostess only: planner who created her
+        'is_active',
     ];
 
     protected $hidden = [
@@ -32,6 +34,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -43,6 +46,52 @@ class User extends Authenticatable
     public function planRequests()
     {
         return $this->hasMany(PlanRequest::class);
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isPlanner(): bool
+    {
+        return $this->role === 'planner';
+    }
+
+    public function isHostess(): bool
+    {
+        return $this->role === 'hostess';
+    }
+
+    // Hostess: the planner she works for
+    public function planner()
+    {
+        return $this->belongsTo(User::class, 'planner_id');
+    }
+
+    // Planner: the hostesses she created
+    public function hostesses()
+    {
+        return $this->hasMany(User::class, 'planner_id')->where('role', 'hostess');
+    }
+
+    // Hostess: events she was assigned to
+    public function hostessEvents()
+    {
+        return $this->belongsToMany(Event::class, 'event_hostess', 'user_id', 'event_id')->withTimestamps();
+    }
+
+    /**
+     * Single rule for "can this user work on this event": admin all, planner her own events,
+     * hostess only the events assigned to her. Unknown roles get nothing.
+     */
+    public function canAccessEvent(Event $event): bool
+    {
+        if ($this->is_active === false) return false;
+        if ($this->isAdmin()) return true;
+        if ($this->isPlanner()) return (int) $event->user_id === (int) $this->id;
+        if ($this->isHostess()) return $this->hostessEvents()->whereKey($event->id)->exists();
+        return false;
     }
 }
 

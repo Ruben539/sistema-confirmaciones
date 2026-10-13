@@ -21,8 +21,14 @@ class EventController extends Controller
             $events = Event::where('user_id', $user->id)
                 ->orderBy('created_at', 'desc')
                 ->get();
+        } else if ($user && $user->isHostess()) {
+            // Hostess (anfitriona): only the events her planner assigned to her
+            $events = $user->hostessEvents()
+                ->orderBy('event_date', 'desc')
+                ->get()
+                ->each(fn ($event) => $event->makeHidden(['pivot']));
         } else {
-            $events = Event::orderBy('created_at', 'desc')->get();
+            $events = collect();
         }
 
         $activeEvent = $events->first();

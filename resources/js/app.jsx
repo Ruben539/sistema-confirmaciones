@@ -18,6 +18,7 @@ import TableDistribution from './components/TableDistribution';
 import PlanUpgradeChatbotModal from './components/PlanUpgradeChatbotModal';
 import EventTiming from './components/EventTiming';
 import EventTypesManagement from './components/EventTypesManagement';
+import HostessesManagement from './components/HostessesManagement';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
@@ -32,7 +33,13 @@ function Dashboard({ user, onLogout }) {
     const [guests, setGuests] = useState([]);
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const isHostess = user?.role === 'hostess';
+    // Anfitriona: her only screen is the guest list of her assigned events
+    const [activeTab, setActiveTab] = useState(isHostess ? 'guests' : 'dashboard');
+
+    useEffect(() => {
+        if (isHostess && activeTab !== 'guests') setActiveTab('guests');
+    }, [isHostess, activeTab]);
     const [toastMessage, setToastMessage] = useState(null);
     const [preselectedPlannerId, setPreselectedPlannerId] = useState(null);
     const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
@@ -279,7 +286,9 @@ function Dashboard({ user, onLogout }) {
                     )}
 
                     {/* Active View based on activeTab */}
-                    {activeTab === 'planners' && user?.role === 'admin' ? (
+                    {activeTab === 'hostesses' && (user?.role === 'admin' || user?.role === 'planner') ? (
+                        <HostessesManagement user={user} events={events} showToast={showToast} />
+                    ) : activeTab === 'planners' && user?.role === 'admin' ? (
                         <PlannersManagement
                             onOpenCreateEvent={(plannerId) => {
                                 setPreselectedPlannerId(plannerId);
@@ -366,6 +375,7 @@ function Dashboard({ user, onLogout }) {
 
                                 <GuestList
                                     guests={guests}
+                                    readOnly={isHostess}
                                     onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
                                     onOpenExcelModal={() => setIsExcelModalOpen(true)}
                                     onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}

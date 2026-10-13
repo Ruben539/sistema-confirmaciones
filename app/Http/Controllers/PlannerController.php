@@ -23,7 +23,9 @@ class PlannerController extends Controller
             ], 403);
         }
 
-        $users = User::withCount('events')
+        // Anfitrionas are managed separately (HostessController): keep this list to admins and planners
+        $users = User::whereIn('role', ['admin', 'planner'])
+            ->withCount('events')
             ->with(['events' => function ($query) {
                 $query->select('id', 'user_id', 'title', 'couple_names', 'event_date', 'status', 'plan_type', 'max_guests')
                     ->withCount('guests')

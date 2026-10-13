@@ -35,14 +35,14 @@ class ProcessRsvpDeadlines extends Command
 
                 foreach ($pendingGuests as $guest) {
                     $oldNote = $guest->notes ? $guest->notes . ' | ' : '';
-                    $guest->update([
+                    \App\Models\GuestActivity::withContext(['via' => 'deadline'], fn () => $guest->update([
                         'status' => 'declined',
                         'notes' => $oldNote . 'Cancelado automáticamente por plazo de confirmación vencido (' . $deadlineDate->format('d/m/Y') . ')',
                         'confirmed_adults' => 0,
                         'confirmed_youth' => 0,
                         'confirmed_children' => 0,
                         'confirmed_passes' => 0,
-                    ]);
+                    ]));
                     $autoDeclinedCount++;
                 }
             }

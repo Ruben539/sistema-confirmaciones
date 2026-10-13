@@ -163,6 +163,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
             // Timeout: the bot may have sent it anyway. Don't retry to avoid a duplicate message.
             $throttle->recordSent();
+            \App\Models\GuestActivity::record($guest, 'send_uncertain', ($this->messageMode === 'reminder' ? 'Recordatorio' : 'Invitación') . ': el bot tardó en responder, puede que no se haya enviado');
             Log::warning("WhatsApp Job: timeout sending to {$guest->name} ({$cleanPhone}); not retrying to avoid a duplicate. Check manually. " . $e->getMessage());
             return;
         }
@@ -192,6 +193,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
         }
 
         Log::warning("WhatsApp Job: rejected for {$guest->name}: " . $response->body());
+        \App\Models\GuestActivity::record($guest, $this->messageMode === 'reminder' ? 'reminder_failed' : 'invitation_failed', 'El WhatsApp del sistema rechazó el envío (revisar el número)');
         $this->clearReminderMark($guest);
     }
 

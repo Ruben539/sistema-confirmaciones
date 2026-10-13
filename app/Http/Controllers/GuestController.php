@@ -22,8 +22,8 @@ class GuestController extends Controller
     {
         $user = Auth::user();
 
-        // 1. Aislamiento por Planner: solo puede gestionar sus propios eventos asignados
-        if ($user && $user->role === 'planner' && $event->user_id !== $user->id) {
+        // 1. Aislamiento: planner solo sus eventos, anfitriona solo los asignados (User::canAccessEvent)
+        if ($user && !$user->canAccessEvent($event)) {
             return response()->json([
                 'message' => 'Acceso denegado: No tenés permisos para gestionar este evento.'
             ], 403);
@@ -482,7 +482,44 @@ class GuestController extends Controller
             'dietary_restrictions' => 'nullable|string',
             'notes' => 'nullable|string',
             'whatsapp_status' => 'sometimes|in:not_sent,sent,delivered',
+            // Status the client saw before changing it (door devices): if another device already
+            // changed the guest, the change is rejected instead of silently overwriting it
+            'expected_status' => 'sometimes|in:pending,confirmed,declined,attended',
         ]);
+
+        // Anfitriona: solo el ingreso en puerta (confirmado <-> ingresó) y la mesa
+        if (Auth::user()?->isHostess()) {
+            $notAllowed = array_diff(array_keys($validated), ['status', 'expected_status', 'table_number']);
+            $statusChange = $validated['status'] ?? null;
+            if ($notAllowed || ($statusChange && (!in_array($statusChange, ['attended', 'confirmed']) || !in_array($guest->status, ['attended', 'confirmed'])))) {
+                return response()->json([
+                    'message' => 'Como anfitriona solo podés registrar el ingreso y cambiar la mesa de invitados confirmados.',
+                ], 403);
+            }
+        }
+
+        $expectedStatus = $validated['expected_status'] ?? null;
+        unset($validated['expected_status']);
+        if ($expectedStatus && $guest->status !== $expectedStatus) {
+            $when = $guest->status === 'attended' && $guest->attended_at
+                ? ' a las ' . \Carbon\Carbon::parse($guest->attended_at)->format('H:i')
+                : '';
+            $label = ['attended' => 'INGRESADO', 'confirmed' => 'CONFIRMADO (sin ingresar)', 'pending' => 'PENDIENTE', 'declined' => 'NO ASISTE'][$guest->status] ?? $guest->status;
+            return response()->json([
+                'status' => 'conflict',
+                'message' => "{$guest->name} ya figura como {$label}{$when}: lo actualizó otro dispositivo.",
+                'guest' => $guest,
+            ], 409);
+        }
+
+        // Door check-in by hand: keep attended_at in sync with the status (the QR scan already does it)
+        if (isset($validated['status'])) {
+            if ($validated['status'] === 'attended' && $guest->status !== 'attended') {
+                $validated['attended_at'] = $guest->attended_at ?? now();
+            } elseif ($validated['status'] !== 'attended' && $guest->status === 'attended') {
+                $validated['attended_at'] = null;
+            }
+        }
 
         if (isset($validated['phone'])) {
             $validated['phone'] = $this->formatParaguayPhone($validated['phone']);
@@ -501,7 +538,8 @@ class GuestController extends Controller
         }
 
         // Si se acaba de confirmar el invitado desde la web: enviar automáticamente el Pase QR por WhatsApp
-        if (isset($validated['status']) && $validated['status'] === 'confirmed' && $previousStatus !== 'confirmed' && !empty($guest->phone)) {
+        // (only a real new confirmation: undoing a door check-in, attended -> confirmed, must not resend it)
+        if (isset($validated['status']) && $validated['status'] === 'confirmed' && in_array($previousStatus, ['pending', 'declined']) && !empty($guest->phone)) {
             $this->sendWhatsAppQrPass($guest);
         }
 
@@ -575,8 +613,16 @@ class GuestController extends Controller
                 'mediaUrl' => $qrUrl,
                 'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
             ]);
+            \App\Models\GuestActivity::record(
+                $guest,
+                $response->successful() ? 'qr_sent' : 'qr_failed',
+                $response->successful()
+                    ? ($isResend ? 'Pase QR reenviado por WhatsApp' : 'Pase QR enviado por WhatsApp')
+                    : 'No se pudo enviar el pase QR (el bot no respondió)'
+            );
             return $response->successful();
         } catch (\Throwable $e) {
+            \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR: sin conexión con el bot');
             \Illuminate\Support\Facades\Log::warning("[GuestController] No se pudo enviar WhatsApp con QR: " . $e->getMessage());
             return false;
         }
@@ -739,6 +785,28 @@ class GuestController extends Controller
         ], 202);
     }
 
+    /**
+     * Movement history of a guest (newest first) for the app and the panel.
+     */
+    public function activity($id)
+    {
+        $guest = Guest::with('event')->findOrFail($id);
+        if ($guest->event && ($denied = $this->validateEventAccess($guest->event, false))) {
+            return $denied;
+        }
+
+        $activities = \App\Models\GuestActivity::with('user:id,name,role')
+            ->where('guest_id', $guest->id)
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'guest' => $guest->only(['id', 'name', 'status', 'whatsapp_status', 'last_sent_at', 'reminder_count', 'attended_at']),
+            'activities' => $activities,
+        ]);
+    }
+
     public function destroy($id)
     {
         $guest = Guest::with('event')->findOrFail($id);
@@ -793,6 +861,16 @@ class GuestController extends Controller
 
         $event = $guest->event;
 
+        // Only staff of this event can accredit its guests
+        $user = Auth::user();
+        if ($user && $event && !$user->canAccessEvent($event)) {
+            return response()->json([
+                'success' => false,
+                'status' => 'invalid',
+                'message' => '⛔ Este QR pertenece a otro evento.',
+            ], 403);
+        }
+
         // Check if guest is declined
         if ($guest->status === 'declined') {
             return response()->json([
@@ -806,6 +884,7 @@ class GuestController extends Controller
 
         // Check if already checked in
         if ($guest->attended_at !== null || $guest->status === 'attended') {
+            \App\Models\GuestActivity::record($guest, 'scan_repeated', 'Se volvió a escanear un QR ya utilizado');
             $carbonTime = $guest->attended_at ? \Carbon\Carbon::parse($guest->attended_at)->setTimezone('America/Asuncion') : null;
             $formattedTime = $carbonTime ? $carbonTime->format('H:i') : 'anteriormente';
             $formattedDate = $carbonTime ? $carbonTime->format('d/m/Y') : '';
@@ -822,10 +901,10 @@ class GuestController extends Controller
 
         // Valid first-time accreditation!
         $nowLocal = now()->setTimezone('America/Asuncion');
-        $guest->update([
+        \App\Models\GuestActivity::withContext(['via' => 'scan'], fn () => $guest->update([
             'status' => 'attended',
             'attended_at' => $nowLocal,
-        ]);
+        ]));
 
         return response()->json([
             'success' => true,

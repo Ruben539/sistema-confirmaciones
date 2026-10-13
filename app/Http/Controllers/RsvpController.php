@@ -21,14 +21,14 @@ class RsvpController extends Controller
             $isExpired = now()->greaterThan($deadlineDate);
 
             if ($isExpired && $guest->status === 'pending' && ($event->auto_decline_expired ?? true)) {
-                $guest->update([
+                \App\Models\GuestActivity::withContext(['via' => 'deadline'], fn () => $guest->update([
                     'status' => 'declined',
                     'notes' => ($guest->notes ? $guest->notes . ' | ' : '') . "Cancelado automáticamente por fecha límite expirada ({$deadlineDateFormatted})",
                     'confirmed_adults' => 0,
                     'confirmed_youth' => 0,
                     'confirmed_children' => 0,
                     'confirmed_passes' => 0,
-                ]);
+                ]));
             }
         }
 
@@ -157,13 +157,15 @@ class RsvpController extends Controller
 
             $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
-            \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
+            $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
                 'phone' => $cleanPhone,
                 'message' => $message,
                 'mediaUrl' => $qrUrl,
                 'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
             ]);
+            \App\Models\GuestActivity::record($guest, $response->successful() ? 'qr_sent' : 'qr_failed', $response->successful() ? 'Pase QR enviado por WhatsApp' : 'No se pudo enviar el pase QR (el bot no respondió)');
         } catch (\Throwable $e) {
+            \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR: sin conexión con el bot');
             \Illuminate\Support\Facades\Log::warning("[RsvpController] No se pudo enviar WhatsApp con QR al confirmar desde el formulario web: " . $e->getMessage());
         }
     }
@@ -325,6 +327,13 @@ class RsvpController extends Controller
 
     public function handleIncomingWhatsApp(Request $request)
     {
+        // Optional: only enforced if WHATSAPP_WEBHOOK_SECRET is set (on Laravel and on the bot)
+        $secret = config('whatsapp.webhook_secret');
+        if ($secret && !hash_equals($secret, (string) $request->header('X-Webhook-Secret'))) {
+            return response()->json(['processed' => false, 'reason' => 'Unauthorized'], 401);
+        }
+        \App\Models\GuestActivity::setSource('whatsapp');
+
         $rawDigits = preg_replace('/[^\d]/', '', $request->input('phone', ''));
         $message = trim($request->input('message', ''));
 

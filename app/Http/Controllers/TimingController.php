@@ -19,10 +19,10 @@ class TimingController extends Controller
     private function authorizeEvent(Event $event, bool $requireActive = false)
     {
         $user = Auth::user();
+        if ($user && !$user->canAccessEvent($event)) {
+            abort(403, 'Acceso denegado: No tenés permisos sobre este evento.');
+        }
         if ($user && $user->role === 'planner') {
-            if ($event->user_id !== $user->id) {
-                abort(403, 'Acceso denegado: No tenés permisos sobre este evento.');
-            }
 
             if ($requireActive && !$event->isActive()) {
                 abort(403, 'Acceso denegado: Este evento se encuentra inactivo, pausado o ya ha finalizado.');

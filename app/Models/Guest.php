@@ -64,6 +64,49 @@ class Guest extends Model
                 $guest->confirmed_passes = (int)$guest->confirmed_adults + (int)$guest->confirmed_youth + (int)$guest->confirmed_children;
             }
         });
+
+        // Movement history (see GuestActivity): recorded wherever the change comes from
+        static::created(function ($guest) {
+            GuestActivity::record($guest, 'created', 'Invitado agregado a la lista');
+        });
+
+        static::updated(function ($guest) {
+            if ($guest->wasChanged('status')) {
+                $from = $guest->getOriginal('status');
+                $to = $guest->status;
+                $via = GuestActivity::context('via');
+                if ($to === 'attended') {
+                    GuestActivity::record($guest, 'checked_in', $via === 'scan' ? 'Ingresó (QR escaneado)' : 'Ingresó (marcado a mano)', ['from' => $from]);
+                } elseif ($from === 'attended') {
+                    GuestActivity::record($guest, 'check_in_undone', 'Se deshizo el ingreso', ['to' => $to]);
+                } elseif ($to === 'confirmed') {
+                    GuestActivity::record($guest, 'confirmed', 'Confirmó asistencia (' . $guest->confirmed_passes . ' personas)', ['from' => $from]);
+                } elseif ($to === 'declined') {
+                    GuestActivity::record($guest, 'declined', $via === 'deadline' ? 'Cancelado automáticamente: venció el plazo para confirmar' : 'No asistirá', ['from' => $from]);
+                } elseif ($to === 'pending') {
+                    GuestActivity::record($guest, 'reset_pending', 'Volvió a pendiente', ['from' => $from]);
+                }
+            }
+
+            if ($guest->wasChanged('table_number')) {
+                $from = $guest->getOriginal('table_number') ?: 'sin mesa';
+                $to = $guest->table_number ?: 'sin mesa';
+                GuestActivity::record($guest, 'table_changed', "Mesa: {$from} → {$to}");
+            }
+
+            if ($guest->wasChanged('whatsapp_status') && $guest->whatsapp_status === 'sent') {
+                GuestActivity::record($guest, 'invitation_sent', 'Invitación enviada por WhatsApp');
+            }
+
+            if ($guest->wasChanged('reminder_count') && $guest->reminder_count > (int) $guest->getOriginal('reminder_count')) {
+                GuestActivity::record($guest, 'reminder_sent', "Recordatorio enviado por WhatsApp (#{$guest->reminder_count})");
+            }
+        });
+    }
+
+    public function activities()
+    {
+        return $this->hasMany(GuestActivity::class);
     }
 
     public function event()

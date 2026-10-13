@@ -10,6 +10,10 @@ return [
 
     'bot_url' => env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead'),
 
+    // Shared secret the bot sends in X-Webhook-Secret when forwarding incoming messages.
+    // Without it anyone could post fake guest replies (or "APROBAR n") to the webhook.
+    'webhook_secret' => env('WHATSAPP_WEBHOOK_SECRET'),
+
     /*
     |--------------------------------------------------------------------------
     | Anti-block throttling (per WhatsApp session / phone number)

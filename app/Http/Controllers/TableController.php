@@ -13,7 +13,7 @@ class TableController extends Controller
     private function checkEventAccess(Event $event)
     {
         $user = Auth::user();
-        if ($user && $user->role === 'planner' && $event->user_id !== $user->id) {
+        if ($user && !$user->canAccessEvent($event)) {
             abort(403, 'Acceso denegado: No tenés permisos sobre este evento.');
         }
     }

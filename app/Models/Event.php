@@ -278,6 +278,12 @@ class Event extends Model
         return $this->hasMany(Guest::class);
     }
 
+    // Hostesses (anfitrionas) assigned to work this event
+    public function hostesses()
+    {
+        return $this->belongsToMany(User::class, 'event_hostess', 'event_id', 'user_id')->withTimestamps();
+    }
+
     public function planRequests()
     {
         return $this->hasMany(PlanRequest::class);

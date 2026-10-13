@@ -10,7 +10,9 @@ export default function GuestList({
     onUpdateGuest,
     onDeleteGuest,
     onClearAll,
-    onMarkSent
+    onMarkSent,
+    // Anfitriona: only sees the list (no adding, importing, sending, editing or deleting)
+    readOnly = false
 }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'confirmed', 'pending', 'declined'
@@ -156,6 +158,7 @@ export default function GuestList({
                 </div>
 
                 {/* Actions */}
+                {!readOnly && (
                 <div className="flex flex-wrap items-center gap-2.5">
                     <button
                         onClick={onOpenAddModal}
@@ -191,6 +194,7 @@ export default function GuestList({
                         </button>
                     )}
                 </div>
+                )}
             </div>
 
             {/* Filter Tabs & Options */}
@@ -271,7 +275,7 @@ export default function GuestList({
             </div>
 
             {/* Selection Bar (if items selected) */}
-            {selectedGuestIds.length > 0 && (
+            {!readOnly && selectedGuestIds.length > 0 && (
                 <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-2xl flex items-center justify-between animate-fade-in text-xs">
                     <span className="font-bold text-rose-800 dark:text-rose-200 flex items-center gap-2">
                         <Users className="w-4 h-4 text-rose-500" />
@@ -393,6 +397,14 @@ export default function GuestList({
 
                                     {/* Status Badge & Quick Change */}
                                     <td className="p-3.5">
+                                        {readOnly ? (
+                                            <span className="text-xs font-bold">
+                                                {guest.status === 'attended' ? '🟢 Ingresó'
+                                                    : guest.status === 'confirmed' ? '✅ Confirmado'
+                                                    : guest.status === 'declined' ? '❌ Rechazado'
+                                                    : '⏳ Pendiente'}
+                                            </span>
+                                        ) : (
                                         <select
                                             value={guest.status}
                                             onChange={(e) => onUpdateGuest(guest.id, { status: e.target.value })}
@@ -402,6 +414,7 @@ export default function GuestList({
                                             <option value="confirmed">✅ Confirmado</option>
                                             <option value="declined">❌ Rechazado</option>
                                         </select>
+                                        )}
                                     </td>
 
                                     {/* Invitation composition (invited person + companions) */}
@@ -462,6 +475,7 @@ export default function GuestList({
 
                                     {/* Actions */}
                                     <td className="p-3.5 text-right">
+                                        {!readOnly && (
                                         <div className="flex items-center justify-end gap-1.5">
                                             {onEditGuest && (
                                                 <button
@@ -493,6 +507,7 @@ export default function GuestList({
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </div>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

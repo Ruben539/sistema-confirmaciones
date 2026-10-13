@@ -20,6 +20,9 @@ export default function Sidebar({
     const [showEventsList, setShowEventsList] = useState(false);
 
     const isAdmin = user?.role === 'admin';
+    const isPlanner = user?.role === 'planner';
+    // Anfitriona: only the guest list (the backend enforces it too)
+    const isHostess = user?.role === 'hostess';
 
     return (
         <aside className={`bg-white dark:bg-zinc-900 border-r border-rose-100 dark:border-zinc-800 transition-all duration-300 flex flex-col justify-between sticky top-0 h-screen z-40 ${collapsed ? 'w-20' : 'w-64'}`}>
@@ -88,6 +91,7 @@ export default function Sidebar({
 
                 {/* Main Navigation Items */}
                 <nav className="p-3 space-y-1">
+                    {!isHostess && (
                     <button
                         onClick={() => setActiveTab('dashboard')}
                         className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'dashboard' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
@@ -95,6 +99,7 @@ export default function Sidebar({
                         <LayoutDashboard className="w-4 h-4 shrink-0" />
                         {!collapsed && <span>Panel de Confirmaciones</span>}
                     </button>
+                    )}
 
                     <button
                         onClick={() => setActiveTab('guests')}
@@ -104,6 +109,7 @@ export default function Sidebar({
                         {!collapsed && <span>Lista de Invitados</span>}
                     </button>
 
+                    {!isHostess && (<>
                     <button
                         onClick={() => setActiveTab('tables')}
                         className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'tables' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
@@ -127,6 +133,17 @@ export default function Sidebar({
                         <Sparkles className="w-4 h-4 shrink-0 text-amber-400" />
                         {!collapsed && <span>Invitación & Fiesta</span>}
                     </button>
+
+                    {(isAdmin || isPlanner) && (
+                        <button
+                            onClick={() => setActiveTab('hostesses')}
+                            className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'hostesses' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                        >
+                            <UserCheck className="w-4 h-4 shrink-0" />
+                            {!collapsed && <span>Anfitrionas</span>}
+                        </button>
+                    )}
+                    </>)}
 
                     {/* Admin Navigation Options */}
                     {isAdmin && (
@@ -210,7 +227,7 @@ export default function Sidebar({
                         </div>
                     )}
 
-                    {activeEvent && (
+                    {activeEvent && !isHostess && (
                         <button
                             onClick={onOpenUpgradeBot}
                             className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-all border border-amber-200/60 dark:border-amber-900/50"
@@ -273,7 +290,7 @@ export default function Sidebar({
                                 <div className="truncate">
                                     <div className="text-xs font-bold text-zinc-900 dark:text-white truncate">{user?.name}</div>
                                     <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
-                                        {isAdmin ? 'Administrador' : 'Wedding Planner'}
+                                        {isAdmin ? 'Administrador' : isHostess ? 'Anfitriona' : 'Wedding Planner'}
                                     </div>
                                 </div>
                             </div>

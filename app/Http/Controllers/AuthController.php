@@ -59,6 +59,13 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->is_active === false) {
+            throw ValidationException::withMessages([
+                'username' => ['Tu usuario está desactivado. Consultá con quien te dio acceso.'],
+                'email' => ['Tu usuario está desactivado. Consultá con quien te dio acceso.'],
+            ]);
+        }
+
         // Autenticar en la sesión si está disponible
         Auth::login($user, $remember);
         if ($request->hasSession()) {
@@ -79,6 +86,7 @@ class AuthController extends Controller
                 'username' => $user->username ?? null,
                 'email' => $user->email,
                 'role' => $user->role ?? 'user',
+                'planner_id' => $user->planner_id,
             ]
         ], 200);
     }
