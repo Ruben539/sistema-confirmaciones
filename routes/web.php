@@ -72,6 +72,11 @@ Route::prefix('api')->group(function () {
     Route::post('/events/{code}/public-dedication', [RsvpController::class, 'uploadPublicDedication'])->middleware('throttle:20,1');
     Route::post('/events/{code}/public-song-request', [RsvpController::class, 'storePublicSongRequest'])->middleware('throttle:30,1');
 
+    // Dedication videos stored in Google Drive, streamed for the projector / invitation (signed link only)
+    Route::get('/dedications/{dedication}/media', [EventController::class, 'streamDedicationMedia'])
+        ->name('dedications.media')
+        ->middleware(['signed:relative', 'throttle:600,1']);
+
     // Live Projection Screen Route (for Projector / DJ / Big Screen) — polls every 10s
     Route::get('/events/{code}/live-feed', [EventController::class, 'getLiveProjectionFeed'])->middleware('throttle:60,1');
 

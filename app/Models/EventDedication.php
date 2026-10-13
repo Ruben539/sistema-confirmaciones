@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
+use App\Services\GoogleDriveService;
 
 class EventDedication extends Model
 {
@@ -30,6 +32,12 @@ class EventDedication extends Model
     {
         if (!$this->media_path) {
             return null;
+        }
+
+        // Videos in Drive are streamed through our server (the lh3 link only serves images).
+        // Signed URL: dedication ids are sequential, so the link can't be guessed for other dedications.
+        if ($this->type === 'video' && GoogleDriveService::fileIdFromUrl($this->media_path)) {
+            return URL::signedRoute('dedications.media', ['dedication' => $this->id], null, false);
         }
 
         // If it is already a full URL

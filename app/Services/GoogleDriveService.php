@@ -7,6 +7,7 @@ use Google\Service\Drive as GoogleDrive;
 use Google\Service\Drive\DriveFile;
 use Google\Service\Drive\Permission;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class GoogleDriveService
@@ -127,10 +128,20 @@ class GoogleDriveService
                 // OAuth 2.0 Client credentials (clientId + clientSecret + refreshToken)
                 $this->client->setClientId($clientId);
                 $this->client->setClientSecret($clientSecret);
-                $token = $this->client->refreshToken($refreshToken);
-                // Google returns the error instead of throwing (e.g. invalid_grant = token expired or revoked)
-                if (!empty($token['error'])) {
-                    throw new \RuntimeException('OAuth: ' . $token['error'] . (!empty($token['error_description']) ? ' - ' . $token['error_description'] : ''));
+
+                // Reuse the access token (~1h) instead of asking Google for a new one on every request:
+                // video streaming makes many small requests per dedication
+                $cachedToken = Cache::get('google_drive_access_token');
+                if ($cachedToken) {
+                    $this->client->setAccessToken($cachedToken);
+                }
+                if (!$cachedToken || $this->client->isAccessTokenExpired()) {
+                    $token = $this->client->refreshToken($refreshToken);
+                    // Google returns the error instead of throwing (e.g. invalid_grant = token expired or revoked)
+                    if (!empty($token['error'])) {
+                        throw new \RuntimeException('OAuth: ' . $token['error'] . (!empty($token['error_description']) ? ' - ' . $token['error_description'] : ''));
+                    }
+                    Cache::put('google_drive_access_token', $token, now()->addSeconds(max(60, ((int) ($token['expires_in'] ?? 3600)) - 300)));
                 }
                 $this->client->addScope([
                     GoogleDrive::DRIVE,
@@ -208,20 +219,9 @@ class GoogleDriveService
                 'fields' => 'id, name',
             ]);
 
-            $folderId = $createdFolder->getId();
-
-            // Set reader permission so items inside are accessible
-            try {
-                $permission = new Permission([
-                    'type' => 'anyone',
-                    'role' => 'reader',
-                ]);
-                $this->service->permissions->create($folderId, $permission);
-            } catch (\Throwable $permError) {
-                Log::warning('Could not set public permission on Google Drive folder: ' . $permError->getMessage());
-            }
-
-            return $folderId;
+            // The folder stays private: each file gets its own "anyone with the link" permission,
+            // so a leaked folder link doesn't expose every photo/video (including rejected ones)
+            return $createdFolder->getId();
         } catch (\Throwable $e) {
             Log::error('Google Drive getOrCreateFolder failed: ' . $e->getMessage());
             return null;
@@ -303,24 +303,50 @@ class GoogleDriveService
             if ($file instanceof UploadedFile) {
                 $filename = $customName ?: (time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $file->getClientOriginalName()));
                 $mimeType = $file->getMimeType();
-                $content = file_get_contents($file->getRealPath());
+                $path = $file->getRealPath();
             } else {
                 $filename = $customName ?: basename($file);
                 $mimeType = mime_content_type($file) ?: 'application/octet-stream';
-                $content = file_get_contents($file);
+                $path = $file;
             }
 
             $fileMetadata = new DriveFile([
                 'name' => $filename,
                 'parents' => !empty($folderId) ? [$folderId] : [],
             ]);
+            $fields = 'id, name, webViewLink, webContentLink';
+            $size = filesize($path);
+            $chunkSize = 5 * 1024 * 1024;
 
-            $uploadedFile = $this->service->files->create($fileMetadata, [
-                'data' => $content,
-                'mimeType' => $mimeType,
-                'uploadType' => 'multipart',
-                'fields' => 'id, name, webViewLink, webContentLink',
-            ]);
+            if ($size > $chunkSize) {
+                // Drive only accepts 'multipart' up to 5 MB: bigger files (videos) go as a resumable upload in chunks
+                $this->client->setDefer(true);
+                try {
+                    $request = $this->service->files->create($fileMetadata, ['fields' => $fields]);
+                    $media = new \Google\Http\MediaFileUpload($this->client, $request, $mimeType, null, true, $chunkSize);
+                    $media->setFileSize($size);
+
+                    $uploadedFile = false;
+                    $handle = fopen($path, 'rb');
+                    while (!$uploadedFile && !feof($handle)) {
+                        $uploadedFile = $media->nextChunk(fread($handle, $chunkSize));
+                    }
+                    fclose($handle);
+                } finally {
+                    $this->client->setDefer(false);
+                }
+
+                if (!$uploadedFile) {
+                    throw new \RuntimeException('Resumable upload did not complete');
+                }
+            } else {
+                $uploadedFile = $this->service->files->create($fileMetadata, [
+                    'data' => file_get_contents($path),
+                    'mimeType' => $mimeType,
+                    'uploadType' => 'multipart',
+                    'fields' => $fields,
+                ]);
+            }
 
             $fileId = $uploadedFile->getId();
 
@@ -363,6 +389,51 @@ class GoogleDriveService
     {
         $eventFolderId = $this->getOrCreateEventFolder($event);
         return $this->uploadFile($file, $customName, $eventFolderId);
+    }
+
+    /**
+     * Extracts the Drive file ID from the URLs this service stores
+     * (lh3.googleusercontent.com/d/{id}, drive.google.com/file/d/{id}/..., ...?id={id}).
+     */
+    public static function fileIdFromUrl(?string $url): ?string
+    {
+        if (empty($url)) {
+            return null;
+        }
+        if (preg_match('~^https://(?:lh3\.googleusercontent\.com/d/|drive\.google\.com/file/d/)([A-Za-z0-9_-]{10,})~', $url, $m)) {
+            return $m[1];
+        }
+        if (preg_match('~^https://(?:drive|docs)\.google\.com/.*[?&]id=([A-Za-z0-9_-]{10,})~', $url, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Streams a Drive file's content, forwarding the browser's Range header so <video>
+     * can seek and play while downloading. Returns the upstream PSR-7 response (body not buffered).
+     */
+    public function streamFile(string $fileId, ?string $range = null): ?\Psr\Http\Message\ResponseInterface
+    {
+        if (!$this->service) {
+            $this->initClient();
+            if (!$this->service) {
+                return null;
+            }
+        }
+
+        try {
+            $http = $this->client->authorize();
+            return $http->request('GET', "https://www.googleapis.com/drive/v3/files/{$fileId}?alt=media", [
+                'headers' => $range ? ['Range' => $range] : [],
+                'stream' => true,
+                'http_errors' => false,
+            ]);
+        } catch (\Throwable $e) {
+            $this->lastError = 'Google Drive stream failed: ' . $e->getMessage();
+            Log::error($this->lastError);
+            return null;
+        }
     }
 
     /**

@@ -549,7 +549,11 @@ class EventController extends Controller
     public function deleteDedication($id, $dedicationId)
     {
         $dedication = \App\Models\EventDedication::where('event_id', $id)->findOrFail($dedicationId);
-        if ($dedication->media_path) {
+        $driveFileId = \App\Services\GoogleDriveService::fileIdFromUrl($dedication->media_path);
+        if ($driveFileId) {
+            // Remove it from Drive too: otherwise the file stays reachable by its public link
+            (new \App\Services\GoogleDriveService())->deleteFile($driveFileId);
+        } elseif ($dedication->media_path) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($dedication->media_path);
         }
         $dedication->delete();
@@ -557,6 +561,40 @@ class EventController extends Controller
         return response()->json([
             'message' => 'Dedicatoria eliminada'
         ]);
+    }
+
+    /**
+     * Streams a dedication video stored in Google Drive (supports Range for <video> seeking/looping).
+     * Reached only through the signed URL in EventDedication::media_url.
+     */
+    public function streamDedicationMedia(Request $request, $dedication)
+    {
+        $dedication = \App\Models\EventDedication::findOrFail($dedication);
+        $fileId = \App\Services\GoogleDriveService::fileIdFromUrl($dedication->media_path);
+        abort_unless($fileId, 404);
+
+        $upstream = (new \App\Services\GoogleDriveService())->streamFile($fileId, $request->header('Range'));
+        abort_if(!$upstream, 502, 'No se pudo obtener el archivo de Google Drive.');
+        abort_if($upstream->getStatusCode() >= 400, $upstream->getStatusCode() === 404 ? 404 : 502);
+
+        $headers = [
+            'Content-Type' => $upstream->getHeaderLine('Content-Type') ?: 'video/mp4',
+            'Accept-Ranges' => 'bytes',
+            'Cache-Control' => 'private, max-age=3600',
+        ];
+        foreach (['Content-Length', 'Content-Range'] as $header) {
+            if ($upstream->hasHeader($header)) {
+                $headers[$header] = $upstream->getHeaderLine($header);
+            }
+        }
+
+        $body = $upstream->getBody();
+        return response()->stream(function () use ($body) {
+            while (!$body->eof()) {
+                echo $body->read(256 * 1024);
+                flush();
+            }
+        }, $upstream->getStatusCode(), $headers);
     }
 
     public function getLiveProjectionFeed($code)
