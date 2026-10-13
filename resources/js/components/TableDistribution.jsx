@@ -327,18 +327,20 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
         <div className="space-y-6 animate-fade-in font-sans">
             {/* Header & Stats Banner */}
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                <div className="space-y-4">
+                    {/* Title: full width on top */}
                     <div>
                         <h2 className="text-xl font-black text-zinc-900 dark:text-white flex items-center gap-2">
-                            <LayoutGrid className="w-6 h-6 text-rose-500" />
-                            <span>Distribución de Mesas (Seating Plan)</span>
+                            <LayoutGrid className="w-6 h-6 text-rose-500 shrink-0" />
+                            <span>Distribución de Mesas</span>
                         </h2>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                            Diseñado para escalar hasta 350+ invitados. Arrastrá y soltá o usá asignación rápida.
+                            Arrastrá y soltá a los invitados en sus mesas, usá la asignación rápida o cargalas desde Excel.
                         </p>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    {/* Toolbar: view switcher on the left, actions on the right */}
+                    <div className="flex flex-wrap items-center gap-2.5">
                         {/* View Switcher: Grid vs 3D */}
                         <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-700">
                             <button
@@ -363,11 +365,12 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                                         : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
                                 }`}
                             >
-                                <Box className="w-3.5 h-3.5 animate-pulse" />
-                                🏢 Mapa 3D Interactivo
+                                <Box className="w-3.5 h-3.5" />
+                                Mapa 3D
                             </button>
                         </div>
 
+                        <div className="flex flex-wrap items-center gap-2.5 lg:ml-auto">
                         <button
                             onClick={() => setIsTableExcelOpen(true)}
                             title="Descargar la lista con sus mesas y subir el Excel para crear y asignar mesas"
@@ -397,11 +400,12 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
 
                         <button
                             onClick={openAddTableModal}
-                            className="flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold transition-all shadow-md active:scale-95"
+                            className="flex items-center gap-1.5 px-5 py-2.5 rounded-2xl border border-transparent bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white text-xs font-extrabold transition-all shadow-md active:scale-95"
                         >
                             <Plus className="w-4 h-4" />
                             <span>Crear Nueva Mesa</span>
                         </button>
+                        </div>
                     </div>
                 </div>
 
@@ -409,7 +413,7 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                     <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-700/60">
                         <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Total Mesas</div>
-                        <div className="text-xl font-black text-zinc-900 dark:text-white mt-0.5">{stats.total_tables || 0} mesas</div>
+                        <div className="text-xl font-black text-zinc-900 dark:text-white mt-0.5">{stats.total_tables || 0} {stats.total_tables === 1 ? 'mesa' : 'mesas'}</div>
                     </div>
 
                     <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-700/60">
@@ -422,7 +426,10 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                     <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-700/60">
                         <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Sin Mesa Asignada</div>
                         <div className="text-xl font-black text-amber-600 dark:text-amber-400 mt-0.5">
-                            {stats.unassigned_passes || 0} pers. ({unassigned.length} invit.)
+                            {stats.unassigned_passes || 0} {stats.unassigned_passes === 1 ? 'persona' : 'personas'}
+                        </div>
+                        <div className="text-[11px] font-semibold text-zinc-500 mt-0.5">
+                            {unassigned.length} {unassigned.length === 1 ? 'invitación' : 'invitaciones'}
                         </div>
                     </div>
 
@@ -916,6 +923,7 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
             {isTableExcelOpen && (
                 <TableExcelModal
                     eventId={eventId}
+                    eventCode={event?.public_code}
                     eventTitle={event?.couple_names || eventTitle}
                     data={data}
                     onClose={() => setIsTableExcelOpen(false)}

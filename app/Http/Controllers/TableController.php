@@ -257,11 +257,20 @@ class TableController extends Controller
         $this->checkEventAccess($event);
 
         $validated = $request->validate([
+            // Private code of the event written in the downloaded Excel: a file of another event is rejected
+            'event_code' => 'required|string',
             'assignments' => 'required|array|min:1|max:2000',
             'assignments.*.guest_id' => 'required|integer',
             'assignments.*.table' => 'nullable|string|max:100',
         ]);
 
+        if (!$event->public_code || !hash_equals($event->public_code, $validated['event_code'])) {
+            return response()->json([
+                'message' => 'Este Excel pertenece a otro evento. Descargá la lista de este evento y subí ese archivo.',
+            ], 422);
+        }
+
+        // Only guests of this event are touched, and only their table (never names or other data)
         $guests = Guest::where('event_id', $event->id)
             ->whereIn('id', collect($validated['assignments'])->pluck('guest_id'))
             ->get()
