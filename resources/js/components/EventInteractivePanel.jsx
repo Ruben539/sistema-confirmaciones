@@ -4,11 +4,12 @@ import {
     Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock 
 } from 'lucide-react';
 import EventInvitationSettingsModal from './EventInvitationSettingsModal';
+import DigitalInvitationDemo from './DigitalInvitationDemo';
 import EventSongSuggestionsModal from './EventSongSuggestionsModal';
 import EventDedicationsManagerModal from './EventDedicationsManagerModal';
 import { apiFetch } from '../api';
 
-export default function EventInteractivePanel({ event, onUpdateEvent, showToast }) {
+export default function EventInteractivePanel({ event, user, onUpdateEvent, showToast }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSongsOpen, setIsSongsOpen] = useState(false);
     const [isDedicationsOpen, setIsDedicationsOpen] = useState(false);
@@ -70,18 +71,7 @@ export default function EventInteractivePanel({ event, onUpdateEvent, showToast 
     }
 
     if (!event.has_digital_invitation) {
-        return (
-            <div className="p-12 text-center bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 max-w-lg mx-auto my-12 animate-fade-in font-sans">
-                <div className="w-16 h-16 rounded-3xl bg-amber-50 dark:bg-amber-950/40 text-amber-500 flex items-center justify-center mx-auto border border-amber-100 dark:border-amber-900/40">
-                    <Lock className="w-8 h-8" />
-                </div>
-                <h3 className="text-lg font-black text-zinc-900 dark:text-white">Invitación Digital no incluida</h3>
-                <p className="text-xs text-zinc-500">
-                    El plan de este evento no incluye la Invitación Digital (diseño personalizado, música, regalos, canciones para el DJ y pantalla de dedicatorias).
-                    Contactá a la administración para subir de plan o contratarla como adicional.
-                </p>
-            </div>
-        );
+        return <DigitalInvitationDemo event={event} user={user} showToast={showToast} />;
     }
 
     const publicInvitationUrl = `${window.location.origin}/evento/${event.public_code}/invitacion`;

@@ -333,17 +333,15 @@ class RsvpController extends Controller
         }
 
         // 0. Administrator Chatbot Commands (e.g. "APROBAR 1" or "RECHAZAR 1")
-        if (preg_match('/^(aprobar|autorizar|rechazar)\s+(\d+)$/i', $message, $matches)) {
+        // Only from an administrator's phone: otherwise any guest could approve requests by texting the bot
+        if (preg_match('/^(aprobar|autorizar|rechazar)\s+(\d+)$/i', $message, $matches) && $this->isAdminPhone($rawDigits)) {
             $action = strtolower($matches[1]);
             $reqId = (int)$matches[2];
             $planReq = \App\Models\PlanRequest::with(['event', 'planner'])->find($reqId);
 
             if ($planReq) {
                 if (in_array($action, ['aprobar', 'autorizar'])) {
-                    $planReq->event->update([
-                        'plan_type' => $planReq->requested_plan,
-                        'max_guests' => $planReq->requested_guests,
-                    ]);
+                    $planReq->applyToEvent();
                     $planReq->update([
                         'status' => 'approved',
                         'admin_notes' => 'Aprobado vía WhatsApp Bot',
@@ -351,7 +349,9 @@ class RsvpController extends Controller
                     ]);
 
                     $eventTitle = $planReq->event->couple_names ?? $planReq->event->title;
-                    $reply = "✅ *SOLICITUD #{$reqId} APROBADA EXITOSAMENTE*\n\nEl evento '{$eventTitle}' ahora cuenta con el *" . (\App\Models\Event::PLANS[$planReq->requested_plan]["label"] ?? $planReq->requested_plan) . "* y una capacidad de *{$planReq->requested_guests} invitados máx*.\nLa Wedding Planner ya puede continuar cargando su lista.";
+                    $reply = $planReq->isDigitalInvitation()
+                        ? "✅ *SOLICITUD #{$reqId} APROBADA EXITOSAMENTE*\n\nEl evento '{$eventTitle}' ya tiene la *Invitación Digital* habilitada.\nLa Wedding Planner ya puede configurarla desde el panel."
+                        : "✅ *SOLICITUD #{$reqId} APROBADA EXITOSAMENTE*\n\nEl evento '{$eventTitle}' ahora cuenta con el *" . (\App\Models\Event::PLANS[$planReq->requested_plan]["label"] ?? $planReq->requested_plan) . "* y una capacidad de *{$planReq->requested_guests} invitados máx*.\nLa Wedding Planner ya puede continuar cargando su lista.";
 
                     return response()->json([
                         'processed' => true,
@@ -368,7 +368,7 @@ class RsvpController extends Controller
                     return response()->json([
                         'processed' => true,
                         'reason' => 'Admin plan request rejected via WhatsApp',
-                        'reply' => "❌ La solicitud de ampliación #{$reqId} ha sido rechazada."
+                        'reply' => "❌ La solicitud #{$reqId} (" . $planReq->summary() . ") ha sido rechazada."
                     ]);
                 }
             }
@@ -573,6 +573,28 @@ class RsvpController extends Controller
             'reason' => 'Awaiting valid attendance option',
             'reply' => $reply
         ]);
+    }
+
+    // Compares the last 9 digits so 0981..., 981... and 595981... all match
+    private function isAdminPhone(string $rawDigits): bool
+    {
+        $last9 = fn ($phone) => substr(preg_replace('/[^\d]/', '', (string) $phone), -9);
+        $incoming = $last9($rawDigits);
+        if (strlen($incoming) < 9) {
+            return false;
+        }
+
+        $adminPhones = \App\Models\User::where('role', 'admin')->whereNotNull('phone')->pluck('phone')->all();
+        if (env('ADMIN_WHATSAPP_PHONE')) {
+            $adminPhones[] = env('ADMIN_WHATSAPP_PHONE');
+        }
+
+        foreach ($adminPhones as $phone) {
+            if ($last9($phone) === $incoming) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function findGuestByPhone(string $rawDigits): ?Guest

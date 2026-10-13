@@ -276,7 +276,7 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                                 {!ev.has_digital_invitation ? (
                                     <div className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-dashed border-zinc-300 dark:border-zinc-700 text-[11px] font-bold text-zinc-500 dark:text-zinc-400" title="Habilitala en Configurar Evento si el cliente contrató el adicional">
                                         <Lock className="w-3.5 h-3.5" />
-                                        <span>Invitación Digital no incluida en el plan</span>
+                                        <span>Invitación Digital no contratada</span>
                                     </div>
                                 ) : (
                                 <div className="grid grid-cols-3 gap-2">

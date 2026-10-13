@@ -723,7 +723,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                                         const pct = Math.min(100, Math.round((guestsCount / maxGuests) * 100));
 
                                                         // Check pending request on this event
-                                                        const pendingReq = (ev.plan_requests || []).find(r => r.status === 'pending');
+                                                        const pendingReq = (ev.plan_requests || []).find(r => r.status === 'pending' && r.type !== 'digital_invitation');
 
                                                         return (
                                                             <div
@@ -987,6 +987,14 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
 
                                         {/* Plan Transformation Card */}
                                         <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-700/60 flex flex-col md:flex-row items-center justify-between gap-4">
+                                            {req.type === 'digital_invitation' ? (
+                                                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center min-w-[200px]">
+                                                    <div className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase">Servicio Solicitado</div>
+                                                    <div className="text-xs font-black text-amber-800 dark:text-amber-300 mt-0.5">
+                                                        ✨ Invitación Digital (adicional)
+                                                    </div>
+                                                </div>
+                                            ) : (
                                             <div className="flex items-center gap-3 w-full md:w-auto">
                                                 <div className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-center min-w-[130px]">
                                                     <div className="text-[10px] font-bold text-zinc-400 uppercase">Plan Actual</div>
@@ -1004,6 +1012,7 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                                     </div>
                                                 </div>
                                             </div>
+                                            )}
 
                                             {req.notes && (
                                                 <div className="text-xs text-zinc-600 dark:text-zinc-300 italic bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 w-full md:max-w-md">
@@ -1017,7 +1026,9 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                             {isPending ? (
                                                 <div className="flex items-center justify-between w-full">
                                                     <span className="text-[11px] text-amber-700 dark:text-amber-400 font-bold">
-                                                        👉 Al aprobar, la capacidad se amplía al instante y se le notifica a la planner por WhatsApp.
+                                                        {req.type === 'digital_invitation'
+                                                            ? '👉 Al aprobar, la Invitación Digital se habilita al instante y se le notifica a la planner por WhatsApp.'
+                                                            : '👉 Al aprobar, la capacidad se amplía al instante y se le notifica a la planner por WhatsApp.'}
                                                     </span>
 
                                                     <div className="flex items-center gap-2">
@@ -1158,9 +1169,11 @@ export default function PlannersManagement({ onOpenCreateEvent, onRequestsCountC
                                     </span>
                                 </div>
                                 <div className="flex justify-between font-bold">
-                                    <span className="text-zinc-500">Plan Solicitado:</span>
+                                    <span className="text-zinc-500">{approvalModal.request.type === 'digital_invitation' ? 'Servicio Solicitado:' : 'Plan Solicitado:'}</span>
                                     <span className="text-amber-600 dark:text-amber-400 font-extrabold">
-                                        {getPlanBadge(approvalModal.request.requested_plan).label} ({approvalModal.request.requested_guests} invitados)
+                                        {approvalModal.request.type === 'digital_invitation'
+                                            ? 'Invitación Digital (adicional)'
+                                            : `${getPlanBadge(approvalModal.request.requested_plan).label} (${approvalModal.request.requested_guests} invitados)`}
                                     </span>
                                 </div>
                             </div>

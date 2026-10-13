@@ -14,12 +14,13 @@ class Event extends Model
      * Guest capacity per plan. 'custom' has no fixed cap: max_guests is set by hand.
      */
     public const PLANS = [
-        // digital_invitation: el plan incluye la Invitación Digital; si no, se contrata como adicional
+        // digital_invitation: el plan incluye la Invitación Digital. Hoy ninguno la incluye: siempre se
+        // solicita y el admin la habilita por evento (digital_invitation_addon)
         'initial' => ['label' => 'Plan Inicial', 'max_guests' => 100, 'digital_invitation' => false],
-        'medium' => ['label' => 'Plan Medio', 'max_guests' => 150, 'digital_invitation' => true],
-        'pro' => ['label' => 'Plan Pro', 'max_guests' => 180, 'digital_invitation' => true],
-        'premium' => ['label' => 'Plan Premium', 'max_guests' => 300, 'digital_invitation' => true],
-        'custom' => ['label' => 'Personalizado', 'max_guests' => null, 'digital_invitation' => true],
+        'medium' => ['label' => 'Plan Medio', 'max_guests' => 150, 'digital_invitation' => false],
+        'pro' => ['label' => 'Plan Pro', 'max_guests' => 180, 'digital_invitation' => false],
+        'premium' => ['label' => 'Plan Premium', 'max_guests' => 300, 'digital_invitation' => false],
+        'custom' => ['label' => 'Personalizado', 'max_guests' => null, 'digital_invitation' => false],
     ];
 
     public static function planKeys(): string
@@ -214,7 +215,7 @@ class Event extends Model
         abort_unless(
             $this->hasDigitalInvitation(),
             403,
-            'La Invitación Digital no está incluida en el plan de este evento. Contactá a la administración para habilitarla.'
+            'La Invitación Digital no está habilitada para este evento. Podés solicitarla desde la sección Invitación Digital.'
         );
     }
 
@@ -278,7 +279,10 @@ class Event extends Model
 
     public function pendingPlanRequest()
     {
-        return $this->hasOne(PlanRequest::class)->where('status', 'pending')->latestOfMany();
+        return $this->hasOne(PlanRequest::class)
+            ->where('status', 'pending')
+            ->where('type', PlanRequest::TYPE_PLAN)
+            ->latestOfMany();
     }
 
     public function dedications()

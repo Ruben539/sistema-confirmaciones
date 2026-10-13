@@ -340,7 +340,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                                 <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Habilitar Invitación Digital (adicional)
                                             </span>
                                             <span className="text-[10px] text-amber-700 dark:text-amber-400 block">
-                                                El {getPlan(event?.plan_type).label} no la incluye. Activala solo si el cliente pagó el adicional.
+                                                Es un servicio adicional que no incluye ningún plan. Activala solo si el cliente la contrató.
                                             </span>
                                         </div>
                                     </label>

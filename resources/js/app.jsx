@@ -318,6 +318,7 @@ function Dashboard({ user, onLogout }) {
                     ) : activeTab === 'invitation' ? (
                         <EventInteractivePanel
                             event={activeEvent}
+                            user={user}
                             onUpdateEvent={handleSelectEvent}
                             showToast={showToast}
                         />

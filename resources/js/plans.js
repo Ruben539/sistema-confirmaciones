@@ -1,12 +1,13 @@
 // Guest capacity and Digital Invitation per plan. Must match Event::PLANS in app/Models/Event.php.
 // 'custom' has no fixed cap: max_guests is set by hand.
-// Plans without digitalInvitation can get it as a paid add-on (event.digital_invitation_addon).
+// Today no plan includes the Digital Invitation: it's always requested and the admin
+// enables it per event as a paid add-on (event.digital_invitation_addon).
 export const PLANS = [
     { id: 'initial', label: 'Plan Inicial', emoji: '⭐', maxGuests: 100, digitalInvitation: false },
-    { id: 'medium', label: 'Plan Medio', emoji: '🚀', maxGuests: 150, digitalInvitation: true },
-    { id: 'pro', label: 'Plan Pro', emoji: '💎', maxGuests: 180, digitalInvitation: true },
-    { id: 'premium', label: 'Plan Premium', emoji: '👑', maxGuests: 300, digitalInvitation: true },
-    { id: 'custom', label: 'Personalizado', emoji: '✨', maxGuests: null, digitalInvitation: true },
+    { id: 'medium', label: 'Plan Medio', emoji: '🚀', maxGuests: 150, digitalInvitation: false },
+    { id: 'pro', label: 'Plan Pro', emoji: '💎', maxGuests: 180, digitalInvitation: false },
+    { id: 'premium', label: 'Plan Premium', emoji: '👑', maxGuests: 300, digitalInvitation: false },
+    { id: 'custom', label: 'Personalizado', emoji: '✨', maxGuests: null, digitalInvitation: false },
 ];
 
 export const getPlan = (planType) => PLANS.find(p => p.id === planType) || PLANS[0];

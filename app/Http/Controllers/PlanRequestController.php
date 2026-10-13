@@ -35,6 +35,49 @@ class PlanRequestController extends Controller
         return $digits;
     }
 
+    /**
+     * Sends a WhatsApp message to every admin (users with role admin + ADMIN_WHATSAPP_PHONE).
+     * Returns [messages sent, primary admin phone for the planner's direct WhatsApp link].
+     */
+    private function notifyAdmins(string $whatsappMessage): array
+    {
+        $adminPhones = User::where('role', 'admin')
+            ->whereNotNull('phone')
+            ->pluck('phone')
+            ->map(fn($p) => $this->formatParaguayPhone($p))
+            ->filter()
+            ->unique()
+            ->toArray();
+
+        // Also check .env fallback
+        $envAdminPhone = env('ADMIN_WHATSAPP_PHONE');
+        if (!empty($envAdminPhone)) {
+            $adminPhones[] = $this->formatParaguayPhone($envAdminPhone);
+        }
+        $adminPhones = array_values(array_unique(array_filter($adminPhones)));
+
+        $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
+        $sentCount = 0;
+
+        foreach ($adminPhones as $adminPhone) {
+            try {
+                $res = Http::timeout(8)->post($botUrl, [
+                    'phone' => preg_replace('/[^\d]/', '', $adminPhone),
+                    'message' => $whatsappMessage
+                ]);
+                if ($res->successful()) {
+                    $sentCount++;
+                }
+            } catch (\Exception $e) {
+                Log::warning("Error enviando WhatsApp de solicitud a admin {$adminPhone}: " . $e->getMessage());
+            }
+        }
+
+        $primaryAdminPhone = !empty($adminPhones) ? $adminPhones[0] : preg_replace('/[^\d]/', '', env('ADMIN_WHATSAPP_PHONE', '595981000000'));
+
+        return [$sentCount, $primaryAdminPhone];
+    }
+
     public function index()
     {
         $user = Auth::user();
@@ -107,41 +150,9 @@ class PlanRequestController extends Controller
             . "👉 Para autorizar directamente, respondé a este mensaje:\n"
             . "*APROBAR {$planRequest->id}*";
 
-        // Find Administrator(s) phone numbers
-        $adminPhones = User::where('role', 'admin')
-            ->whereNotNull('phone')
-            ->pluck('phone')
-            ->map(fn($p) => $this->formatParaguayPhone($p))
-            ->filter()
-            ->unique()
-            ->toArray();
-
-        // Also check .env fallback
-        $envAdminPhone = env('ADMIN_WHATSAPP_PHONE');
-        if (!empty($envAdminPhone)) {
-            $adminPhones[] = $this->formatParaguayPhone($envAdminPhone);
-        }
-        $adminPhones = array_unique(array_filter($adminPhones));
-
-        $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
-        $sentCount = 0;
-
-        foreach ($adminPhones as $adminPhone) {
-            try {
-                $res = Http::timeout(8)->post($botUrl, [
-                    'phone' => preg_replace('/[^\d]/', '', $adminPhone),
-                    'message' => $whatsappMessage
-                ]);
-                if ($res->successful()) {
-                    $sentCount++;
-                }
-            } catch (\Exception $e) {
-                Log::warning("Error enviando WhatsApp de solicitud de plan a admin {$adminPhone}: " . $e->getMessage());
-            }
-        }
+        [$sentCount, $primaryAdminPhone] = $this->notifyAdmins($whatsappMessage);
 
         // Generate direct WhatsApp link as fallback for the Planner
-        $primaryAdminPhone = !empty($adminPhones) ? $adminPhones[0] : preg_replace('/[^\d]/', '', env('ADMIN_WHATSAPP_PHONE', '595981000000'));
         $encodedText = urlencode("¡Hola! Soy {$plannerName}. Envié una solicitud de ampliación de plan para '{$eventTitle}'. Solicitamos pasar a {$reqPlanLabel} ({$reqGuests} invitados). ¡Muchas gracias!");
         $directWhatsAppUrl = "https://api.whatsapp.com/send?phone={$primaryAdminPhone}&text={$encodedText}";
 
@@ -150,6 +161,78 @@ class PlanRequestController extends Controller
             'request' => $planRequest->load(['event', 'planner']),
             'whatsapp_notified' => $sentCount > 0,
             'direct_whatsapp_url' => $directWhatsAppUrl,
+        ], 201);
+    }
+
+    /**
+     * The planner asks the administration to enable the Digital Invitation (paid add-on) for an event.
+     */
+    public function storeDigitalInvitation(Request $request, $eventId)
+    {
+        $user = Auth::user();
+        $event = Event::with('planner')->findOrFail($eventId);
+
+        if ($user && $user->role === 'planner' && $event->user_id !== $user->id) {
+            return response()->json([
+                'message' => 'No tenés permisos para hacer solicitudes en este evento.'
+            ], 403);
+        }
+
+        if ($event->hasDigitalInvitation()) {
+            return response()->json([
+                'message' => 'Este evento ya tiene la Invitación Digital habilitada.'
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        // One pending request per event is enough
+        $existing = PlanRequest::where('event_id', $event->id)
+            ->where('type', PlanRequest::TYPE_DIGITAL_INVITATION)
+            ->where('status', 'pending')
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'message' => 'Ya hay una solicitud pendiente para este evento. La administración te va a contactar.',
+                'request' => $existing,
+            ]);
+        }
+
+        $planRequest = PlanRequest::create([
+            'event_id' => $event->id,
+            'type' => PlanRequest::TYPE_DIGITAL_INVITATION,
+            'user_id' => $user ? $user->id : ($event->user_id ?? 1),
+            'current_plan' => $event->plan_type ?? 'initial',
+            // The plan doesn't change: keep the current one so plan columns stay meaningful
+            'requested_plan' => $event->plan_type ?? 'initial',
+            'requested_guests' => $event->max_guests ?? Event::planMaxGuests($event->plan_type),
+            'notes' => $validated['notes'] ?? null,
+            'status' => 'pending',
+        ]);
+
+        $plannerName = $user ? $user->name : ($event->planner->name ?? 'Wedding Planner');
+        $plannerPhone = $user ? ($user->phone ?? 'Sin teléfono') : '';
+        $eventTitle = $event->couple_names ?? $event->title;
+        $notesText = !empty($validated['notes']) ? "\n💬 *Mensaje de la Planner:* \"{$validated['notes']}\"" : "";
+
+        $whatsappMessage = "✨ *SOLICITUD DE INVITACIÓN DIGITAL* 💌\n\n"
+            . "👤 *Wedding Planner:* {$plannerName}\n"
+            . "📱 *Teléfono:* {$plannerPhone}\n"
+            . "🎪 *Evento:* {$eventTitle}{$notesText}\n\n"
+            . "👉 Para habilitarla directamente, respondé a este mensaje:\n"
+            . "*APROBAR {$planRequest->id}*";
+
+        [$sentCount, $primaryAdminPhone] = $this->notifyAdmins($whatsappMessage);
+
+        $encodedText = urlencode("¡Hola! Soy {$plannerName}. Me interesa la Invitación Digital para el evento '{$eventTitle}'. ¡Muchas gracias!");
+
+        return response()->json([
+            'message' => '¡Solicitud enviada! La administración te va a contactar para habilitar la Invitación Digital.',
+            'request' => $planRequest,
+            'whatsapp_notified' => $sentCount > 0,
+            'direct_whatsapp_url' => "https://api.whatsapp.com/send?phone={$primaryAdminPhone}&text={$encodedText}",
         ], 201);
     }
 
@@ -166,10 +249,7 @@ class PlanRequestController extends Controller
         $planRequest = PlanRequest::with(['event', 'planner'])->findOrFail($id);
         $event = $planRequest->event;
 
-        $event->update([
-            'plan_type' => $planRequest->requested_plan,
-            'max_guests' => $planRequest->requested_guests,
-        ]);
+        $planRequest->applyToEvent();
 
         $planRequest->update([
             'status' => 'approved',
@@ -187,7 +267,9 @@ class PlanRequestController extends Controller
             try {
                 Http::timeout(8)->post($botUrl, [
                     'phone' => preg_replace('/[^\d]/', '', $cleanPlannerPhone),
-                    'message' => "🎉 ¡Hola {$planner->name}! Tu solicitud de ampliación de plan para el evento '{$eventTitle}' fue *APROBADA*.\n\nNuevo plan: *" . (Event::PLANS[$planRequest->requested_plan]['label'] ?? $planRequest->requested_plan) . "* con un cupo máximo de *{$planRequest->requested_guests} invitados*. Ya podés continuar cargando invitados."
+                    'message' => $planRequest->isDigitalInvitation()
+                        ? "🎉 ¡Hola {$planner->name}! La *Invitación Digital* para el evento '{$eventTitle}' ya está *HABILITADA*.\n\nYa podés configurarla desde la sección Invitación Digital del panel."
+                        : "🎉 ¡Hola {$planner->name}! Tu solicitud de ampliación de plan para el evento '{$eventTitle}' fue *APROBADA*.\n\nNuevo plan: *" . (Event::PLANS[$planRequest->requested_plan]['label'] ?? $planRequest->requested_plan) . "* con un cupo máximo de *{$planRequest->requested_guests} invitados*. Ya podés continuar cargando invitados."
                 ]);
             } catch (\Exception $e) {
                 Log::warning("Error notificando aprobación a planner: " . $e->getMessage());
@@ -195,7 +277,9 @@ class PlanRequestController extends Controller
         }
 
         return response()->json([
-            'message' => "Solicitud aprobada con éxito. El evento '{$event->title}' ahora cuenta con capacidad para {$planRequest->requested_guests} invitados.",
+            'message' => $planRequest->isDigitalInvitation()
+                ? "Solicitud aprobada. El evento '{$event->title}' ya tiene la Invitación Digital habilitada."
+                : "Solicitud aprobada con éxito. El evento '{$event->title}' ahora cuenta con capacidad para {$planRequest->requested_guests} invitados.",
             'request' => $planRequest->fresh(['event', 'planner', 'reviewer']),
             'event' => $event->fresh()
         ]);
@@ -230,7 +314,7 @@ class PlanRequestController extends Controller
             try {
                 Http::timeout(8)->post($botUrl, [
                     'phone' => preg_replace('/[^\d]/', '', $cleanPlannerPhone),
-                    'message' => "ℹ️ Hola {$planner->name}. Tu solicitud de ampliación de plan para el evento '{$eventTitle}' no fue autorizada en esta ocasión.\n\nMotivo: \"{$adminNotes}\"\n\nPodés comunicarte con la administración ante cualquier duda."
+                    'message' => "ℹ️ Hola {$planner->name}. Tu solicitud de " . ($planRequest->isDigitalInvitation() ? 'Invitación Digital' : 'ampliación de plan') . " para el evento '{$eventTitle}' no fue autorizada en esta ocasión.\n\nMotivo: \"{$adminNotes}\"\n\nPodés comunicarte con la administración ante cualquier duda."
                 ]);
             } catch (\Exception $e) {
                 Log::warning("Error notificando rechazo a planner: " . $e->getMessage());

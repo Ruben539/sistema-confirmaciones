@@ -103,6 +103,7 @@ Route::prefix('api')->group(function () {
     // Plan Upgrade Requests & Admin Approval Routes
     Route::get('/plan-requests', [PlanRequestController::class, 'index']);
     Route::post('/events/{eventId}/plan-request', [PlanRequestController::class, 'store']);
+    Route::post('/events/{eventId}/digital-invitation-request', [PlanRequestController::class, 'storeDigitalInvitation']);
     Route::post('/plan-requests/{id}/approve', [PlanRequestController::class, 'approve']);
     Route::post('/plan-requests/{id}/reject', [PlanRequestController::class, 'reject']);
 
