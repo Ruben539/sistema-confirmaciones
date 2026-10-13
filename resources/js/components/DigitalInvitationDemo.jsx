@@ -1,18 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Sparkles, Music, Gift, Tv, Heart, Calendar, MapPin, Palette, Shirt, Disc,
-    CheckCircle2, MessageSquare, Send, Clock, ShieldCheck
+    Sparkles, Music, Gift, Tv, Heart, Calendar, MapPin, Disc,
+    CheckCircle2, MessageSquare, Send, Clock, ShieldCheck, Link2, HelpCircle, Camera, Star
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
-const FEATURES = [
-    { icon: Palette, color: 'text-rose-500', title: 'Diseño a medida', text: 'Colores, tipografías y portada con el estilo del evento.' },
-    { icon: Music, color: 'text-emerald-500', title: 'Música de fondo', text: 'Spotify o la canción especial sonando al abrir la invitación.' },
-    { icon: Calendar, color: 'text-blue-500', title: 'Cuenta regresiva', text: 'Días, horas y minutos que faltan para la fiesta.' },
-    { icon: Gift, color: 'text-amber-500', title: 'Regalos', text: 'CBU, alias o lista de regalos con copia en un toque.' },
-    { icon: Shirt, color: 'text-violet-500', title: 'Dress code', text: 'Vestimenta sugerida con notas para los invitados.' },
-    { icon: Disc, color: 'text-teal-500', title: 'Canciones para el DJ', text: 'Los invitados piden sus temas antes de la fiesta.' },
-    { icon: Tv, color: 'text-pink-500', title: 'Pantalla gigante', text: 'Fotos, videos y dedicatorias proyectadas en vivo en el salón.' },
+// Benefits for the event, written for a planner who already uses WhatsApp confirmations
+const BENEFITS = [
+    {
+        icon: Link2, color: 'text-emerald-500',
+        title: 'Se suma a lo que ya usás',
+        text: 'El link de la invitación va en el mismo mensaje de WhatsApp. El invitado confirma igual que hoy y además la abre desde su celular.',
+    },
+    {
+        icon: HelpCircle, color: 'text-blue-500',
+        title: 'Menos consultas repetidas',
+        text: 'Ubicación con mapa, horario, dress code y datos para regalos en un solo lugar. Los invitados dejan de preguntarte lo mismo uno por uno.',
+    },
+    {
+        icon: Calendar, color: 'text-rose-500',
+        title: 'Invitados más comprometidos',
+        text: 'La cuenta regresiva y una invitación con el estilo de los novios generan expectativa y ayudan a que confirmen a tiempo.',
+    },
+    {
+        icon: Disc, color: 'text-teal-500',
+        title: 'Una fiesta con la música que quieren',
+        text: 'Los invitados piden sus canciones antes del evento y el DJ llega con la lista armada.',
+    },
+    {
+        icon: Tv, color: 'text-pink-500',
+        title: 'Un momento wow en el salón',
+        text: 'Fotos, videos y dedicatorias de los invitados se proyectan en vivo en la pantalla gigante, con moderación antes de salir.',
+    },
+    {
+        icon: Camera, color: 'text-amber-500',
+        title: 'Recuerdos para los novios',
+        text: 'Las fotos, videos y mensajes que suben los invitados quedan guardados como recuerdo de la fiesta.',
+    },
 ];
 
 const formatDate = (iso) => {
@@ -78,14 +102,15 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
             {/* Header */}
             <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-zinc-900 via-zinc-850 to-zinc-900 text-white border border-zinc-800 shadow-2xl space-y-3">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[10px] font-black tracking-widest uppercase">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Ya tenés las confirmaciones por WhatsApp
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Ya confirmás invitados por WhatsApp
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-black tracking-tight">
-                    Sumá la <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400">Invitación Digital</span>
+                    Llevá el evento de <span className="text-white">{hosts}</span> al siguiente nivel con la{' '}
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-400">Invitación Digital</span>
                 </h2>
                 <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl">
-                    Una invitación web con el estilo del evento, música, regalos, cuenta regresiva y una pantalla gigante
-                    con las fotos y dedicatorias de los invitados en vivo. Mirá cómo se vería para <strong className="text-white">{hosts}</strong>.
+                    Podés sumarla a este evento sin cambiar nada de cómo trabajás hoy: las confirmaciones siguen llegando por WhatsApp,
+                    y los invitados además reciben una invitación que los entusiasma, les responde todas sus dudas y los hace parte de la fiesta.
                 </p>
             </div>
 
@@ -125,10 +150,13 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
                     </div>
                 </div>
 
-                {/* Features + call to action */}
+                {/* Benefits + call to action */}
                 <div className="lg:col-span-3 space-y-5">
+                    <h3 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                        <Star className="w-4 h-4 text-amber-500" /> Cómo mejora tu evento
+                    </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {FEATURES.map(({ icon: Icon, color, title, text }) => (
+                        {BENEFITS.map(({ icon: Icon, color, title, text }) => (
                             <div key={title} className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm flex gap-3">
                                 <Icon className={`w-5 h-5 shrink-0 ${color}`} />
                                 <div>
@@ -171,8 +199,12 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
                         ) : (
                             <>
                                 <div className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
-                                    <Sparkles className="w-4 h-4 text-amber-500" /> ¿Te interesa para este evento?
+                                    <Sparkles className="w-4 h-4 text-amber-500" /> ¿Querés sumarla al evento de {hosts}?
                                 </div>
+                                <p className="text-[11px] text-zinc-600 dark:text-zinc-300">
+                                    Envianos la solicitud y te contactamos con el costo. Una vez habilitada, la configurás vos misma desde esta sección,
+                                    con el estilo, la música y los datos que quieran los novios.
+                                </p>
                                 <textarea
                                     rows={2}
                                     value={notes}
@@ -191,7 +223,7 @@ export default function DigitalInvitationDemo({ event, user, showToast }) {
                                     <span>{sending ? 'Enviando...' : 'Solicitar Invitación Digital'}</span>
                                 </button>
                                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                                    Es un servicio adicional. La administración te contacta con el costo y la habilita en este evento.
+                                    Servicio adicional, independiente del plan. Tus confirmaciones por WhatsApp siguen funcionando igual.
                                 </p>
                             </>
                         )}
