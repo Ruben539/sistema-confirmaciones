@@ -36,6 +36,22 @@ export class BaileysTransporter implements LeadExternal {
     try {
       if (typeof makeInMemoryStore === "function") {
         this.store = makeInMemoryStore({ logger: pino({ level: "silent" }) as any });
+        const storeDir = path.join(process.cwd(), "tokens");
+        if (!fs.existsSync(storeDir)) {
+          fs.mkdirSync(storeDir, { recursive: true });
+        }
+        const storeFile = path.join(storeDir, `${sessionName}_store.json`);
+        if (fs.existsSync(storeFile)) {
+          try {
+            this.store.readFromFile(storeFile);
+          } catch (_) {}
+        }
+        // Guardar store periódicamente para responder a reintentos de cifrado (Signal Protocol)
+        setInterval(() => {
+          try {
+            if (this.store) this.store.writeToFile(storeFile);
+          } catch (_) {}
+        }, 15000);
       }
     } catch (e) {
       console.warn("[Baileys] No se pudo crear inMemoryStore:", (e as Error).message);
