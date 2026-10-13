@@ -7,6 +7,7 @@ import {
     Download, Car, Trophy, Award, HelpCircle, Layout
 } from 'lucide-react';
 import { apiFetch } from '../api';
+import { buildThemeStyle, isAdvancedDesign, useInvitationFonts, formatInvitationDate, hexToRgba } from '../invitationTheme';
 
 // demo: sample data (see demoInvitation.js). Renders a full invitation with no API calls and nothing saved.
 export default function GuestRsvp({ token, eventId, isPublic = false, demo = null }) {
@@ -133,6 +134,11 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
     };
 
     const event = data?.event || null;
+
+    // "Diseño avanzado": load the chosen Google Fonts (must run before the early returns below)
+    const themeStyles = event?.invitation_styles || {};
+    const advancedDesign = isAdvancedDesign(themeStyles);
+    useInvitationFonts(advancedDesign ? [themeStyles.heading_font, themeStyles.script_font, themeStyles.body_font] : []);
     const guest = data?.guest || null;
     const dedications = data?.dedications || [];
     const features = event?.features_enabled || {
@@ -1091,14 +1097,33 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
     const envelopeSealColor = invitationStyles.envelope_seal_color || '#D97706';
     const fontHeadingClass = fontFam === 'serif' ? 'font-serif-luxury' : fontFam === 'script' ? 'font-script-romantic' : 'font-sans';
     const customBg = invitationStyles.background_value;
+    const invitationDateInfo = formatInvitationDate(event?.event_date, invitationStyles.hero_time);
+    const isFormalCard = advancedDesign && (invitationStyles.card_layout !== 'classic_banner');
 
     return (
         <div 
-            className="min-h-screen text-zinc-900 dark:text-white font-sans transition-colors pb-16 relative"
-            style={{
+            className={`min-h-screen text-zinc-900 dark:text-white font-sans transition-colors pb-16 relative ${
+                advancedDesign ? `inv-themed ${invitationStyles.card_style === 'glass' ? 'inv-glass' : ''} ${event.cover_photo_url ? '' : 'inv-no-cover'}` : ''
+            }`}
+            style={advancedDesign ? buildThemeStyle(invitationStyles) : {
                 background: customBg || 'linear-gradient(180deg, rgba(255, 241, 242, 0.6) 0%, rgb(250, 250, 249) 50%, rgba(254, 243, 199, 0.4) 100%)',
             }}
         >
+            {/* FIXED BACKGROUND LAYER FOR MOBILE & DESKTOP (smooth, no iOS jitter) */}
+            {advancedDesign && (
+                <div 
+                    className="fixed inset-0 pointer-events-none -z-10 bg-center"
+                    style={{
+                        backgroundColor: invitationStyles.background_color || '#EFE6DF',
+                        backgroundImage: invitationStyles.background_image_url 
+                            ? `linear-gradient(${hexToRgba(invitationStyles.background_overlay_color || '#ffffff', (invitationStyles.background_overlay_opacity ?? 0) / 100)}, ${hexToRgba(invitationStyles.background_overlay_color || '#ffffff', (invitationStyles.background_overlay_opacity ?? 0) / 100)}), url("${invitationStyles.background_image_url}")` 
+                            : 'none',
+                        backgroundSize: invitationStyles.background_fit === 'repeat' ? 'auto' : (invitationStyles.background_fit || 'cover'),
+                        backgroundRepeat: invitationStyles.background_fit === 'repeat' ? 'repeat' : 'no-repeat',
+                        backgroundPosition: 'center top',
+                    }}
+                />
+            )}
             
             {demo && (
                 <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[9999] px-4 py-1.5 rounded-full bg-zinc-950/85 text-white text-[11px] font-bold shadow-xl backdrop-blur border border-amber-400/40 whitespace-nowrap">
@@ -1590,69 +1615,212 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
                 </div>
             )}
 
-            {/* HERO COVER BANNER */}
-            <div className="relative w-full min-h-[500px] sm:min-h-[580px] flex items-center justify-center text-center overflow-hidden">
-                {/* Background Image / Cover */}
-                {event.cover_photo_url ? (
-                    <div className="absolute inset-0">
-                        <img 
-                            src={event.cover_photo_url} 
-                            alt={event.couple_names || event.title}
-                            className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/90 dark:to-zinc-950" />
-                    </div>
-                ) : (
-                    <div className="absolute inset-0 bg-gradient-to-b from-rose-900 via-zinc-950 to-zinc-950">
-                        <div className="absolute -top-40 -right-40 w-96 h-96 bg-rose-500/20 rounded-full blur-3xl" />
-                        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-amber-500/20 rounded-full blur-3xl" />
-                    </div>
-                )}
+            {/* HERO: FORMAL INVITATION CARD (ADVANCED DESIGN) OR CLASSIC COVER BANNER */}
+            {isFormalCard ? (
+                <div className="relative z-10 w-full max-w-lg mx-auto pt-6 sm:pt-10 pb-4 px-4 sm:px-6">
+                    <div 
+                        className={`rounded-3xl p-8 sm:p-12 text-center shadow-2xl border transition-all duration-300 relative overflow-hidden ${
+                            invitationStyles.card_style === 'glass' ? 'backdrop-blur-xl' : ''
+                        }`}
+                        style={{
+                            backgroundColor: 'var(--inv-card-bg)',
+                            borderColor: 'var(--inv-border)',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                        }}
+                    >
+                        {/* 1. Occasion / Tagline */}
+                        <div 
+                            className="text-[11px] sm:text-xs uppercase font-semibold mb-5 tracking-[0.22em] opacity-90"
+                            style={{ fontFamily: 'var(--inv-heading-font)', color: 'var(--inv-heading)' }}
+                        >
+                            {invitationStyles.hero_tagline || 'INVITA A SU FIESTA DE QUINCE'}
+                        </div>
 
-                {/* Hero Content */}
-                <div className="relative z-10 p-6 max-w-2xl mx-auto space-y-4 text-white">
-                    <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 dark:bg-zinc-800/60 backdrop-blur-md border border-white/30 text-xs font-black tracking-widest uppercase">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                        Invitación Especial
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-                    </div>
+                        {/* 2. Main Name / Quinceañera / Pareja */}
+                        <h1 
+                            className="text-4xl sm:text-5xl md:text-6xl uppercase tracking-[0.1em] font-normal leading-none mb-1"
+                            style={{ fontFamily: 'var(--inv-heading-font)', color: 'var(--inv-heading)' }}
+                        >
+                            {event?.couple_names || event?.title}
+                        </h1>
 
-                    <h1 className={`text-4xl sm:text-6xl font-black tracking-tight drop-shadow-lg ${fontHeadingClass}`}>
-                        {event?.couple_names || event?.title}
-                    </h1>
-
-                    {guest && (
-                        <p className="text-base sm:text-lg font-medium text-zinc-200 drop-shadow">
-                            ¡Hola <span className="font-extrabold text-amber-300">{guest.name}</span>! Nos llena de felicidad invitarte a compartir este momento tan soñado con nosotros.
-                        </p>
-                    )}
-
-                    {event.welcome_message && (
-                        <p className="text-xs sm:text-sm text-zinc-300 italic max-w-md mx-auto leading-relaxed">
-                            "{event.welcome_message}"
-                        </p>
-                    )}
-
-                    {/* Spotify Direct Button in Hero */}
-                    {event.spotify_url && (
-                        <div className="pt-2">
-                            <a
-                                href={event.spotify_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-all shadow-xl hover:scale-105"
+                        {/* 3. Cursive Subtitle / Surnames */}
+                        {invitationStyles.hero_subtitle && (
+                            <p 
+                                className="inv-script text-3xl sm:text-4xl md:text-5xl leading-tight -mt-1 mb-6"
+                                style={{ fontFamily: 'var(--inv-script-font)', color: 'var(--inv-heading)' }}
                             >
-                                <Disc className="w-4 h-4 animate-spin-slow" />
-                                <span>Escuchar nuestra Playlist en Spotify</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
+                                {invitationStyles.hero_subtitle}
+                            </p>
+                        )}
+
+                        {/* 4. Day of Week in Script & Numeric Date */}
+                        {(invitationDateInfo.numericDate || invitationDateInfo.weekday) && (
+                            <div className="my-6 space-y-1">
+                                {invitationDateInfo.weekday && (
+                                    <div 
+                                        className="inv-script text-2xl sm:text-3xl leading-none"
+                                        style={{ fontFamily: 'var(--inv-script-font)', color: 'var(--inv-heading)' }}
+                                    >
+                                        {invitationDateInfo.weekday}
+                                    </div>
+                                )}
+                                <div 
+                                    className="text-3xl sm:text-4xl font-normal tracking-[0.14em]"
+                                    style={{ fontFamily: 'var(--inv-heading-font)', color: 'var(--inv-heading)' }}
+                                >
+                                    {invitationDateInfo.numericDate}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 5. Location / Venue Name */}
+                        {event?.location && (
+                            <div 
+                                className="text-xs sm:text-sm uppercase tracking-[0.18em] font-semibold mt-5"
+                                style={{ fontFamily: 'var(--inv-heading-font)', color: 'var(--inv-heading)' }}
+                            >
+                                {event.location.split(',')[0]}
+                            </div>
+                        )}
+
+                        {/* 6. Event Time */}
+                        {(invitationStyles.hero_time || invitationDateInfo.time) && (
+                            <div 
+                                className="text-[11px] sm:text-xs uppercase tracking-[0.18em] font-medium mt-1 opacity-90"
+                                style={{ fontFamily: 'var(--inv-heading-font)', color: 'var(--inv-heading)' }}
+                            >
+                                {invitationStyles.hero_time || invitationDateInfo.time}
+                            </div>
+                        )}
+
+                        {/* 7. Dress Code */}
+                        {(event?.dress_code || invitationStyles.hero_dress_code) && (
+                            <div 
+                                className="text-[10px] sm:text-xs uppercase tracking-[0.2em] font-medium mt-6 opacity-85"
+                                style={{ fontFamily: 'var(--inv-heading-font)', color: 'var(--inv-heading)' }}
+                            >
+                                {event?.dress_code || invitationStyles.hero_dress_code}
+                            </div>
+                        )}
+
+                        {/* 8. Ornamental Divider */}
+                        <div className="flex items-center justify-center gap-3 mt-4 opacity-75">
+                            <div className="h-px w-10 sm:w-14" style={{ backgroundColor: 'var(--inv-border)' }} />
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" style={{ color: 'var(--inv-primary)' }}>
+                                <path d="M12 3C12 3 13.5 7 17 8.5C13.5 10 12 14 12 14C12 14 10.5 10 7 8.5C10.5 7 12 3 12 3Z" />
+                            </svg>
+                            <div className="h-px w-10 sm:w-14" style={{ backgroundColor: 'var(--inv-border)' }} />
+                        </div>
+
+                        {/* Welcome message / Dedicatoria if present */}
+                        {event?.welcome_message && (
+                            <p 
+                                className="text-xs sm:text-sm italic mt-5 max-w-sm mx-auto leading-relaxed opacity-85"
+                                style={{ color: 'var(--inv-muted)' }}
+                            >
+                                "{event.welcome_message}"
+                            </p>
+                        )}
+
+                        {/* Guest Personalized Greeting */}
+                        {guest && (
+                            <div className="mt-6 pt-4 border-t border-dashed" style={{ borderColor: 'var(--inv-border)' }}>
+                                <p className="text-xs sm:text-sm font-medium" style={{ color: 'var(--inv-text)' }}>
+                                    ¡Hola <span className="font-bold">{guest.name}</span>! Nos llena de alegría compartir este día con vos.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Spotify button if present */}
+                        {event?.spotify_url && (
+                            <div className="pt-4">
+                                <a
+                                    href={event.spotify_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold text-white transition-all shadow-md hover:scale-105"
+                                    style={{ backgroundColor: 'var(--inv-primary)' }}
+                                >
+                                    <Disc className="w-3.5 h-3.5 animate-spin-slow" />
+                                    <span>Escuchar Playlist en Spotify</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                </a>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                /* HERO COVER BANNER (CLASSIC) */
+                <div className="relative w-full min-h-[500px] sm:min-h-[580px] flex items-center justify-center text-center overflow-hidden">
+                    {/* Background Image / Cover */}
+                    {event.cover_photo_url ? (
+                        <div className="absolute inset-0">
+                            <img 
+                                src={event.cover_photo_url} 
+                                alt={event.couple_names || event.title}
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-black/90 dark:to-zinc-950" />
+                        </div>
+                    ) : (
+                        <div className="inv-hero-default absolute inset-0 bg-gradient-to-b from-rose-900 via-zinc-950 to-zinc-950">
+                            <div className="absolute -top-40 -right-40 w-96 h-96 bg-rose-500/20 rounded-full blur-3xl" />
+                            <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-amber-500/20 rounded-full blur-3xl" />
                         </div>
                     )}
+
+                    {/* Hero Content */}
+                    <div className={`inv-hero-content relative z-10 p-6 max-w-2xl mx-auto space-y-4 text-white ${event.cover_photo_url ? 'inv-keep' : ''}`}>
+                        <div className="inv-hero-pill inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/20 dark:bg-zinc-800/60 backdrop-blur-md border border-white/30 text-xs font-black tracking-widest uppercase">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                            {(advancedDesign && invitationStyles.hero_tagline) || 'Invitación Especial'}
+                            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                        </div>
+
+                        <h1 className={`text-4xl sm:text-6xl font-black tracking-tight drop-shadow-lg ${fontHeadingClass} ${advancedDesign ? 'inv-heading font-normal uppercase tracking-wide' : ''}`}>
+                            {event?.couple_names || event?.title}
+                        </h1>
+
+                        {advancedDesign && invitationStyles.hero_subtitle && (
+                            <p className="inv-script text-3xl sm:text-5xl leading-tight -mt-2" style={event.cover_photo_url ? { color: '#ffffff' } : undefined}>
+                                {invitationStyles.hero_subtitle}
+                            </p>
+                        )}
+
+                        {guest && (
+                            <p className="text-base sm:text-lg font-medium text-zinc-200 drop-shadow">
+                                ¡Hola <span className="font-extrabold text-amber-300">{guest.name}</span>! Nos llena de felicidad invitarte a compartir este momento tan soñado con nosotros.
+                            </p>
+                        )}
+
+                        {event.welcome_message && (
+                            <p className="text-xs sm:text-sm text-zinc-300 italic max-w-md mx-auto leading-relaxed">
+                                "{event.welcome_message}"
+                            </p>
+                        )}
+
+                        {/* Spotify Direct Button in Hero */}
+                        {event.spotify_url && (
+                            <div className="pt-2">
+                                <a
+                                    href={event.spotify_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-all shadow-xl hover:scale-105"
+                                >
+                                    <Disc className="w-4 h-4 animate-spin-slow" />
+                                    <span>Escuchar nuestra Playlist en Spotify</span>
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* MAIN CONTENT WRAPPER */}
-            <div className="max-w-3xl mx-auto px-4 sm:px-6 -mt-16 relative z-20 space-y-8">
+            <div className={`max-w-3xl mx-auto px-4 sm:px-6 relative z-20 space-y-8 ${isFormalCard ? 'mt-4' : '-mt-16'}`}>
 
                 {/* COUNTDOWN TIMER CARD */}
                 {features.countdown && event.event_date && (

@@ -5,6 +5,8 @@ import {
     Palette, Wand2, Eye, Sliders, RefreshCw, Loader2, Search, Radio, Headphones
 } from 'lucide-react';
 import { apiFetch } from '../api';
+import AdvancedDesignEditor, { AdvancedDesignPreview } from './AdvancedDesignEditor';
+import { isAdvancedDesign } from '../invitationTheme';
 
 const THEME_PRESETS = [
     {
@@ -921,6 +923,9 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                 </div>
                             </div>
 
+                            {/* ADVANCED DESIGN: background image, full palette, fonts */}
+                            <AdvancedDesignEditor event={event} styles={invitationStyles} setStyles={setInvitationStyles} />
+
                             {/* LIVE MINI PREVIEW */}
                             <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 space-y-3">
                                 <div className="flex items-center justify-between">
@@ -933,6 +938,9 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                     </span>
                                 </div>
 
+                                {isAdvancedDesign(invitationStyles) ? (
+                                    <AdvancedDesignPreview event={event} styles={invitationStyles} />
+                                ) : (
                                 <div
                                     className="rounded-2xl p-6 border text-center relative overflow-hidden transition-all duration-300"
                                     style={{
@@ -986,6 +994,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                         Confirmar Asistencia
                                     </button>
                                 </div>
+                                )}
                             </div>
                         </div>
                     )}

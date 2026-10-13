@@ -9,6 +9,12 @@ use Illuminate\Support\Facades\Auth;
 
 class EventController extends Controller
 {
+    // Only staff of the event (admin, its planner, its hostesses) can touch it
+    private function authorizeEvent(Event $event): void
+    {
+        abort_unless(Auth::user()?->canAccessEvent($event), 403, 'Acceso denegado: no tenés permisos sobre este evento.');
+    }
+
     public function index()
     {
         $user = Auth::user();
@@ -195,6 +201,7 @@ class EventController extends Controller
     public function uploadCoverPhoto(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $request->validate([
             'photo' => 'required|image|mimes:jpeg,png,jpg,webp|max:15360',
         ]);
@@ -228,9 +235,44 @@ class EventController extends Controller
         ]);
     }
 
+    /**
+     * Background image of the digital invitation ("Diseño avanzado"). Returns its URL; the editor
+     * keeps it in invitation_styles.background_image_url and saves it with the rest of the design.
+     */
+    public function uploadInvitationBackground(Request $request, $id)
+    {
+        $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
+        $event->ensureDigitalInvitation();
+
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:15360',
+        ]);
+
+        $file = $request->file('image');
+        $url = null;
+
+        if (\App\Services\GoogleDriveService::isConfigured()) {
+            $drive = new \App\Services\GoogleDriveService();
+            $ext = $file->getClientOriginalExtension() ?: 'jpg';
+            $result = $drive->uploadEventFile($event, $file, 'fondo_invitacion_' . $event->id . '_' . time() . '.' . $ext);
+            $url = $result['direct_url'] ?? null;
+        }
+
+        if (!$url) {
+            $url = \Illuminate\Support\Facades\Storage::disk('public')->url($file->store('invitation-backgrounds', 'public'));
+        }
+
+        return response()->json([
+            'message' => 'Imagen de fondo subida.',
+            'url' => $url,
+        ]);
+    }
+
     public function removeCoverPhoto($id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
 
         if ($event->cover_photo_path) {
             $disk = \Illuminate\Support\Facades\Storage::disk('public');
@@ -251,6 +293,7 @@ class EventController extends Controller
     public function uploadBackgroundMusic(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $event->ensureDigitalInvitation();
         $request->validate([
             'music' => 'required|file|mimes:mp3,wav,ogg,m4a,aac,webm|max:30720', // max 30MB
@@ -288,6 +331,7 @@ class EventController extends Controller
     public function saveInvitationStyles(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $event->ensureDigitalInvitation();
         $validated = $request->validate([
             'styles' => 'required|array',
@@ -307,6 +351,7 @@ class EventController extends Controller
     public function generateAiStylePalette(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $event->ensureDigitalInvitation();
         $gemini = new \App\Services\GoogleGeminiService();
         $vibe = $request->input('vibe');
@@ -329,6 +374,7 @@ class EventController extends Controller
     public function generateAiInvitationCopy(Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $event->ensureDigitalInvitation();
         $gemini = new \App\Services\GoogleGeminiService();
         $tone = $request->input('tone', 'romantic');
@@ -351,6 +397,7 @@ class EventController extends Controller
     public function removeBackgroundMusic($id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         if ($event->background_music_path) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($event->background_music_path);
             $event->update(['background_music_path' => null]);
@@ -364,6 +411,7 @@ class EventController extends Controller
     public function getSongSuggestions($id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $richRequests = collect();
 
         try {
@@ -431,6 +479,7 @@ class EventController extends Controller
     public function toggleSongRequestPlayed($id, $requestId)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         try {
             if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
                 $songReq = \App\Models\EventSongRequest::where('event_id', $event->id)->find($requestId);
@@ -452,6 +501,7 @@ class EventController extends Controller
     public function deleteSongRequest($id, $requestId)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         try {
             if (\Illuminate\Support\Facades\Schema::hasTable('event_song_requests')) {
                 $songReq = \App\Models\EventSongRequest::where('event_id', $event->id)->find($requestId);
@@ -470,6 +520,7 @@ class EventController extends Controller
     public function createSongRequest(\Illuminate\Http\Request $request, $id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $event->ensureDigitalInvitation();
         $validated = $request->validate([
             'song_title' => 'required|string|max:255',
@@ -527,6 +578,7 @@ class EventController extends Controller
     public function getDedications($id)
     {
         $event = Event::findOrFail($id);
+        $this->authorizeEvent($event);
         $dedications = [];
         try {
             if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
@@ -543,6 +595,7 @@ class EventController extends Controller
 
     public function toggleDedicationApproval($id, $dedicationId)
     {
+        $this->authorizeEvent(Event::findOrFail($id));
         $dedication = \App\Models\EventDedication::where('event_id', $id)->findOrFail($dedicationId);
         $dedication->update(['is_approved' => !$dedication->is_approved]);
 
@@ -554,6 +607,7 @@ class EventController extends Controller
 
     public function deleteDedication($id, $dedicationId)
     {
+        $this->authorizeEvent(Event::findOrFail($id));
         $dedication = \App\Models\EventDedication::where('event_id', $id)->findOrFail($dedicationId);
         $driveFileId = \App\Services\GoogleDriveService::fileIdFromUrl($dedication->media_path);
         if ($driveFileId) {

@@ -120,6 +120,7 @@ Route::prefix('api')->group(function () {
         Route::post('/events/{id}/background-music', [EventController::class, 'uploadBackgroundMusic']);
         Route::delete('/events/{id}/background-music', [EventController::class, 'removeBackgroundMusic']);
         Route::post('/events/{id}/styles', [EventController::class, 'saveInvitationStyles']);
+        Route::post('/events/{id}/invitation-background', [EventController::class, 'uploadInvitationBackground']);
         Route::match(['get', 'post'], '/events/{id}/ai-style-palette', [EventController::class, 'generateAiStylePalette'])->middleware('throttle:20,1');
         Route::match(['get', 'post'], '/events/{id}/ai-invitation-copy', [EventController::class, 'generateAiInvitationCopy'])->middleware('throttle:20,1');
         Route::get('/events/{id}/song-suggestions', [EventController::class, 'getSongSuggestions']);
