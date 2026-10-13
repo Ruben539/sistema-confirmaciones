@@ -493,16 +493,46 @@ class GuestController extends Controller
             $validated['table_number'] = $table?->name;
         }
 
+        $previousStatus = $guest->status;
         $guest->update($validated);
 
         if (isset($validated['status']) && in_array($validated['status'], ['confirmed', 'attended'])) {
             \App\Services\EventMilestoneService::checkMilestone($guest->event_id);
         }
 
+        // Si se acaba de confirmar el invitado desde la web: enviar automáticamente el Pase QR por WhatsApp
+        if (isset($validated['status']) && $validated['status'] === 'confirmed' && $previousStatus !== 'confirmed' && !empty($guest->phone)) {
+            $this->sendWhatsAppQrPass($guest);
+        }
+
         return response()->json([
             'message' => 'Invitado actualizado',
             'guest' => $guest
         ]);
+    }
+
+    public function sendWhatsAppQrPass(Guest $guest)
+    {
+        try {
+            $event = $guest->event;
+            $botUrl = config('whatsapp.bot_url') ?: 'http://127.0.0.1:3001/lead';
+            $coupleNames = $event ? ($event->couple_names ?? $event->title) : 'los novios';
+            $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
+            $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
+
+            $message = "¡Hola {$guest->name}! 🎉 Tu asistencia al evento de {$coupleNames} ha sido confirmada.{$locationText}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento. Presentalo en la recepción para tu ingreso rápido. ¡Te esperamos!";
+
+            $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
+
+            \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
+                'phone' => $cleanPhone,
+                'message' => $message,
+                'mediaUrl' => $qrUrl,
+                'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("[GuestController] No se pudo enviar WhatsApp con QR al confirmar desde la web: " . $e->getMessage());
+        }
     }
 
     public function markSent(Request $request, $id)

@@ -128,12 +128,41 @@ class RsvpController extends Controller
 
         if ($validated['status'] === 'confirmed') {
             EventMilestoneService::checkMilestone($guest->event_id);
+
+            // Enviar Pase Digital con QR al WhatsApp del invitado si tiene teléfono
+            if (!empty($guest->phone)) {
+                $this->sendWhatsAppQrPass($guest);
+            }
         }
 
         return response()->json([
             'message' => '¡Gracias! Tu respuesta ha sido registrada con éxito.',
             'guest' => $guest->fresh()
         ]);
+    }
+
+    private function sendWhatsAppQrPass(Guest $guest)
+    {
+        try {
+            $event = $guest->event;
+            $botUrl = config('whatsapp.bot_url') ?: 'http://127.0.0.1:3001/lead';
+            $coupleNames = $event ? ($event->couple_names ?? $event->title) : 'los novios';
+            $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
+            $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
+
+            $message = "¡Hola {$guest->name}! 🎉 Tu asistencia al evento de {$coupleNames} ha sido confirmada.{$locationText}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento. Presentalo en la recepción para tu ingreso rápido. ¡Te esperamos!";
+
+            $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
+
+            \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
+                'phone' => $cleanPhone,
+                'message' => $message,
+                'mediaUrl' => $qrUrl,
+                'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("[RsvpController] No se pudo enviar WhatsApp con QR al confirmar desde el formulario web: " . $e->getMessage());
+        }
     }
 
     public function uploadDedication(Request $request, $token)
@@ -409,9 +438,36 @@ class RsvpController extends Controller
             ]);
         }
 
-        // 3. Check for direct confirm command ("1", "si", "confirmar")
-        $isConfirm = in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'si', 'sí', 'asistire', 'asistiré'])
-            || preg_match('/^(1\b|1️⃣|confirmar|confirmo|si\b|sí\b|asistire|asistiré)/i', $msgClean);
+        // 3. Check for direct decline first to avoid positive matching on phrases like "no confirmo"
+        $isDecline = in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré', 'no voy', 'no asisto'])
+            || preg_match('/^(2\b|2️⃣|cancelar|rechazar|no\b)/i', $msgClean)
+            || preg_match('/\b(no puedo|no podre|no podré|no voy|no asisto|no asistire|no asistiré|no podremos)\b/i', $msgClean);
+
+        if ($isDecline) {
+            $guest->update([
+                'status' => 'declined',
+                'conversation_state' => 'completed',
+                'confirmed_adults' => 0,
+                'confirmed_youth' => 0,
+                'confirmed_children' => 0,
+                'confirmed_passes' => 0,
+            ]);
+
+            $reply = "Muchas gracias por avisarnos, {$guest->name}. Lamentamos que no puedas acompañarnos al evento de {$coupleNames} 😔";
+
+            return response()->json([
+                'processed' => true,
+                'status' => 'declined',
+                'conversation_state' => 'completed',
+                'guest' => $guest,
+                'reply' => $reply
+            ]);
+        }
+
+        // 4. Check for direct confirm command ("1", "si", "confirmar", "confirmo", "confirm", "confirn", etc.)
+        $isConfirm = in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'confirm', 'confirn', 'si', 'sí', 'asistire', 'asistiré', 'asisto', 'voy', 'claro', 'obvio'])
+            || preg_match('/^(1\b|1️⃣|confirm|confirn|si\b|sí\b|asist|voy\b)/i', $msgClean)
+            || preg_match('/\b(confirmar|confirmo|confirmamos|confirmacion|confirmación|confirm|confirn|asistire|asistiré|asisto|asistiremos)\b/i', $msgClean);
 
         if ($isConfirm) {
             $confAdults = $guest->adults > 0 ? $guest->adults : 1;
@@ -440,31 +496,6 @@ class RsvpController extends Controller
                 'guest' => $guest,
                 'reply' => $reply,
                 'media_url' => $qrUrl
-            ]);
-        }
-
-        // 4. Check for direct decline command ("2", "no", "cancelar")
-        $isDecline = in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré'])
-            || preg_match('/^(2\b|2️⃣|cancelar|rechazar|no podre|no podré)/i', $msgClean);
-
-        if ($isDecline) {
-            $guest->update([
-                'status' => 'declined',
-                'conversation_state' => 'completed',
-                'confirmed_adults' => 0,
-                'confirmed_youth' => 0,
-                'confirmed_children' => 0,
-                'confirmed_passes' => 0,
-            ]);
-
-            $reply = "Muchas gracias por avisarnos, {$guest->name}. Lamentamos que no puedas acompañarnos al evento de {$coupleNames} 😔";
-
-            return response()->json([
-                'processed' => true,
-                'status' => 'declined',
-                'conversation_state' => 'completed',
-                'guest' => $guest,
-                'reply' => $reply
             ]);
         }
 
