@@ -511,7 +511,49 @@ class GuestController extends Controller
         ]);
     }
 
-    public function sendWhatsAppQrPass(Guest $guest)
+    /**
+     * Re-sends the QR entry pass to a confirmed guest's WhatsApp (e.g. they deleted the message).
+     * Same QR (guest token) and same bot as the automatic send on confirmation.
+     */
+    public function resendQrPass($id)
+    {
+        $guest = Guest::with('event')->findOrFail($id);
+        if ($guest->event && ($denied = $this->validateEventAccess($guest->event, true))) {
+            return $denied;
+        }
+
+        if (!in_array($guest->status, ['confirmed', 'attended'])) {
+            return response()->json([
+                'message' => "{$guest->name} todavía no confirmó su asistencia: el QR se envía solo cuando confirma.",
+            ], 422);
+        }
+
+        if (empty(preg_replace('/[^\d]/', '', (string) $guest->phone))) {
+            return response()->json([
+                'message' => "{$guest->name} no tiene un teléfono registrado.",
+            ], 422);
+        }
+
+        // Avoid double taps sending the pass twice
+        if (!Cache::add("qr_resend:{$guest->id}", true, now()->addMinutes(2))) {
+            return response()->json([
+                'message' => "El QR de {$guest->name} se acaba de enviar. Esperá un par de minutos antes de reenviarlo.",
+            ], 429);
+        }
+
+        if (!$this->sendWhatsAppQrPass($guest, true)) {
+            Cache::forget("qr_resend:{$guest->id}");
+            return response()->json([
+                'message' => 'No se pudo enviar por el WhatsApp del sistema. Verificá que el bot esté conectado e intentá de nuevo.',
+            ], 502);
+        }
+
+        return response()->json([
+            'message' => "Se reenvió el pase QR a {$guest->name} por WhatsApp.",
+        ]);
+    }
+
+    public function sendWhatsAppQrPass(Guest $guest, bool $isResend = false): bool
     {
         try {
             $event = $guest->event;
@@ -520,18 +562,23 @@ class GuestController extends Controller
             $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
 
-            $message = "¡Hola {$guest->name}! 🎉 Tu asistencia al evento de {$coupleNames} ha sido confirmada.{$locationText}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento. Presentalo en la recepción para tu ingreso rápido. ¡Te esperamos!";
+            $intro = $isResend
+                ? "¡Hola {$guest->name}! 👋 Te reenviamos tu pase para el evento de {$coupleNames}.{$locationText}"
+                : "¡Hola {$guest->name}! 🎉 Tu asistencia al evento de {$coupleNames} ha sido confirmada.{$locationText}";
+            $message = "{$intro}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento. Presentalo en la recepción para tu ingreso rápido. ¡Te esperamos!";
 
             $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
-            \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
+            $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
                 'phone' => $cleanPhone,
                 'message' => $message,
                 'mediaUrl' => $qrUrl,
                 'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
             ]);
+            return $response->successful();
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("[GuestController] No se pudo enviar WhatsApp con QR al confirmar desde la web: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::warning("[GuestController] No se pudo enviar WhatsApp con QR: " . $e->getMessage());
+            return false;
         }
     }
 
