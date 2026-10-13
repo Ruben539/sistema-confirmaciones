@@ -518,7 +518,7 @@ function Dashboard({ user, onLogout }) {
                                     )}
 
                                     {/* Metrics Cards */}
-                                    <StatsCards stats={stats} />
+                                    <StatsCards stats={stats} event={activeEvent} />
 
                                     {/* Guest List Component */}
                                     <GuestList

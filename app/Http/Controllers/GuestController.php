@@ -87,6 +87,22 @@ class GuestController extends Controller
             }
         }
 
+        // People of a confirmed invitation: what they confirmed, or the invited composition when the
+        // confirmation has no detail (e.g. marked as confirmed by hand from the panel)
+        $confirmedPeople = function ($g) {
+            $detail = (int) $g->confirmed_adults + (int) $g->confirmed_youth + (int) $g->confirmed_children;
+            if ($detail > 0) {
+                return ['adults' => (int) $g->confirmed_adults, 'youth' => (int) $g->confirmed_youth, 'children' => (int) $g->confirmed_children, 'passes' => $detail];
+            }
+            $adults = (int) $g->adults;
+            $youth = (int) $g->youth;
+            $children = (int) $g->children;
+            if ($adults + $youth + $children === 0) {
+                $adults = 1; // invitation without composition: the invited person
+            }
+            return ['adults' => $adults, 'youth' => $youth, 'children' => $children, 'passes' => $adults + $youth + $children];
+        };
+
         $stats = [
             'total_guests' => $guests->count(),
             'total_passes' => $guests->sum('passes'),
@@ -94,10 +110,10 @@ class GuestController extends Controller
             'total_youth' => $guests->sum('youth'),
             'total_children' => $guests->sum('children'),
             'confirmed_guests' => $confirmedOrAttended->count(),
-            'confirmed_passes' => $confirmedOrAttended->sum('confirmed_passes'),
-            'confirmed_adults' => $confirmedOrAttended->sum('confirmed_adults'),
-            'confirmed_youth' => $confirmedOrAttended->sum('confirmed_youth'),
-            'confirmed_children' => $confirmedOrAttended->sum('confirmed_children'),
+            'confirmed_passes' => $confirmedOrAttended->sum(fn ($g) => $confirmedPeople($g)['passes']),
+            'confirmed_adults' => $confirmedOrAttended->sum(fn ($g) => $confirmedPeople($g)['adults']),
+            'confirmed_youth' => $confirmedOrAttended->sum(fn ($g) => $confirmedPeople($g)['youth']),
+            'confirmed_children' => $confirmedOrAttended->sum(fn ($g) => $confirmedPeople($g)['children']),
             'attended_guests' => $attended->count(),
             'attended_passes' => $attended->sum(fn($g) => $g->confirmed_passes > 0 ? $g->confirmed_passes : $g->passes),
             'pending_arrival' => max(0, $confirmedOrAttended->count() - $attended->count()),

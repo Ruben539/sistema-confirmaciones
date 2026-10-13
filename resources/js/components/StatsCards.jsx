@@ -1,18 +1,45 @@
 import React from 'react';
-import { Users, CheckCircle2, XCircle, Clock, MessageSquare, Ticket, QrCode, Utensils, AlertTriangle } from 'lucide-react';
+import { Users, CheckCircle2, XCircle, Clock, Ticket, QrCode, Utensils, Send, Calendar, Heart } from 'lucide-react';
 
-export default function StatsCards({ stats }) {
+// aaaa-mm-dd from the API (optionally with time) -> local Date at midnight
+const parseDay = (raw) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw || '');
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+};
+
+const daysFromToday = (date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((date.getTime() - today.getTime()) / 86400000);
+};
+
+const formatDay = (date) => date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+
+// "151 adultos · 13 niños" (only the groups that have people)
+const composition = (adults, youth, children) => {
+    const parts = [
+        adults ? `${adults} ${adults === 1 ? 'adulto' : 'adultos'}` : null,
+        youth ? `${youth} ${youth === 1 ? 'joven' : 'jóvenes'}` : null,
+        children ? `${children} ${children === 1 ? 'niño' : 'niños'}` : null,
+    ].filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'Sin personas';
+};
+
+/**
+ * Dashboard metrics. Before the event day the banner follows the RSVP (confirmations progress and
+ * deadline); from the event day on it follows the door (check-in progress, live with the app).
+ */
+export default function StatsCards({ stats, event }) {
     const total = stats?.total_guests || 0;
     const confirmed = stats?.confirmed_guests || 0;
     const confirmedPasses = stats?.confirmed_passes || 0;
-    const totalPasses = stats?.total_passes || 0;
     const declined = stats?.declined_guests || 0;
     const pending = stats?.pending_guests || 0;
     const sent = stats?.messages_sent || 0;
 
     const attendedGuests = stats?.attended_guests || 0;
     const attendedPasses = stats?.attended_passes || 0;
-    const pendingArrival = stats?.pending_arrival || (confirmed - attendedGuests);
+    const pendingArrival = stats?.pending_arrival ?? Math.max(0, confirmed - attendedGuests);
 
     const totalAdults = stats?.total_adults || 0;
     const totalYouth = stats?.total_youth || 0;
@@ -21,17 +48,29 @@ export default function StatsCards({ stats }) {
     const confYouth = stats?.confirmed_youth || 0;
     const confChildren = stats?.confirmed_children || 0;
 
-    const attendedPercent = confirmed > 0 ? Math.min(100, Math.round((attendedGuests / confirmed) * 100)) : 0;
-
     const dietarySummary = stats?.dietary_summary || { total: 0, lactose: 0, celiac: 0, vegan: 0, list: [] };
+
+    // Which phase the event is in
+    const eventDay = parseDay(event?.event_date);
+    const daysToEvent = eventDay ? daysFromToday(eventDay) : null;
+    const isReceptionPhase = daysToEvent !== null && daysToEvent <= 0; // event day or later
+    const isPastEvent = daysToEvent !== null && daysToEvent < 0;
+
+    const deadline = parseDay(event?.rsvp_deadline_effective);
+    const daysToDeadline = deadline ? daysFromToday(deadline) : null;
+
+    const responded = confirmed + declined;
+    const respondedPercent = total > 0 ? Math.round((responded / total) * 100) : 0;
+    const confirmedPercent = total > 0 ? (confirmed / total) * 100 : 0;
+    const declinedPercent = total > 0 ? (declined / total) * 100 : 0;
+    const attendedPercent = confirmed > 0 ? Math.min(100, Math.round((attendedGuests / confirmed) * 100)) : 0;
 
     const cards = [
         {
             title: 'Total Invitaciones',
             value: total,
-            subtitle: `${totalYouth} jóv · ${totalAdults} ad · ${totalChildren} niñ`,
+            subtitle: composition(totalAdults, totalYouth, totalChildren),
             icon: Users,
-            color: 'from-blue-500 to-indigo-600',
             bgColor: 'bg-blue-50 dark:bg-blue-950/30',
             borderColor: 'border-blue-200/60 dark:border-blue-800/40',
             textColor: 'text-blue-600 dark:text-blue-400',
@@ -39,29 +78,36 @@ export default function StatsCards({ stats }) {
         {
             title: 'Asistencia Confirmada',
             value: confirmed,
-            subtitle: `${confYouth} jóv · ${confAdults} ad · ${confChildren} niñ`,
+            subtitle: `${confirmedPasses} ${confirmedPasses === 1 ? 'persona' : 'personas'}: ${composition(confAdults, confYouth, confChildren)}`,
             icon: CheckCircle2,
-            color: 'from-emerald-500 to-teal-600',
             bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
             borderColor: 'border-emerald-200/60 dark:border-emerald-800/40',
             textColor: 'text-emerald-600 dark:text-emerald-400',
         },
-        {
-            title: 'Ingresaron (Check-In)',
-            value: attendedGuests,
-            subtitle: `${pendingArrival} pendientes de llegada`,
-            icon: Ticket,
-            color: 'from-purple-500 to-pink-600',
-            bgColor: 'bg-purple-50 dark:bg-purple-950/30',
-            borderColor: 'border-purple-200/60 dark:border-purple-800/40',
-            textColor: 'text-purple-600 dark:text-purple-400',
-        },
+        isReceptionPhase
+            ? {
+                title: 'Ingresaron (Check-In)',
+                value: attendedGuests,
+                subtitle: `${pendingArrival} ${isPastEvent ? 'no llegaron' : 'pendientes de llegada'}`,
+                icon: Ticket,
+                bgColor: 'bg-purple-50 dark:bg-purple-950/30',
+                borderColor: 'border-purple-200/60 dark:border-purple-800/40',
+                textColor: 'text-purple-600 dark:text-purple-400',
+            }
+            : {
+                title: 'Invitaciones Enviadas',
+                value: sent,
+                subtitle: sent >= total ? 'Todas enviadas por WhatsApp' : `${total - sent} sin enviar`,
+                icon: Send,
+                bgColor: 'bg-purple-50 dark:bg-purple-950/30',
+                borderColor: 'border-purple-200/60 dark:border-purple-800/40',
+                textColor: 'text-purple-600 dark:text-purple-400',
+            },
         {
             title: 'Pendientes por Responder',
             value: pending,
-            subtitle: 'Esperando confirmación',
+            subtitle: isReceptionPhase ? 'No respondieron' : 'Esperando confirmación',
             icon: Clock,
-            color: 'from-amber-500 to-orange-600',
             bgColor: 'bg-amber-50 dark:bg-amber-950/30',
             borderColor: 'border-amber-200/60 dark:border-amber-800/40',
             textColor: 'text-amber-600 dark:text-amber-400',
@@ -71,72 +117,153 @@ export default function StatsCards({ stats }) {
             value: declined,
             subtitle: 'Invitaciones canceladas',
             icon: XCircle,
-            color: 'from-rose-500 to-red-600',
             bgColor: 'bg-rose-50 dark:bg-rose-950/30',
             borderColor: 'border-rose-200/60 dark:border-rose-800/40',
             textColor: 'text-rose-600 dark:text-rose-400',
         },
     ];
 
+    const deadlineText = !deadline
+        ? null
+        : daysToDeadline > 1 ? `Fecha límite: ${formatDay(deadline)} · faltan ${daysToDeadline} días`
+        : daysToDeadline === 1 ? `Fecha límite: mañana (${formatDay(deadline)})`
+        : daysToDeadline === 0 ? `Fecha límite: hoy (${formatDay(deadline)})`
+        : `El plazo para confirmar venció el ${formatDay(deadline)}`;
+
     return (
         <div className="space-y-4">
-            {/* LIVE RECEPTION PROGRESS WIDGET */}
             <div className="p-5 rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 text-white border border-zinc-800 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-                    <QrCode className="w-64 h-64 text-emerald-400" />
+                    {isReceptionPhase
+                        ? <QrCode className="w-64 h-64 text-emerald-400" />
+                        : <Heart className="w-64 h-64 text-rose-400" />}
                 </div>
 
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10 mb-4">
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                                Control de Recepción Live
-                            </span>
-                            <span className="text-xs text-zinc-400 font-medium italic">Sincronizado con App Móvil</span>
+                {isReceptionPhase ? (
+                    <>
+                        {/* EVENT DAY: door check-in progress (live with the app) */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10 mb-4">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    {isPastEvent ? (
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-zinc-700/60 text-zinc-300 border border-zinc-600">
+                                            Evento finalizado
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                                                Recepción en vivo
+                                            </span>
+                                            <span className="text-xs text-zinc-400 font-medium italic">Sincronizado con la app</span>
+                                        </>
+                                    )}
+                                </div>
+                                <h3 className="text-xl font-extrabold tracking-tight">
+                                    {isPastEvent ? 'Resumen de Ingreso al Evento' : 'Progreso de Ingreso al Evento'}
+                                </h3>
+                            </div>
+
+                            <div className="flex items-center gap-4 bg-zinc-800/80 px-4 py-2 rounded-xl border border-zinc-700/60">
+                                <div className="text-right">
+                                    <div className="text-2xl font-black text-emerald-400">{attendedGuests} / {confirmed}</div>
+                                    <div className="text-[11px] text-zinc-400 font-medium">Invitaciones acreditadas</div>
+                                </div>
+                                <div className="h-8 w-px bg-zinc-700"></div>
+                                <div>
+                                    <div className="text-2xl font-black text-amber-400">{pendingArrival}</div>
+                                    <div className="text-[11px] text-zinc-400 font-medium">{isPastEvent ? 'No llegaron' : 'Faltan por llegar'}</div>
+                                </div>
+                            </div>
                         </div>
-                        <h3 className="text-xl font-extrabold tracking-tight">Progreso de Ingreso al Evento</h3>
-                    </div>
 
-                    <div className="flex items-center gap-4 bg-zinc-800/80 px-4 py-2 rounded-xl border border-zinc-700/60">
-                        <div className="text-right">
-                            <div className="text-2xl font-black text-emerald-400">{attendedGuests} / {confirmed}</div>
-                            <div className="text-[11px] text-zinc-400 font-medium">Invitados Acreditados</div>
+                        <div className="space-y-2 relative z-10">
+                            <div className="flex items-center justify-between text-xs font-bold">
+                                <span className="text-zinc-300 flex items-center gap-1.5">
+                                    <Ticket className="w-4 h-4 text-emerald-400" />
+                                    Ingresaron {attendedGuests} invitaciones ({attendedPasses} {attendedPasses === 1 ? 'persona' : 'personas'})
+                                </span>
+                                <span className="text-emerald-400 font-black text-sm">{attendedPercent}% ingresó</span>
+                            </div>
+                            <div className="h-3 w-full bg-zinc-800 rounded-full overflow-hidden p-0.5 border border-zinc-700/50">
+                                <div
+                                    className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 rounded-full transition-all duration-500 shadow-lg shadow-emerald-500/50"
+                                    style={{ width: `${attendedPercent}%` }}
+                                ></div>
+                            </div>
                         </div>
-                        <div className="h-8 w-px bg-zinc-700"></div>
-                        <div>
-                            <div className="text-2xl font-black text-amber-400">{pendingArrival}</div>
-                            <div className="text-[11px] text-zinc-400 font-medium">Faltan por llegar</div>
+                    </>
+                ) : (
+                    <>
+                        {/* BEFORE THE EVENT: confirmations (RSVP) progress */}
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10 mb-4">
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                        <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+                                        Confirmaciones en curso
+                                    </span>
+                                    {daysToEvent !== null && (
+                                        <span className="text-xs text-zinc-400 font-medium">
+                                            {daysToEvent === 1 ? 'El evento es mañana' : `Faltan ${daysToEvent} días para el evento`}
+                                        </span>
+                                    )}
+                                </div>
+                                <h3 className="text-xl font-extrabold tracking-tight">Progreso de Confirmaciones</h3>
+                            </div>
+
+                            <div className="flex items-center gap-4 bg-zinc-800/80 px-4 py-2 rounded-xl border border-zinc-700/60">
+                                <div className="text-right">
+                                    <div className="text-2xl font-black text-emerald-400">{confirmed} / {total}</div>
+                                    <div className="text-[11px] text-zinc-400 font-medium">Confirmaron</div>
+                                </div>
+                                <div className="h-8 w-px bg-zinc-700"></div>
+                                <div>
+                                    <div className="text-2xl font-black text-amber-400">{pending}</div>
+                                    <div className="text-[11px] text-zinc-400 font-medium">Sin responder</div>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                {/* Progress bar */}
-                <div className="space-y-2 relative z-10">
-                    <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-zinc-300 flex items-center gap-1.5">
-                            <Ticket className="w-4 h-4 text-emerald-400" />
-                            Ingreso: {attendedGuests} confirmados acreditados ({attendedPasses} pases totales)
-                        </span>
-                        <span className="text-emerald-400 font-black text-sm">{attendedPercent}% Ingresó</span>
-                    </div>
+                        <div className="space-y-2 relative z-10">
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
+                                <span className="text-zinc-300 flex items-center gap-1.5">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                    Respondieron {responded} de {total} invitaciones · {confirmedPasses} {confirmedPasses === 1 ? 'persona confirmada' : 'personas confirmadas'}
+                                </span>
+                                <span className="text-emerald-400 font-black text-sm">{respondedPercent}% respondió</span>
+                            </div>
 
-                    <div className="h-3 w-full bg-zinc-800 rounded-full overflow-hidden p-0.5 border border-zinc-700/50">
-                        <div
-                            className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 rounded-full transition-all duration-500 shadow-lg shadow-emerald-500/50"
-                            style={{ width: `${attendedPercent}%` }}
-                        ></div>
-                    </div>
-                </div>
+                            {/* Stacked bar: confirmed / declined / no answer */}
+                            <div className="h-3 w-full bg-zinc-800 rounded-full overflow-hidden p-0.5 border border-zinc-700/50 flex">
+                                <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-l-full transition-all duration-500" style={{ width: `${confirmedPercent}%` }}></div>
+                                <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${declinedPercent}%` }}></div>
+                            </div>
 
-                {/* Catering Quick Summary Banner */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-zinc-400">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400"></span>Confirmaron {confirmed}</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500"></span>No asisten {declined}</span>
+                                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-zinc-600"></span>Sin responder {pending}</span>
+                                </div>
+                                {deadlineText && (
+                                    <span className={`flex items-center gap-1.5 ${daysToDeadline !== null && daysToDeadline <= 1 ? 'text-amber-300' : ''}`}>
+                                        <Calendar className="w-3.5 h-3.5" /> {deadlineText}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* Catering summary (both phases) */}
                 {dietarySummary.total > 0 && (
-                    <div className="mt-4 pt-4 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="mt-4 pt-4 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs relative z-10">
                         <div className="flex items-center gap-2 text-zinc-300 font-semibold">
                             <Utensils className="w-4 h-4 text-amber-400" />
-                            <span>Resumen de Catering: <strong className="text-white font-bold">{dietarySummary.total} personas</strong> tienen requerimiento alimentario especial</span>
+                            <span>Resumen de Catering: <strong className="text-white font-bold">{dietarySummary.total} {dietarySummary.total === 1 ? 'persona tiene' : 'personas tienen'}</strong> requerimiento alimentario especial</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             {dietarySummary.lactose > 0 && (
                                 <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30 font-bold">
                                     🥛 Intolerantes Lactosa: {dietarySummary.lactose}
@@ -157,7 +284,6 @@ export default function StatsCards({ stats }) {
                 )}
             </div>
 
-            {/* GRID OF STAT CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {cards.map((card, idx) => {
                     const Icon = card.icon;
