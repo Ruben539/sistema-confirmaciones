@@ -1,0 +1,276 @@
+import React, { useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { X, Download, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Plus, ArrowRight } from 'lucide-react';
+import { apiFetch } from '../api';
+
+// Same rule as Table::normalizeName on the server: "1", "01", "mesa 1" => "Mesa 1"
+const normalizeTableName = (raw) => {
+    const name = String(raw ?? '').replace(/\s+/g, ' ').trim();
+    if (!name) return null;
+    const m = name.match(/^(?:mesa\s*)?0*(\d+)$/i);
+    return m ? `Mesa ${parseInt(m[1], 10)}` : name;
+};
+const tableKey = (raw) => normalizeTableName(raw)?.toLowerCase() ?? null;
+
+const normalizeText = (s) =>
+    String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+// "Adulto" / "Joven" / "Niño" for one person, or the invitation's composition ("2 adultos, 1 niño")
+const guestType = (g) => {
+    const a = Number(g.adults) || 0;
+    const y = Number(g.youth) || 0;
+    const c = Number(g.children) || 0;
+    if (a + y + c <= 1) return y ? 'Joven' : c ? 'Niño' : 'Adulto';
+    return [
+        a && (a === 1 ? '1 adulto' : `${a} adultos`),
+        y && (y === 1 ? '1 joven' : `${y} jóvenes`),
+        c && (c === 1 ? '1 niño' : `${c} niños`),
+    ].filter(Boolean).join(', ');
+};
+
+const findColumn = (headers, candidates) =>
+    headers.findIndex((h) => candidates.includes(normalizeText(h)));
+
+/**
+ * Download the guest list with its tables as Excel, fill / change the "Mesa" column and upload it back:
+ * missing tables are created and every guest is seated where the file says.
+ */
+export default function TableExcelModal({ eventId, eventTitle, data, onClose, onImported }) {
+    const fileRef = useRef(null);
+    const [preview, setPreview] = useState(null);
+    const [error, setError] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    // Every guest shown in "Distribución de Mesas" (seated or not; declined ones aren't listed there)
+    const guests = useMemo(() => {
+        const seated = (data.tables || []).flatMap((t) => (t.guests || []).map((g) => ({ ...g, table_number: t.name })));
+        const unassigned = (data.unassigned_guests || []).map((g) => ({ ...g, table_number: null }));
+        return [...seated, ...unassigned].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    }, [data]);
+
+    const handleDownload = () => {
+        const rows = guests.map((g, i) => ({
+            'Nro': i + 1,
+            'Nombre': g.name,
+            'Tipo': guestType(g),
+            'Mesa': g.table_number || '',
+            'ID': g.id,
+        }));
+        const sheet = XLSX.utils.json_to_sheet(rows);
+        sheet['!cols'] = [{ wch: 6 }, { wch: 34 }, { wch: 22 }, { wch: 16 }, { wch: 8 }];
+        const book = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(book, sheet, 'Mesas');
+        const safeTitle = String(eventTitle || 'Evento').replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g, '').trim();
+        XLSX.writeFile(book, `Mesas_${safeTitle || 'Evento'}.xlsx`);
+    };
+
+    const handleFile = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setError(null);
+        setPreview(null);
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const book = XLSX.read(evt.target.result, { type: 'array' });
+                const sheet = book.Sheets[book.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                if (rows.length < 2) throw new Error('El archivo no tiene filas.');
+
+                const headers = rows[0].map(String);
+                const idCol = findColumn(headers, ['id']);
+                const nameCol = findColumn(headers, ['nombre', 'nombre completo', 'invitado']);
+                const tableCol = findColumn(headers, ['mesa', 'nro de mesa', 'numero de mesa', 'n° de mesa', 'nro mesa']);
+                if (tableCol === -1 || (idCol === -1 && nameCol === -1)) {
+                    throw new Error('No se encontraron las columnas "Mesa" e "ID" (o "Nombre"). Usá el Excel descargado desde acá.');
+                }
+
+                const byId = new Map(guests.map((g) => [String(g.id), g]));
+                const byName = new Map();
+                guests.forEach((g) => {
+                    const key = normalizeText(g.name);
+                    byName.set(key, byName.has(key) ? 'duplicate' : g);
+                });
+                const existingTables = new Set((data.tables || []).map((t) => tableKey(t.name)));
+
+                const assignments = [];
+                const changes = [];
+                const notFound = [];
+                const newTables = new Map();
+                const seen = new Set();
+
+                rows.slice(1).forEach((row, i) => {
+                    const idVal = idCol !== -1 ? String(row[idCol]).trim() : '';
+                    const nameVal = nameCol !== -1 ? String(row[nameCol]).trim() : '';
+                    if (!idVal && !nameVal) return;
+
+                    let guest = idVal ? byId.get(idVal) : null;
+                    if (!guest && nameVal) {
+                        const match = byName.get(normalizeText(nameVal));
+                        guest = match && match !== 'duplicate' ? match : null;
+                    }
+                    if (!guest) {
+                        notFound.push(`Fila ${i + 2}: ${nameVal || `ID ${idVal}`}`);
+                        return;
+                    }
+                    if (seen.has(guest.id)) return; // first row wins
+                    seen.add(guest.id);
+
+                    const table = normalizeTableName(row[tableCol]);
+                    assignments.push({ guest_id: guest.id, table });
+                    if (tableKey(table) !== tableKey(guest.table_number)) {
+                        changes.push({ name: guest.name, from: guest.table_number || 'Sin mesa', to: table || 'Sin mesa' });
+                    }
+                    if (table && !existingTables.has(tableKey(table))) newTables.set(tableKey(table), table);
+                });
+
+                setPreview({ fileName: file.name, assignments, changes, notFound, newTables: [...newTables.values()] });
+            } catch (err) {
+                setError(err.message || 'No se pudo leer el archivo.');
+            } finally {
+                if (fileRef.current) fileRef.current.value = '';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const handleApply = async () => {
+        setSaving(true);
+        setError(null);
+        const { ok, json } = await apiFetch(`/api/events/${eventId}/tables/import`, {
+            method: 'POST',
+            body: JSON.stringify({ assignments: preview.assignments }),
+        });
+        setSaving(false);
+        if (ok) {
+            onImported(json?.message || 'Mesas actualizadas.');
+        } else {
+            setError(json?.message || 'No se pudieron aplicar las mesas.');
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-sm">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                <div className="p-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600">
+                            <FileSpreadsheet className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h3 className="text-base font-black text-zinc-900 dark:text-white">Mesas por Excel</h3>
+                            <p className="text-xs text-zinc-500">Descargá la lista, completá la columna “Mesa” y subila.</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 rounded-xl text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-5 overflow-y-auto space-y-4">
+                    {/* Step 1 */}
+                    <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <div className="text-sm font-black text-zinc-900 dark:text-white">1. Descargar lista de invitados</div>
+                            <p className="text-xs text-zinc-500">
+                                {guests.length} invitados con las columnas Nro, Nombre, Tipo, Mesa e ID. No modifiques la columna ID: identifica a cada invitado.
+                            </p>
+                        </div>
+                        <button onClick={handleDownload} disabled={guests.length === 0} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-bold shrink-0 disabled:opacity-50">
+                            <Download className="w-4 h-4" /> Descargar Excel
+                        </button>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <div className="text-sm font-black text-zinc-900 dark:text-white">2. Subir el Excel con las mesas</div>
+                            <p className="text-xs text-zinc-500">
+                                Podés escribir “1”, “Mesa 1” o un nombre como “Mesa Principal”. Las mesas que no existan se crean solas. Dejá la mesa vacía para quitarla.
+                            </p>
+                        </div>
+                        <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0">
+                            <Upload className="w-4 h-4" /> Elegir archivo
+                        </button>
+                        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+                    </div>
+
+                    {error && (
+                        <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+                        </div>
+                    )}
+
+                    {/* Preview before applying */}
+                    {preview && (
+                        <div className="space-y-3">
+                            <div className="text-xs font-bold text-zinc-500">Revisión de “{preview.fileName}”</div>
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30">
+                                    <div className="text-xl font-black text-emerald-700 dark:text-emerald-300">{preview.changes.length}</div>
+                                    <div className="text-[11px] font-bold text-emerald-700/80">cambian de mesa</div>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/30">
+                                    <div className="text-xl font-black text-amber-700 dark:text-amber-300">{preview.newTables.length}</div>
+                                    <div className="text-[11px] font-bold text-amber-700/80">mesas nuevas</div>
+                                </div>
+                                <div className="p-3 rounded-2xl bg-zinc-100 dark:bg-zinc-800">
+                                    <div className="text-xl font-black text-zinc-700 dark:text-zinc-200">{preview.notFound.length}</div>
+                                    <div className="text-[11px] font-bold text-zinc-500">no encontrados</div>
+                                </div>
+                            </div>
+
+                            {preview.newTables.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {preview.newTables.map((t) => (
+                                        <span key={t} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 text-[11px] font-bold">
+                                            <Plus className="w-3 h-3" /> {t}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+
+                            {preview.changes.length > 0 && (
+                                <div className="max-h-48 overflow-y-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    {preview.changes.map((c, i) => (
+                                        <div key={i} className="px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                                            <span className="font-bold text-zinc-800 dark:text-zinc-200 truncate">{c.name}</span>
+                                            <span className="flex items-center gap-1.5 text-zinc-500 shrink-0">
+                                                {c.from} <ArrowRight className="w-3 h-3" /> <strong className="text-emerald-700 dark:text-emerald-400">{c.to}</strong>
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {preview.notFound.length > 0 && (
+                                <details className="text-xs text-zinc-500">
+                                    <summary className="cursor-pointer font-bold">Filas que no coinciden con ningún invitado (se ignoran)</summary>
+                                    <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                                        {preview.notFound.slice(0, 50).map((n) => <li key={n}>{n}</li>)}
+                                    </ul>
+                                </details>
+                            )}
+
+                            {preview.changes.length === 0 && (
+                                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 text-xs text-zinc-500 flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-500" /> Las mesas del archivo ya coinciden con las actuales.
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end gap-2">
+                    <button onClick={onClose} className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300">Cerrar</button>
+                    {preview && preview.changes.length > 0 && (
+                        <button onClick={handleApply} disabled={saving} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black disabled:opacity-60">
+                            <CheckCircle2 className="w-4 h-4" /> {saving ? 'Aplicando...' : `Aplicar ${preview.changes.length} cambios`}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}

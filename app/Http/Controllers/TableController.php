@@ -247,6 +247,73 @@ class TableController extends Controller
     }
 
     /**
+     * Assigns tables from the Excel the planner downloaded and filled ("Distribución de Mesas").
+     * Each row: guest_id + table name (empty = no table). Missing tables are created with room
+     * for the guests seated there; table names follow Table::normalizeName ("1" => "Mesa 1").
+     */
+    public function importAssignments(Request $request, $eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        $this->checkEventAccess($event);
+
+        $validated = $request->validate([
+            'assignments' => 'required|array|min:1|max:2000',
+            'assignments.*.guest_id' => 'required|integer',
+            'assignments.*.table' => 'nullable|string|max:100',
+        ]);
+
+        $guests = Guest::where('event_id', $event->id)
+            ->whereIn('id', collect($validated['assignments'])->pluck('guest_id'))
+            ->get()
+            ->keyBy('id');
+
+        // Group by table first so each new table is created once, sized for everyone seated there
+        $byTable = collect($validated['assignments'])
+            ->filter(fn ($row) => $guests->has($row['guest_id']))
+            ->groupBy(fn ($row) => Table::nameKey($row['table'] ?? null) ?? '');
+
+        $createdTables = [];
+        $updated = 0;
+
+        foreach ($byTable as $key => $rows) {
+            $tableName = null;
+            if ($key !== '') {
+                $seats = $rows->sum(fn ($row) => $this->seatsFor($guests[$row['guest_id']]));
+                [$table, $created] = Table::ensureExists($event->id, $rows->first()['table'], (int) $seats);
+                $tableName = $table->name;
+                if ($created) {
+                    $createdTables[] = $table->name;
+                }
+            }
+
+            foreach ($rows as $row) {
+                $guest = $guests[$row['guest_id']];
+                if ($guest->table_number !== $tableName) {
+                    $guest->update(['table_number' => $tableName]); // recorded in the guest's history
+                    $updated++;
+                }
+            }
+        }
+
+        $ignored = count($validated['assignments']) - $byTable->flatten(1)->count();
+
+        $message = "Se actualizaron {$updated} invitados.";
+        if ($createdTables) {
+            $message .= ' Mesas nuevas: ' . implode(', ', $createdTables) . '.';
+        }
+        if ($ignored > 0) {
+            $message .= " {$ignored} filas no corresponden a invitados de este evento y se ignoraron.";
+        }
+
+        return response()->json([
+            'message' => $message,
+            'updated' => $updated,
+            'created_tables' => $createdTables,
+            'ignored' => $ignored,
+        ]);
+    }
+
+    /**
      * Saves the venue plan in one go: table positions/shapes plus dance floor, stage and entrance.
      */
     public function saveLayout(Request $request, $eventId)
