@@ -72,6 +72,14 @@ export class BaileysTransporter implements LeadExternal {
     this.onReady.push(cb);
   }
 
+  private retryMap = new Map<string, number>();
+  private msgRetryCounterCache = {
+    get: (key: string) => this.retryMap.get(key),
+    set: (key: string, value: any) => this.retryMap.set(key, value),
+    del: (key: string) => this.retryMap.delete(key),
+    flushAll: () => this.retryMap.clear(),
+  };
+
   async start(socketConfig: Baileys.UserFacingSocketConfig = {} as any) {
     try {
       const { saveCreds, state } = await this.getAuth();
@@ -84,6 +92,7 @@ export class BaileysTransporter implements LeadExternal {
         logger: pino({ level: "silent" }),
         retryRequestDelayMs: 250,
         maxMsgRetryCount: 5,
+        msgRetryCounterCache: this.msgRetryCounterCache as any,
         markOnlineOnConnect: true,
         syncFullHistory: false,
         getMessage: async (key) => {
