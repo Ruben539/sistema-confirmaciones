@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Heart, Calendar, MapPin, User, X, Save, Edit3 } from 'lucide-react';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import DateInput from './DateInput';
 import { apiFetch } from '../api';
 import { PLANS, getPlanRangeLabel } from '../plans';
 
@@ -251,10 +252,9 @@ export default function CreateEventModal({ isOpen, onClose, onEventCreated, even
                         <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5 text-blue-500" /> Fecha del Evento
                         </label>
-                        <input
-                            type="date"
+                        <DateInput
                             value={eventDate}
-                            onChange={(e) => setEventDate(e.target.value)}
+                            onChange={setEventDate}
                             className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-amber-500 outline-none"
                         />
                     </div>

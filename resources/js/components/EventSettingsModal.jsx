@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Save, X, Sparkles, MessageSquare, Heart, Calendar, MapPin, User, ShieldCheck, Image as ImageIcon, Upload, Trash2, Eye, Smartphone, Check } from 'lucide-react';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import DateInput from './DateInput';
 import { apiFetch } from '../api';
 
 export default function EventSettingsModal({ isOpen, onClose, event, user, onSave }) {
@@ -243,10 +244,9 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
                                     <Calendar className="w-3.5 h-3.5 text-blue-500" /> Fecha del Evento
                                 </label>
-                                <input
-                                    type="date"
+                                <DateInput
                                     value={formData.event_date}
-                                    onChange={(e) => setFormData({ ...formData, event_date: e.target.value })}
+                                    onChange={(date) => setFormData({ ...formData, event_date: date })}
                                     className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-rose-500 outline-none"
                                 />
                             </div>
@@ -255,11 +255,10 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
                                     <Calendar className="w-3.5 h-3.5 text-amber-500" /> Fecha Límite de Confirmación (RSVP)
                                 </label>
-                                <input
-                                    type="date"
+                                <DateInput
                                     value={formData.rsvp_deadline_date}
                                     max={formData.event_date || undefined}
-                                    onChange={(e) => setFormData({ ...formData, rsvp_deadline_date: e.target.value })}
+                                    onChange={(date) => setFormData({ ...formData, rsvp_deadline_date: date })}
                                     className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-amber-500 outline-none"
                                 />
                                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
