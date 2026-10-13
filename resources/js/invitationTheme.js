@@ -345,3 +345,194 @@ export const ADVANCED_PRESETS = [
 
 // Preserving backwards compatibility with previous name
 export const FLORAL_WINE_PRESET = ADVANCED_PRESETS[0];
+
+/**
+ * Intelligent helper to inspect event type and person/host identity
+ */
+export function getEventTypeInfo(ev) {
+    const rawType = String(ev?.event_type || '').toLowerCase();
+    const title = String(ev?.title || '').toLowerCase();
+    const names = String(ev?.couple_names || '').trim();
+    const tagline = String(ev?.invitation_styles?.hero_tagline || '').toLowerCase();
+
+    // Check if 15 Años / Quinceañera
+    const isQuince = rawType === 'xv_anos' || rawType === '15_anos' || rawType === 'quince' 
+        || /15|quince|xv/i.test(title) 
+        || /quince|15|xv/i.test(tagline);
+
+    // Check if birthday
+    const isBirthday = isQuince || rawType === 'cumpleanos' || /cumple/i.test(title);
+
+    // Check if wedding / couple
+    const hasCoupleAmp = names.includes('&') || names.includes(' y ') || names.includes('+');
+    const isWedding = (rawType === 'boda' || rawType === 'aniversario' || /boda|casamiento|matrimonio/i.test(title)) 
+        || (!isBirthday && hasCoupleAmp);
+
+    // Display name for the person / host
+    const displayName = names || ev?.title || 'la persona agasajada';
+
+    return { isQuince, isBirthday, isWedding, displayName, rawType };
+}
+
+/**
+ * Returns dynamic, context-aware trivia questions tailored specifically
+ * to the person and the kind of event (Quinceañera vs Boda vs Cumpleaños).
+ */
+export function getDefaultTrivia(ev) {
+    const { isQuince, isBirthday, isWedding, displayName } = getEventTypeInfo(ev);
+
+    if (isQuince) {
+        return {
+            title: `¿Cuánto conocés a ${displayName}? 🧠✨`,
+            subtitle: `${displayName}: ¡Poné a prueba cuánto sabés de ella y sus anécdotas!`,
+            questions: [
+                {
+                    id: 1,
+                    question: `¿Qué es lo que más disfruta hacer ${displayName} en su tiempo libre?`,
+                    options: [
+                        'Escuchar música, bailar y pasar horas con sus amigas',
+                        'Maratonear sus series favoritas y películas',
+                        'Organizar planes al aire libre, viajar y sacar fotos'
+                    ],
+                    correct: 0
+                },
+                {
+                    id: 2,
+                    question: `¿Qué momento de esta gran noche soñada espera ${displayName} con más ganas?`,
+                    options: [
+                        'La entrada triunfal y el vals emotivo',
+                        'La tanda de baile con cotillón y el DJ hasta el final',
+                        'El momento de la torta y las fotos con todos los invitados'
+                    ],
+                    correct: 1
+                },
+                {
+                    id: 3,
+                    question: `¿Cuál de estas frases describe mejor la personalidad de ${displayName}?`,
+                    options: [
+                        '¡Siempre alegre, con una sonrisa y lista para festejar!',
+                        'La amiga fiel y consejera que siempre está para los demás',
+                        '¡Un torbellino de energía, risas y diversión!'
+                    ],
+                    correct: 0
+                }
+            ]
+        };
+    }
+
+    if (isBirthday) {
+        return {
+            title: `¿Cuánto conocés a ${displayName}? 🧠✨`,
+            subtitle: `${displayName}: ¡Poné a prueba cuánto recordás del cumpleañero/a!`,
+            questions: [
+                {
+                    id: 1,
+                    question: `¿Cuál es el plan ideal de festejo para ${displayName}?`,
+                    options: [
+                        'Un buen asado o cena con amigos y risas garantizadas',
+                        'Una escapada de fin de semana a la naturaleza',
+                        'Fiesta, música en vivo y baile hasta tarde'
+                    ],
+                    correct: 0
+                },
+                {
+                    id: 2,
+                    question: `¿Qué género musical o tema jamás puede faltar en sus noches de festejo?`,
+                    options: [
+                        'Cumbia y reggaetón clásico para activar la pista',
+                        'Rock nacional clásico y temas nostálgicos',
+                        '¡De todo un poco, mientras sea para cantar a coro!'
+                    ],
+                    correct: 2
+                },
+                {
+                    id: 3,
+                    question: `¿Qué es lo que más le gusta celebrar a ${displayName}?`,
+                    options: [
+                        'Compartir la vida y los buenos momentos con la gente querida',
+                        'Los nuevos desafíos y proyectos por cumplir',
+                        'Cualquier excusa linda que termine en un brindis'
+                    ],
+                    correct: 0
+                }
+            ]
+        };
+    }
+
+    if (isWedding) {
+        return {
+            title: '¿Cuánto conocés a los novios? 🧠✨',
+            subtitle: `${displayName}: ¡Poné a prueba cuánto recordás de su historia de amor!`,
+            questions: [
+                {
+                    id: 1,
+                    question: '¿Dónde se conocieron los novios por primera vez?',
+                    options: [
+                        'En la universidad / trabajo durante un proyecto',
+                        'Por amigos en común en una reunión o salida',
+                        'En una fiesta espontánea donde cruzaron miradas'
+                    ],
+                    correct: 1
+                },
+                {
+                    id: 2,
+                    question: '¿Quién es más probable que cope el centro de la pista de baile?',
+                    options: [
+                        'Ella, ¡no se pierde ni un solo tema!',
+                        'Él, mostrando sus pasos prohibidos',
+                        '¡Ambos juntos hasta que apaguen las luces!'
+                    ],
+                    correct: 2
+                },
+                {
+                    id: 3,
+                    question: '¿Cuál es el plan o viaje soñado para celebrar?',
+                    options: [
+                        'Playa paradisíaca con atardeceres y relax',
+                        'Aventura en la montaña y noches bajo las estrellas',
+                        'Recorrido por ciudades llenas de historia y gastronomía'
+                    ],
+                    correct: 0
+                }
+            ]
+        };
+    }
+
+    // Default general
+    return {
+        title: `¿Cuánto conocés a ${displayName}? 🧠✨`,
+        subtitle: `${displayName}: ¡Poné a prueba cuánto conocés de esta celebración!`,
+        questions: [
+            {
+                id: 1,
+                question: '¿Qué género musical jamás puede faltar en sus noches de festejo?',
+                options: [
+                    'Cumbia y Reggaetón clásico para bailar sin parar',
+                    'Rock nacional y Pop nostálgico',
+                    '¡Un remix de todo hasta el amanecer!'
+                ],
+                correct: 2
+            },
+            {
+                id: 2,
+                question: '¿Qué frase resume mejor el espíritu de la fiesta?',
+                options: [
+                    'La vida se celebra con amigos y buena música',
+                    'Donde hay risas y brindis, ahí es el lugar',
+                    'Coleccionando recuerdos inolvidables siempre'
+                ],
+                correct: 1
+            },
+            {
+                id: 3,
+                question: '¿Cuál es el momento que más esperan de esta gran noche?',
+                options: [
+                    'El brindis y las palabras emotivas',
+                    'La tanda de baile con cotillón y DJ a pleno',
+                    'Abrazar y compartir con cada uno de los invitados'
+                ],
+                correct: 2
+            }
+        ]
+    };
+}

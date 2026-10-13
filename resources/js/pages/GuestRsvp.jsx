@@ -7,7 +7,7 @@ import {
     Download, Car, Trophy, Award, HelpCircle, Layout
 } from 'lucide-react';
 import { apiFetch } from '../api';
-import { buildThemeStyle, isAdvancedDesign, useInvitationFonts, formatInvitationDate, hexToRgba } from '../invitationTheme';
+import { buildThemeStyle, isAdvancedDesign, useInvitationFonts, formatInvitationDate, hexToRgba, getDefaultTrivia } from '../invitationTheme';
 
 // demo: sample data (see demoInvitation.js). Renders a full invitation with no API calls and nothing saved.
 export default function GuestRsvp({ token, eventId, isPublic = false, demo = null }) {
@@ -834,75 +834,15 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
         ];
     };
 
-    // Trivia Questions Generator (Dynamic based on event type)
-    const getTriviaQuestions = (ev) => {
-        const isWedding = (ev?.event_type === 'boda') || Boolean(ev?.couple_names);
-        if (isWedding) {
-            return [
-                {
-                    id: 1,
-                    question: '¿Dónde se conocieron los novios por primera vez?',
-                    options: [
-                        'En la universidad / trabajo durante un proyecto',
-                        'Por amigos en común en una reunión o salida',
-                        'En una fiesta espontánea donde cruzaron miradas'
-                    ],
-                    correct: 1
-                },
-                {
-                    id: 2,
-                    question: '¿Quién es más probable que cope el centro de la pista de baile?',
-                    options: [
-                        'Ella, ¡no se pierde ni un solo tema!',
-                        'Él, mostrando sus pasos prohibidos',
-                        '¡Ambos juntos hasta que apaguen las luces!'
-                    ],
-                    correct: 2
-                },
-                {
-                    id: 3,
-                    question: '¿Cuál es el plan o viaje soñado para celebrar?',
-                    options: [
-                        'Playa paradisíaca con atardeceres y relax',
-                        'Aventura en la montaña y noches bajo las estrellas',
-                        'Recorrido por ciudades llenas de historia y gastronomía'
-                    ],
-                    correct: 0
-                }
-            ];
-        }
-        return [
-            {
-                id: 1,
-                question: '¿Qué género musical jamás puede faltar en sus noches de festejo?',
-                options: [
-                    'Cumbia y Reggaetón clásico para bailar sin parar',
-                    'Rock nacional y Pop nostálgico',
-                    '¡Un remix de todo hasta el amanecer!'
-                ],
-                correct: 2
-            },
-            {
-                id: 2,
-                question: '¿Qué frase resume mejor el espíritu de los anfitriones?',
-                options: [
-                    'La vida se celebra con amigos y buena música',
-                    'Donde hay risas y brindis, ahí es el lugar',
-                    'Coleccionando recuerdos inolvidables siempre'
-                ],
-                correct: 1
-            },
-            {
-                id: 3,
-                question: '¿Cuál es el momento que más esperan de esta gran noche?',
-                options: [
-                    'El brindis y las palabras emotivas',
-                    'La tanda de baile con cotillón y DJ a pleno',
-                    'Abrazar y compartir con cada uno de los invitados'
-                ],
-                correct: 2
-            }
-        ];
+    // Trivia Data Generator (Dynamic based on event type & customized settings)
+    const getTriviaData = (ev) => {
+        const custom = ev?.invitation_styles?.trivia;
+        const defaults = getDefaultTrivia(ev);
+        return {
+            title: custom?.title || defaults.title,
+            subtitle: custom?.subtitle || defaults.subtitle,
+            questions: (custom?.questions && custom.questions.length > 0) ? custom.questions : defaults.questions,
+        };
     };
 
     const handleTriviaAnswer = (qId, optionIdx) => {
@@ -911,8 +851,9 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
 
     const handleTriviaSubmit = (questions) => {
         let score = 0;
-        questions.forEach(q => {
-            if (triviaAnswers[q.id] === q.correct) {
+        (questions || []).forEach((q, idx) => {
+            const key = q.id !== undefined ? q.id : idx;
+            if (triviaAnswers[key] === q.correct) {
                 score++;
             }
         });
@@ -2434,99 +2375,108 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
                     </div>
                 )}
 
-                {/* TRIVIA INTERACTIVA SOBRE LOS ANFITRIONES */}
-                <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">
-                                Desafío Divertido
-                            </span>
-                            <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
-                                ¿Cuánto conoces a los anfitriones? 🧠✨
-                            </h3>
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                                {event.couple_names || event.title}: ¡Pon a prueba cuánto recuerdas de su historia!
-                            </p>
-                        </div>
-                        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20 text-2xl shadow-inner">
-                            🏆
-                        </div>
-                    </div>
-
-                    {triviaSubmitted ? (
-                        <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-rose-500/10 to-indigo-500/10 border border-amber-500/30 text-center space-y-4 animate-fade-in">
-                            <div className="w-16 h-16 rounded-full bg-amber-500 text-zinc-950 flex items-center justify-center mx-auto text-3xl shadow-lg">
-                                {triviaScore === 3 ? '🏆' : triviaScore === 2 ? '⭐' : '🎉'}
-                            </div>
-                            <div>
-                                <div className="text-2xl font-black text-zinc-900 dark:text-white">
-                                    ¡Puntaje: {triviaScore} de 3 Aciertos!
+                {/* TRIVIA INTERACTIVA (DESAFÍO DIVERTIDO) */}
+                {(features.trivia ?? true) && (() => {
+                    const triviaData = getTriviaData(event);
+                    const qCount = triviaData.questions.length;
+                    return (
+                        <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-500">
+                                        Desafío Divertido
+                                    </span>
+                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
+                                        {triviaData.title}
+                                    </h3>
+                                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                        {triviaData.subtitle}
+                                    </p>
                                 </div>
-                                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-1 max-w-sm mx-auto">
-                                    {triviaScore === 3 
-                                        ? '¡Increíble! Eres un invitado de honor y conoces cada detalle de esta historia ❤️'
-                                        : triviaScore === 2
-                                        ? '¡Casi perfecto! Se nota el gran cariño que tienes por los protagonistas 🥂'
-                                        : '¡Excelente intento! Lo más importante es celebrar juntos esta gran noche 🥳'}
-                                </p>
+                                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/20 text-2xl shadow-inner">
+                                    🏆
+                                </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={handleTriviaReset}
-                                className="px-5 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-black transition-all hover:scale-105 shadow cursor-pointer"
-                            >
-                                Jugar de nuevo
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {getTriviaQuestions(event).map((q, qIdx) => (
-                                <div key={q.id} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
-                                    <div className="text-xs font-black text-zinc-900 dark:text-white flex items-start gap-2">
-                                        <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] flex items-center justify-center shrink-0 font-bold">
-                                            {qIdx + 1}
-                                        </span>
-                                        <span>{q.question}</span>
+
+                            {triviaSubmitted ? (
+                                <div className="p-6 rounded-2xl bg-gradient-to-br from-amber-500/10 via-rose-500/10 to-indigo-500/10 border border-amber-500/30 text-center space-y-4 animate-fade-in">
+                                    <div className="w-16 h-16 rounded-full bg-amber-500 text-zinc-950 flex items-center justify-center mx-auto text-3xl shadow-lg">
+                                        {triviaScore === qCount ? '🏆' : triviaScore >= Math.ceil(qCount / 2) ? '⭐' : '🎉'}
                                     </div>
-                                    <div className="grid grid-cols-1 gap-2 pt-1">
-                                        {q.options.map((opt, oIdx) => {
-                                            const isSelected = triviaAnswers[q.id] === oIdx;
-                                            return (
-                                                <button
-                                                    key={oIdx}
-                                                    type="button"
-                                                    onClick={() => handleTriviaAnswer(q.id, oIdx)}
-                                                    className={`p-2.5 rounded-xl text-left text-xs font-medium transition-all flex items-center gap-2.5 border cursor-pointer ${
-                                                        isSelected
-                                                            ? 'bg-amber-500 text-zinc-950 font-bold border-amber-400 shadow-sm'
-                                                            : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-amber-400'
-                                                    }`}
-                                                >
-                                                    <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] shrink-0 ${
-                                                        isSelected ? 'border-zinc-950 bg-zinc-950 text-amber-400 font-bold' : 'border-zinc-400'
-                                                    }`}>
-                                                        {['A', 'B', 'C'][oIdx]}
+                                    <div>
+                                        <div className="text-2xl font-black text-zinc-900 dark:text-white">
+                                            ¡Puntaje: {triviaScore} de {qCount} Aciertos!
+                                        </div>
+                                        <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-1 max-w-sm mx-auto">
+                                            {triviaScore === qCount 
+                                                ? '¡Increíble! Eres un invitado de honor y conoces cada detalle ❤️'
+                                                : triviaScore >= Math.ceil(qCount / 2)
+                                                ? '¡Casi perfecto! Se nota el gran cariño que tienes 🥂'
+                                                : '¡Excelente intento! Lo más importante es celebrar juntos esta gran noche 🥳'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleTriviaReset}
+                                        className="px-5 py-2.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-black transition-all hover:scale-105 shadow cursor-pointer"
+                                    >
+                                        Jugar de nuevo
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {triviaData.questions.map((q, qIdx) => {
+                                        const qKey = q.id !== undefined ? q.id : qIdx;
+                                        return (
+                                            <div key={qKey} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/60 space-y-2.5">
+                                                <div className="text-xs font-black text-zinc-900 dark:text-white flex items-start gap-2">
+                                                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] flex items-center justify-center shrink-0 font-bold">
+                                                        {qIdx + 1}
                                                     </span>
-                                                    <span>{opt}</span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
+                                                    <span>{q.question}</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 gap-2 pt-1">
+                                                    {q.options.map((opt, oIdx) => {
+                                                        const isSelected = triviaAnswers[qKey] === oIdx;
+                                                        return (
+                                                            <button
+                                                                key={oIdx}
+                                                                type="button"
+                                                                onClick={() => handleTriviaAnswer(qKey, oIdx)}
+                                                                className={`p-2.5 rounded-xl text-left text-xs font-medium transition-all flex items-center gap-2.5 border cursor-pointer ${
+                                                                    isSelected
+                                                                        ? 'bg-amber-500 text-zinc-950 font-bold border-amber-400 shadow-sm'
+                                                                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-amber-400'
+                                                                }`}
+                                                            >
+                                                                <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] shrink-0 ${
+                                                                    isSelected ? 'border-zinc-950 bg-zinc-950 text-amber-400 font-bold' : 'border-zinc-400'
+                                                                }`}>
+                                                                    {['A', 'B', 'C', 'D'][oIdx]}
+                                                                </span>
+                                                                <span>{opt}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
 
-                            <button
-                                type="button"
-                                onClick={() => handleTriviaSubmit(getTriviaQuestions(event))}
-                                disabled={Object.keys(triviaAnswers).length < 3}
-                                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-lg disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
-                            >
-                                <Sparkles className="w-4 h-4" />
-                                <span>Ver Mi Puntaje en la Trivia</span>
-                            </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleTriviaSubmit(triviaData.questions)}
+                                        disabled={Object.keys(triviaAnswers).length < qCount}
+                                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-lg disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
+                                    >
+                                        <Sparkles className="w-4 h-4" />
+                                        <span>Ver Mi Puntaje en la Trivia</span>
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
+                    );
+                })()}
 
                 {/* GUEST DEDICATIONS / STORIES CAROUSEL */}
                 {features.guest_dedications && (

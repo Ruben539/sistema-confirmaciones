@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
     X, Music, Gift, Shirt, Image, Sparkles, Check, Plus, Trash2, Upload, 
     AlertCircle, Save, ExternalLink, Volume2, Play, Disc, FileAudio,
-    Palette, Wand2, Eye, Sliders, RefreshCw, Loader2, Search, Radio, Headphones
+    Palette, Wand2, Eye, Sliders, RefreshCw, Loader2, Search, Radio, Headphones, Trophy
 } from 'lucide-react';
 import { apiFetch } from '../api';
 import AdvancedDesignEditor, { AdvancedDesignPreview } from './AdvancedDesignEditor';
-import { isAdvancedDesign } from '../invitationTheme';
+import { isAdvancedDesign, getDefaultTrivia } from '../invitationTheme';
 
 const THEME_PRESETS = [
     {
@@ -291,6 +291,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
         guest_dedications: true,
         dress_code: true,
         background_music: true,
+        trivia: true,
     };
     const [features, setFeatures] = useState(initialFeatures);
 
@@ -657,8 +658,18 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                     </button>
                     <button
                         type="button"
+                        onClick={() => setActiveTab('trivia')}
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                            activeTab === 'trivia' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                        }`}
+                    >
+                        <Trophy className="w-4 h-4 text-amber-400" />
+                        Trivia & Desafío
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setActiveTab('features')}
-                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                        className={`py-3 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
                             activeTab === 'features' ? 'border-amber-400 text-amber-300' : 'border-transparent text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
@@ -1703,6 +1714,193 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                         </div>
                     )}
 
+                    {/* TRIVIA TAB */}
+                    {activeTab === 'trivia' && (() => {
+                        const defaultTrivia = getDefaultTrivia(event);
+                        const triviaSettings = invitationStyles.trivia || {};
+                        const currentQuestions = (triviaSettings.questions && triviaSettings.questions.length > 0)
+                            ? triviaSettings.questions
+                            : defaultTrivia.questions;
+
+                        const updateTriviaField = (patch) => {
+                            setInvitationStyles(prev => ({
+                                ...prev,
+                                trivia: {
+                                    ...(prev.trivia || defaultTrivia),
+                                    ...patch,
+                                }
+                            }));
+                        };
+
+                        const handleResetDefaults = () => {
+                            setInvitationStyles(prev => ({
+                                ...prev,
+                                trivia: {
+                                    ...defaultTrivia,
+                                }
+                            }));
+                        };
+
+                        return (
+                            <div className="space-y-5">
+                                <div className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div>
+                                        <div className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-1.5">
+                                            <Trophy className="w-4 h-4" />
+                                            <span>Trivia & Desafío Personalizado</span>
+                                        </div>
+                                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                                            Personalizá las preguntas y opciones para que coincidan con {event.couple_names || event.title}.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleResetDefaults}
+                                        className="self-start sm:self-auto px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                        <span>Cargar preguntas sugeridas</span>
+                                    </button>
+                                </div>
+
+                                {/* Toggle Trivia Switch */}
+                                <label className="p-3.5 rounded-2xl bg-zinc-800/60 border border-zinc-700/60 flex items-center justify-between cursor-pointer hover:bg-zinc-800 transition-colors">
+                                    <div>
+                                        <div className="text-xs font-bold text-white">Mostrar Trivia en la Invitación</div>
+                                        <div className="text-[11px] text-zinc-400">Si está desactivado, el bloque no se mostrará a los invitados.</div>
+                                    </div>
+                                    <input
+                                        type="checkbox"
+                                        checked={features.trivia ?? true}
+                                        onChange={(e) => setFeatures({ ...features, trivia: e.target.checked })}
+                                        className="w-5 h-5 rounded-lg text-amber-500 bg-zinc-900 border-zinc-700 focus:ring-amber-500 cursor-pointer"
+                                    />
+                                </label>
+
+                                {/* Title and Subtitle inputs */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Título de la Sección</label>
+                                        <input
+                                            type="text"
+                                            value={triviaSettings.title ?? defaultTrivia.title}
+                                            onChange={(e) => updateTriviaField({ title: e.target.value })}
+                                            className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-900 text-white p-2.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                            placeholder={defaultTrivia.title}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-zinc-300 mb-1">Subtítulo / Consigna</label>
+                                        <input
+                                            type="text"
+                                            value={triviaSettings.subtitle ?? defaultTrivia.subtitle}
+                                            onChange={(e) => updateTriviaField({ subtitle: e.target.value })}
+                                            className="w-full text-xs rounded-xl border border-zinc-700 bg-zinc-900 text-white p-2.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                            placeholder={defaultTrivia.subtitle}
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Questions list */}
+                                <div className="space-y-4 pt-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+                                            Preguntas ({currentQuestions.length})
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const newQ = {
+                                                    id: Date.now(),
+                                                    question: `¿Qué es lo que más le gusta a ${event.couple_names || event.title}?`,
+                                                    options: ['Opción A', 'Opción B', 'Opción C'],
+                                                    correct: 0,
+                                                };
+                                                updateTriviaField({ questions: [...currentQuestions, newQ] });
+                                            }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold border border-zinc-700 cursor-pointer"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-amber-400" />
+                                            <span>Agregar Pregunta</span>
+                                        </button>
+                                    </div>
+
+                                    {currentQuestions.map((q, qIdx) => (
+                                        <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-3">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold flex items-center justify-center shrink-0">
+                                                    {qIdx + 1}
+                                                </span>
+                                                <input
+                                                    type="text"
+                                                    value={q.question}
+                                                    onChange={(e) => {
+                                                        const list = [...currentQuestions];
+                                                        list[qIdx] = { ...list[qIdx], question: e.target.value };
+                                                        updateTriviaField({ questions: list });
+                                                    }}
+                                                    className="flex-1 text-xs font-bold rounded-xl border border-zinc-700 bg-zinc-950 text-white p-2.5 outline-none focus:ring-2 focus:ring-amber-500"
+                                                    placeholder="Escribí la pregunta..."
+                                                />
+                                                {currentQuestions.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const list = currentQuestions.filter((_, idx) => idx !== qIdx);
+                                                            updateTriviaField({ questions: list });
+                                                        }}
+                                                        className="p-2 text-zinc-500 hover:text-rose-400 rounded-lg hover:bg-zinc-800 transition-colors"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-2 pl-8">
+                                                <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                                                    Opciones (hacé clic en la letra para marcar cuál es la respuesta correcta):
+                                                </div>
+                                                {q.options.map((opt, oIdx) => (
+                                                    <div key={oIdx} className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            title="Marcar como respuesta correcta"
+                                                            onClick={() => {
+                                                                const list = [...currentQuestions];
+                                                                list[qIdx] = { ...list[qIdx], correct: oIdx };
+                                                                updateTriviaField({ questions: list });
+                                                            }}
+                                                            className={`w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer transition-all ${
+                                                                q.correct === oIdx
+                                                                    ? 'bg-amber-400 border-amber-400 text-zinc-950 shadow-md'
+                                                                    : 'border-zinc-700 bg-zinc-950 text-zinc-400 hover:border-amber-400'
+                                                            }`}
+                                                        >
+                                                            {['A', 'B', 'C', 'D'][oIdx]}
+                                                        </button>
+                                                        <input
+                                                            type="text"
+                                                            value={opt}
+                                                            onChange={(e) => {
+                                                                const list = [...currentQuestions];
+                                                                const opts = [...list[qIdx].options];
+                                                                opts[oIdx] = e.target.value;
+                                                                list[qIdx] = { ...list[qIdx], options: opts };
+                                                                updateTriviaField({ questions: list });
+                                                            }}
+                                                            className="flex-1 text-xs rounded-xl border border-zinc-800 bg-zinc-950 text-white p-2 outline-none focus:ring-2 focus:ring-amber-500"
+                                                            placeholder={`Opción ${['A', 'B', 'C', 'D'][oIdx]}`}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {/* FEATURES TAB */}
                     {activeTab === 'features' && (
                         <div className="space-y-4">
@@ -1721,6 +1919,7 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                     { key: 'spotify', label: 'Reproductor de Música Spotify', desc: 'Muestra la playlist y botón para escuchar en Spotify.' },
                                     { key: 'countdown', label: 'Cuenta Regresiva en Vivo', desc: 'Días, horas y minutos restantes hasta el evento.' },
                                     { key: 'gifts', label: 'Lista de Regalos & CBU', desc: 'Datos bancarios con botón para copiar Alias y catálogo de regalos.' },
+                                    { key: 'trivia', label: 'Desafío Divertido / Trivia', desc: 'Mini-juego interactivo de preguntas y respuestas sobre el protagonista o anfitriones.' },
                                     { key: 'music_suggestions', label: 'Sugerencias de Canciones para el DJ', desc: 'Permite a los invitados pedir su tema favorito en el RSVP.' },
                                     { key: 'guest_dedications', label: 'Muro de Recuerdos & Dedicatorias', desc: 'Fotos y videos cortos de invitados con modo proyección.' },
                                     { key: 'dress_code', label: 'Código de Vestimenta (Dress Code)', desc: 'Consejos de etiqueta y colores recomendados.' },

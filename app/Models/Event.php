@@ -248,6 +248,7 @@ class Event extends Model
             'guest_dedications' => false,
             'dress_code' => false,
             'background_music' => false,
+            'trivia' => false,
         ]);
         return $this;
     }
