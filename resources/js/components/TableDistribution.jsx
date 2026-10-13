@@ -3,12 +3,14 @@ import { Plus, Trash2, Edit2, Users, AlertCircle, CheckCircle2, RefreshCw, UserC
 import ConfirmModal from './ConfirmModal';
 import Visual3DTableMap from './Visual3DTableMap';
 import ExportDocumentsModal from './ExportDocumentsModal';
+import TableExcelModal from './TableExcelModal';
 import { apiFetch } from '../api';
 
 export default function TableDistribution({ eventId, eventTitle, event, showToast, onOpenCreateEvent }) {
     const [data, setData] = useState({ tables: [], unassigned_guests: [], stats: {} });
     const [loading, setLoading] = useState(true);
     const [isExportOpen, setIsExportOpen] = useState(false);
+    const [isTableExcelOpen, setIsTableExcelOpen] = useState(false);
 
     // Create / Edit Table Modal State
     const [isTableModalOpen, setIsTableModalOpen] = useState(false);
@@ -365,6 +367,15 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                                 🏢 Mapa 3D Interactivo
                             </button>
                         </div>
+
+                        <button
+                            onClick={() => setIsTableExcelOpen(true)}
+                            title="Descargar la lista con sus mesas y subir el Excel para crear y asignar mesas"
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-xs font-bold transition-all border border-emerald-200/80 dark:border-emerald-800"
+                        >
+                            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                            <span>Mesas por Excel</span>
+                        </button>
 
                         <button
                             onClick={() => setIsExportOpen(true)}
@@ -900,6 +911,20 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                         </div>
                     </div>
                 </div>
+            )}
+
+            {isTableExcelOpen && (
+                <TableExcelModal
+                    eventId={eventId}
+                    eventTitle={event?.couple_names || eventTitle}
+                    data={data}
+                    onClose={() => setIsTableExcelOpen(false)}
+                    onImported={(message) => {
+                        setIsTableExcelOpen(false);
+                        if (showToast) showToast(message);
+                        fetchTables({ silent: true });
+                    }}
+                />
             )}
 
             <ExportDocumentsModal

@@ -102,6 +102,7 @@ Route::prefix('api')->group(function () {
         Route::put('/tables/{id}', [TableController::class, 'update']);
         Route::delete('/tables/{id}', [TableController::class, 'destroy']);
         Route::post('/tables/assign', [TableController::class, 'assignGuest']);
+        Route::post('/events/{eventId}/tables/import', [TableController::class, 'importAssignments']);
         Route::put('/events/{eventId}/tables/layout', [TableController::class, 'saveLayout']);
 
         // Invitación Digital: configuración, dedicatorias y canciones
