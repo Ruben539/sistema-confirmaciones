@@ -414,17 +414,22 @@ class RsvpController extends Controller
             || preg_match('/^(1\b|1️⃣|confirmar|confirmo|si\b|sí\b|asistire|asistiré)/i', $msgClean);
 
         if ($isConfirm) {
+            $confAdults = $guest->adults > 0 ? $guest->adults : 1;
+            $confPasses = max(1, (int)$guest->adults + (int)$guest->youth + (int)$guest->children);
+
             $guest->update([
                 'status' => 'confirmed',
                 'conversation_state' => 'awaiting_dietary',
-                'confirmed_adults' => $guest->adults > 0 ? $guest->adults : 1,
+                'confirmed_adults' => $confAdults,
                 'confirmed_youth' => $guest->youth,
                 'confirmed_children' => $guest->children,
                 // Confirm the whole invitation, including companions
-                'confirmed_passes' => max(1, (int)$guest->adults + (int)$guest->youth + (int)$guest->children),
+                'confirmed_passes' => $confPasses,
             ]);
 
-            $reply = "¡Excelente {$guest->name}! Confirmamos tu asistencia al evento de {$coupleNames} 🎉{$locationText}\n\n¿Tenés alguna restricción alimentaria o menú especial (ej: celíaco, vegetariano)? Respondé con la restricción o escribí 'Ninguna'.";
+            $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
+
+            $reply = "¡Excelente {$guest->name}! Confirmamos tu asistencia al evento de {$coupleNames} 🎉{$locationText}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada. Presentalo en la recepción para tu ingreso rápido.\n\n🍽️ *Menú Especial:* Si tenés alguna restricción alimentaria (ej: celíaco, vegetariano), respondé a este mensaje con tu preferencia (o escribí 'Ninguna').";
 
             EventMilestoneService::checkMilestone($guest->event_id);
 
@@ -433,7 +438,8 @@ class RsvpController extends Controller
                 'status' => 'confirmed',
                 'conversation_state' => 'awaiting_dietary',
                 'guest' => $guest,
-                'reply' => $reply
+                'reply' => $reply,
+                'media_url' => $qrUrl
             ]);
         }
 
