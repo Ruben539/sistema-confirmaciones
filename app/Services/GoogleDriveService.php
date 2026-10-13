@@ -14,6 +14,9 @@ class GoogleDriveService
     protected ?GoogleClient $client = null;
     protected ?GoogleDrive $service = null;
 
+    // Last error from Google (shown by `php artisan drive:test`)
+    public ?string $lastError = null;
+
     public function __construct()
     {
         if ($this->isConfigured()) {
@@ -124,7 +127,11 @@ class GoogleDriveService
                 // OAuth 2.0 Client credentials (clientId + clientSecret + refreshToken)
                 $this->client->setClientId($clientId);
                 $this->client->setClientSecret($clientSecret);
-                $this->client->refreshToken($refreshToken);
+                $token = $this->client->refreshToken($refreshToken);
+                // Google returns the error instead of throwing (e.g. invalid_grant = token expired or revoked)
+                if (!empty($token['error'])) {
+                    throw new \RuntimeException('OAuth: ' . $token['error'] . (!empty($token['error_description']) ? ' - ' . $token['error_description'] : ''));
+                }
                 $this->client->addScope([
                     GoogleDrive::DRIVE,
                     GoogleDrive::DRIVE_FILE,
@@ -147,7 +154,8 @@ class GoogleDriveService
 
             $this->service = new GoogleDrive($this->client);
         } catch (\Throwable $e) {
-            Log::error('Error initializing Google Drive client: ' . $e->getMessage());
+            $this->lastError = 'Error initializing Google Drive client: ' . $e->getMessage();
+            Log::error($this->lastError);
             $this->client = null;
             $this->service = null;
         }
@@ -283,6 +291,7 @@ class GoogleDriveService
         if (!$this->service) {
             $this->initClient();
             if (!$this->service) {
+                $this->lastError = $this->lastError ?: 'Google Drive service is not ready.';
                 Log::warning('Google Drive service is not ready. Skipping cloud upload.');
                 return null;
             }
@@ -336,7 +345,8 @@ class GoogleDriveService
                 'name' => $uploadedFile->getName(),
             ];
         } catch (\Throwable $e) {
-            Log::error('Google Drive upload failed: ' . $e->getMessage());
+            $this->lastError = 'Google Drive upload failed: ' . $e->getMessage();
+            Log::error($this->lastError);
             return null;
         }
     }

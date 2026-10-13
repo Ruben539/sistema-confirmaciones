@@ -87,6 +87,7 @@ class TestGoogleDrive extends Command
         }
 
         $this->error('❌ No se pudo subir el archivo de prueba a Google Drive.');
+        $this->line('   Error de Google: ' . ($drive->lastError ?: 'sin detalle (revisá storage/logs/laravel.log)'));
         $this->line('Revisá los permisos y credenciales de Google Drive en el archivo .env.');
         return 1;
     }
