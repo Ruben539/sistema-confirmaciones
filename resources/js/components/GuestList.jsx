@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, Download } from 'lucide-react';
 
 export default function GuestList({
     guests,
@@ -12,7 +13,8 @@ export default function GuestList({
     onClearAll,
     onMarkSent,
     // Anfitriona: only sees the list (no adding, importing, sending, editing or deleting)
-    readOnly = false
+    readOnly = false,
+    eventTitle = ''
 }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'confirmed', 'pending', 'declined'
@@ -108,6 +110,50 @@ export default function GuestList({
         }
     };
 
+    // Excel of the list as shown (current search, filters and order), with the confirmation status
+    const handleDownloadExcel = () => {
+        const statusLabel = (g) =>
+            g.status === 'attended' ? 'Confirmado'
+                : g.status === 'confirmed' ? 'Confirmado'
+                : g.status === 'declined' ? 'No asiste'
+                : 'Pendiente';
+        const composition = (g) => {
+            const a = g.adults || 0, y = g.youth || 0, c = g.children || 0;
+            if (a + y + c <= 1) return y ? 'Joven' : c ? 'Niño' : 'Adulto';
+            return [a && `${a} adulto${a > 1 ? 's' : ''}`, y && `${y} joven${y > 1 ? 'es' : ''}`, c && `${c} niño${c > 1 ? 's' : ''}`].filter(Boolean).join(', ');
+        };
+        const formatTime = (iso) => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return isNaN(d.getTime()) ? String(iso) : d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        };
+
+        const rows = sortedGuests.map((g, i) => ({
+            'Nro': i + 1,
+            'Nombre': g.name,
+            'Teléfono': g.phone || '',
+            'Tipo': composition(g),
+            'Personas invitadas': Math.max(1, (g.adults || 0) + (g.youth || 0) + (g.children || 0)),
+            'Estado de confirmación': statusLabel(g),
+            'Personas confirmadas': ['confirmed', 'attended'].includes(g.status) ? (g.confirmed_passes || g.passes || 1) : 0,
+            'Mesa': g.table_number || '',
+            'Restricción alimentaria': g.dietary_restrictions || '',
+            'Acompañantes': g.companions || '',
+            'Notas': g.notes || '',
+            'Invitación por WhatsApp': g.whatsapp_status === 'sent' ? 'Enviada' : 'No enviada',
+            'Ingresó al evento': g.status === 'attended' ? (formatTime(g.attended_at) || 'Sí') : '',
+        }));
+
+        const sheet = XLSX.utils.json_to_sheet(rows);
+        sheet['!cols'] = [6, 30, 16, 20, 10, 20, 12, 14, 22, 26, 26, 14, 16].map((wch) => ({ wch }));
+        sheet['!autofilter'] = { ref: sheet['!ref'] };
+        const book = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(book, sheet, 'Invitados');
+        const safeTitle = String(eventTitle || 'Evento').replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g, '').trim() || 'Evento';
+        const date = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(book, `Invitados_${safeTitle}_${date}.xlsx`);
+    };
+
     const handleCopyLink = (token) => {
         const url = `${window.location.origin}/confirmar/${token}`;
         navigator.clipboard.writeText(url);
@@ -158,6 +204,16 @@ export default function GuestList({
                 </div>
 
                 {/* Actions */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                        onClick={handleDownloadExcel}
+                        disabled={sortedGuests.length === 0}
+                        title="Descarga la lista tal como se ve (con la búsqueda y los filtros aplicados), incluyendo el estado de confirmación"
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all border border-zinc-200/80 dark:border-zinc-700 disabled:opacity-50"
+                    >
+                        <Download className="w-4 h-4 text-emerald-600" />
+                        <span>Descargar Excel{sortedGuests.length !== guests.length ? ` (${sortedGuests.length})` : ''}</span>
+                    </button>
                 {!readOnly && (
                 <div className="flex flex-wrap items-center gap-2.5">
                     <button
@@ -195,6 +251,7 @@ export default function GuestList({
                     )}
                 </div>
                 )}
+                </div>
             </div>
 
             {/* Filter Tabs & Options */}

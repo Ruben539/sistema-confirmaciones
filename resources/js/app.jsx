@@ -415,6 +415,7 @@ function Dashboard({ user, onLogout }) {
                                 <GuestList
                                     guests={guests}
                                     readOnly={isHostess}
+                                    eventTitle={activeEvent?.couple_names || activeEvent?.title}
                                     onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
                                     onOpenExcelModal={() => setIsExcelModalOpen(true)}
                                     onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
