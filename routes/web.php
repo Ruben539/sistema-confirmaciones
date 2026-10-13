@@ -50,6 +50,7 @@ Route::prefix('api')->group(function () {
     Route::put('/guests/{id}', [GuestController::class, 'update']);
     Route::post('/guests/{id}/sent', [GuestController::class, 'markSent']);
     Route::post('/guests/{id}/send-auto', [GuestController::class, 'sendWhatsAppApi']);
+    Route::post('/guests/{id}/reminder', [GuestController::class, 'sendReminder']);
     Route::delete('/guests/{id}', [GuestController::class, 'destroy']);
 
     // Seating Tables Routes

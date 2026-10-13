@@ -110,7 +110,7 @@ class Event extends Model
         'invitation_styles' => 'array',
     ];
 
-    protected $appends = ['is_active', 'has_digital_invitation', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
+    protected $appends = ['is_active', 'has_digital_invitation', 'rsvp_deadline_effective', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
 
     public function getGoogleDriveFolderUrlAttribute(): ?string
     {
@@ -203,6 +203,12 @@ class Event extends Model
     public function hasDigitalInvitation(): bool
     {
         return (bool) $this->digital_invitation_addon || self::planIncludesDigitalInvitation($this->plan_type);
+    }
+
+    // Effective RSVP deadline (aaaa-mm-dd) for clients: fixed date or event date minus the configured days
+    public function getRsvpDeadlineEffectiveAttribute(): ?string
+    {
+        return $this->rsvpDeadline()?->toDateString();
     }
 
     public function getHasDigitalInvitationAttribute(): bool

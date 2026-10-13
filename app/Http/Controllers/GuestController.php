@@ -638,6 +638,60 @@ class GuestController extends Controller
         ], 500);
     }
 
+    /**
+     * Sends a confirmation reminder to one pending guest through the bot (same queue, pacing and
+     * sending window as the automatic reminders). The guest can answer 1 / 2 and it's processed
+     * automatically; reminder_sent_at / reminder_count are updated when it goes out.
+     */
+    public function sendReminder($id)
+    {
+        $guest = Guest::with('event')->findOrFail($id);
+        $event = $guest->event;
+
+        if ($event && ($denied = $this->validateEventAccess($event, true))) {
+            return $denied;
+        }
+
+        if ($guest->status !== 'pending') {
+            return response()->json([
+                'message' => "{$guest->name} ya respondió, no necesita recordatorio.",
+                'guest' => $guest,
+            ], 422);
+        }
+
+        if (empty(preg_replace('/[^\d]/', '', (string) $guest->phone))) {
+            return response()->json([
+                'message' => "{$guest->name} no tiene un teléfono registrado.",
+                'guest' => $guest,
+            ], 422);
+        }
+
+        $deadline = $event?->rsvpDeadline();
+        if ($deadline && now()->greaterThan($deadline)) {
+            return response()->json([
+                'message' => 'El plazo para confirmar ya venció (' . $deadline->format('d/m/Y') . ').',
+                'guest' => $guest,
+            ], 422);
+        }
+
+        // Avoid double taps / several devices sending the same reminder
+        if ($guest->reminder_sent_at && $guest->reminder_sent_at->gt(now()->subHours(12))) {
+            return response()->json([
+                'message' => "A {$guest->name} ya se le envió un recordatorio el " . $guest->reminder_sent_at->format('d/m H:i') . '.',
+                'guest' => $guest,
+            ], 409);
+        }
+
+        // Mark as queued (the job keeps it on success and clears it if the bot rejects it)
+        $guest->update(['reminder_sent_at' => now()]);
+        \App\Jobs\SendWhatsAppMessageJob::dispatch($guest->id, 'reminder');
+
+        return response()->json([
+            'message' => "Recordatorio en camino a {$guest->name}. Se envía por el WhatsApp del sistema respetando las pausas entre mensajes y el horario de envío (" . config('whatsapp.window_start') . ' a ' . config('whatsapp.window_end') . ' h).',
+            'guest' => $guest->fresh(),
+        ], 202);
+    }
+
     public function destroy($id)
     {
         $guest = Guest::with('event')->findOrFail($id);
