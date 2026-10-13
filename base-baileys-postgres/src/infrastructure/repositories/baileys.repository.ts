@@ -82,6 +82,17 @@ export class BaileysTransporter implements LeadExternal {
 
   async start(socketConfig: Baileys.UserFacingSocketConfig = {} as any) {
     try {
+      // Limpiar completamente el socket anterior para evitar múltiples instancias concurrentes que causan Bad MAC
+      if (this.connection) {
+        try {
+          this.connection.ev.removeAllListeners("messages.upsert");
+          this.connection.ev.removeAllListeners("connection.update");
+          this.connection.ev.removeAllListeners("creds.update");
+          this.connection.end(undefined);
+        } catch (_) {}
+        this.connection = null;
+      }
+
       const { saveCreds, state } = await this.getAuth();
       const { version } = await this.baileys.fetchLatestBaileysVersion();
 
@@ -107,7 +118,11 @@ export class BaileysTransporter implements LeadExternal {
           return undefined;
         },
         ...socketConfig,
-        auth: socketConfig.auth || state,
+        // Caché en memoria de las claves Signal: evita lecturas/escrituras concurrentes al disco que corrompen sesiones (Bad MAC)
+        auth: socketConfig.auth || {
+          creds: state.creds,
+          keys: this.baileys.makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }) as any),
+        },
       });
 
       if (this.store) {
@@ -120,13 +135,15 @@ export class BaileysTransporter implements LeadExternal {
         for (const msg of messages) {
           if (msg.key.fromMe) continue;
 
-          // Si el mensaje tiene más de 10 minutos (600s) de antigüedad, ignorarlo para no procesar chats históricos
+          // Ignorar chats históricos. Los "notify" pueden llegar tarde (bot reconectando o reintento de cifrado
+          // que conserva la hora original), así que se aceptan hasta 12 h; el resto (append/historial) hasta 10 min.
           const rawTimestamp = msg.messageTimestamp;
           const msgTimestamp = typeof rawTimestamp === "number"
             ? rawTimestamp
             : Number((rawTimestamp as any)?.low || (rawTimestamp as any) || 0);
+          const maxAgeSeconds = type === "notify" ? 12 * 60 * 60 : 600;
 
-          if (msgTimestamp > 0 && (nowSeconds - msgTimestamp) > 600) {
+          if (msgTimestamp > 0 && (nowSeconds - msgTimestamp) > maxAgeSeconds) {
             console.log(`[Baileys] Ignorando mensaje antiguo (${nowSeconds - msgTimestamp}s de antigüedad) de ${msg.key.remoteJid}`);
             continue;
           }
@@ -160,6 +177,13 @@ export class BaileysTransporter implements LeadExternal {
           }
 
           console.log(`[Baileys] Recibido [${type}]:`, JSON.stringify({ remoteJid: msg.key.remoteJid, senderPn: keyAny.senderPn, participantPn: keyAny.participantPn, participant: msg.key.participant }), `-> phone: ${phone}`);
+
+          // Mensaje que no se pudo descifrar (Bad MAC / "messages into the future"): llega sin contenido.
+          // Baileys pide reenvío al remitente; si llega descifrado vuelve a entrar por este mismo evento.
+          if (msg.messageStubType === this.baileys.WAMessageStubType.CIPHERTEXT) {
+            console.warn(`[Baileys] ⚠️ No se pudo descifrar el mensaje de ${phone} (id=${msg.key.id}): ${JSON.stringify(msg.messageStubParameters ?? [])}. Se espera reenvío; si no llega, la sesión de cifrado está dañada.`);
+            continue;
+          }
 
           // El caption de imagen/video también cuenta como texto
           const text =
@@ -272,9 +296,15 @@ export class BaileysTransporter implements LeadExternal {
     this.connection?.end(undefined);
   }
 
+  private reconnectTimer: NodeJS.Timeout | null = null;
+
   private reconnect(socketConfig: Baileys.UserFacingSocketConfig = {} as any) {
-    this.start(socketConfig);
-    console.log("Reconnecting...");
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    console.log("[Baileys] Reconectando en 2.5 segundos...");
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.start(socketConfig);
+    }, 2500);
   }
 
   // Respalda la carpeta de sesión vencida renombrándola (nunca se borra), para que el próximo
@@ -355,7 +385,16 @@ export class BaileysTransporter implements LeadExternal {
       }
 
       console.log(`[Baileys] >>> Destino final resolved JID: ${jid}${sendOptions.quoted ? " (con cita / quoted)" : ""}${mediaUrl ? " (con imagen QR)" : ""}`);
-      const response = await this.connection.sendMessage(jid, messageContent, sendOptions);
+      let response: any;
+      try {
+        response = await this.connection.sendMessage(jid, messageContent, sendOptions);
+      } catch (mediaError) {
+        if (!messageContent.image) throw mediaError;
+        // Si falla la descarga/envío de la imagen del QR, enviar igual el texto con el link al QR
+        console.warn(`[Baileys] No se pudo enviar la imagen a ${jid} (${(mediaError as Error).message}). Se envía solo el texto con el link.`);
+        const qrLink = /^https?:\/\//.test(mediaUrl!) ? `\n\n🎟️ Tu código QR: ${mediaUrl}` : "";
+        response = await this.connection.sendMessage(jid, { text: `${message}${qrLink}` }, sendOptions);
+      }
       this.lastSendTimestamp = Date.now();
       console.log(`[Baileys] <<< Enviado exitosamente a ${jid} -> id=${response?.key?.id ?? "sin id"}`);
       return response;

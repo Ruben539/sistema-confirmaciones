@@ -361,22 +361,41 @@ class RsvpController extends Controller
             }
         }
 
-        // Use last 9 digits to match phone numbers regardless of country code (595, +54) or leading zeros
-        $cleanPhone = strlen($rawDigits) >= 9 ? substr($rawDigits, -9) : $rawDigits;
-        $last8 = strlen($rawDigits) >= 8 ? substr($rawDigits, -8) : $rawDigits;
+        // El bot avisa con is_lid cuando WhatsApp envió el contacto como @lid sin su número real:
+        // en ese caso "phone" es el LID y se resuelve con la relación LID -> invitado guardada.
+        if ($request->boolean('is_lid')) {
+            $guest = Guest::with('event')
+                ->where('whatsapp_lid', $rawDigits)
+                ->orderBy('created_at', 'desc')
+                ->first();
 
-        $guest = Guest::with('event')
-            ->where(function ($q) use ($rawDigits, $cleanPhone, $last8) {
-                $q->where('phone', 'LIKE', "%{$cleanPhone}%")
-                  ->orWhere('phone', 'LIKE', "%{$last8}%")
-                  ->orWhere('phone', 'LIKE', "%{$rawDigits}%")
-                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$cleanPhone}%"]);
-            })
-            ->orderBy('created_at', 'desc')
-            ->first();
+            if (!$guest) {
+                $resolved = $this->linkGuestByWhatsappLid($rawDigits, $message);
+                if ($resolved instanceof \Illuminate\Http\JsonResponse) {
+                    return $resolved;
+                }
+                $guest = $resolved;
+
+                // Retomar el mensaje original que llegó antes de identificar al invitado (ej: "1")
+                $pending = \Illuminate\Support\Facades\Cache::pull("wa_lid_pending:{$rawDigits}");
+                if (empty($pending)) {
+                    $menu = ($guest->conversation_state ?? 'awaiting_attendance') === 'awaiting_attendance'
+                        ? "\n\nAhora respondé con tu opción:\n1️⃣ Escribí *1* para **Confirmar Asistencia**\n2️⃣ Escribí *2* si **No podés asistir**"
+                        : "";
+                    return response()->json([
+                        'processed' => true,
+                        'reason' => 'WhatsApp LID linked to guest',
+                        'reply' => "¡Gracias {$guest->name}! Ya identificamos tu invitación ✅{$menu}"
+                    ]);
+                }
+                $message = trim($pending);
+            }
+        } else {
+            $guest = $this->findGuestByPhone($rawDigits);
+        }
 
         if (!$guest) {
-            \Illuminate\Support\Facades\Log::warning("[RSVP WhatsApp] Invitado no encontrado para teléfono entrante: {$rawDigits} (clean: {$cleanPhone})");
+            \Illuminate\Support\Facades\Log::warning("[RSVP WhatsApp] Invitado no encontrado para teléfono entrante: {$rawDigits}");
             return response()->json(['processed' => false, 'reason' => 'Guest not found']);
         }
 
@@ -540,6 +559,59 @@ class RsvpController extends Controller
             'processed' => false,
             'reason' => 'Awaiting valid attendance option',
             'reply' => $reply
+        ]);
+    }
+
+    private function findGuestByPhone(string $rawDigits): ?Guest
+    {
+        // Use last 9 digits to match phone numbers regardless of country code (595, +54) or leading zeros
+        $cleanPhone = strlen($rawDigits) >= 9 ? substr($rawDigits, -9) : $rawDigits;
+        $last8 = strlen($rawDigits) >= 8 ? substr($rawDigits, -8) : $rawDigits;
+
+        return Guest::with('event')
+            ->where(function ($q) use ($rawDigits, $cleanPhone, $last8) {
+                $q->where('phone', 'LIKE', "%{$cleanPhone}%")
+                  ->orWhere('phone', 'LIKE', "%{$last8}%")
+                  ->orWhere('phone', 'LIKE', "%{$rawDigits}%")
+                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$cleanPhone}%"]);
+            })
+            ->orderBy('created_at', 'desc')
+            ->first();
+    }
+
+    /**
+     * Contacto @lid desconocido: si el mensaje es un número de teléfono, se busca al invitado y se guarda
+     * su LID; si no, se guarda el mensaje (ej: "1") para retomarlo y se le pide su número.
+     * Devuelve el Guest vinculado o la respuesta JSON a enviar.
+     */
+    private function linkGuestByWhatsappLid(string $lid, string $message)
+    {
+        $phoneDigits = preg_replace('/[^\d]/', '', $message);
+        $looksLikePhone = preg_match('/^[\d\s\+\-\(\)\.]+$/', $message) && strlen($phoneDigits) >= 8 && strlen($phoneDigits) <= 15;
+
+        if ($looksLikePhone) {
+            $guest = $this->findGuestByPhone($phoneDigits);
+            if ($guest) {
+                $guest->update(['whatsapp_lid' => $lid]);
+                \Illuminate\Support\Facades\Log::info("[RSVP WhatsApp] LID {$lid} vinculado a {$guest->name} ({$guest->phone})");
+                return $guest;
+            }
+
+            \Illuminate\Support\Facades\Log::warning("[RSVP WhatsApp] LID {$lid} envió un número que no está en la lista: {$phoneDigits}");
+            return response()->json([
+                'processed' => false,
+                'reason' => 'LID phone not found',
+                'reply' => "No encontramos ese número en la lista de invitados 🤔\nPor favor escribí el número exacto al que te llegó la invitación (ej: *0981 123456*)."
+            ]);
+        }
+
+        \Illuminate\Support\Facades\Cache::put("wa_lid_pending:{$lid}", $message, now()->addDay());
+        \Illuminate\Support\Facades\Log::info("[RSVP WhatsApp] LID desconocido {$lid}, se pide número de teléfono (mensaje guardado: '{$message}')");
+
+        return response()->json([
+            'processed' => false,
+            'reason' => 'Unknown WhatsApp LID, asked for phone',
+            'reply' => "¡Hola! 👋 Para identificar tu invitación, respondé con tu *número de teléfono* (el mismo al que te llegó la invitación, ej: *0981 123456*)."
         ]);
     }
 

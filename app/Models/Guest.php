@@ -14,6 +14,7 @@ class Guest extends Model
         'event_id',
         'name',
         'phone',
+        'whatsapp_lid',
         'passes',
         'confirmed_passes',
         'adults',

@@ -37,7 +37,7 @@ const chatbotService = container.get("chatbot.service") as ChatbotService;
 
 import axios from "axios";
 
-async function sendToLaravelRsvp(phone: string, message: string) {
+async function sendToLaravelRsvp(phone: string, message: string, isLid: boolean) {
   const candidateUrls: string[] = [];
 
   // 1. Dominio oficial del servidor en producción
@@ -63,7 +63,7 @@ async function sendToLaravelRsvp(phone: string, message: string) {
   for (const url of uniqueUrls) {
     try {
       console.log(`[Baileys RSVP] Enviando webhook de ${phone} a Laravel (${url})...`);
-      const res = await axios.post(url, { phone, message }, { timeout: 8000 });
+      const res = await axios.post(url, { phone, message, is_lid: isLid }, { timeout: 8000 });
       return res;
     } catch (err: any) {
       if (err.response) {
@@ -80,7 +80,9 @@ async function sendToLaravelRsvp(phone: string, message: string) {
 // Integración con Laravel: Procesamiento de respuestas 1/2 de invitaciones de boda
 wsTransporter.onMessage = async (phone: string, message: string, groupJid?: string, isMentioned?: boolean, mediaType?: string, mediaPath?: string, replyJid?: string) => {
   try {
-    const res = await sendToLaravelRsvp(phone, message);
+    // Sin número real (@lid sin senderPn), "phone" es el LID: Laravel lo resuelve o le pide el número al invitado
+    const isLid = !!replyJid && replyJid.endsWith("@lid");
+    const res = await sendToLaravelRsvp(phone, message, isLid);
 
     if (res && res.data && res.data.reply) {
       console.log(`[Baileys RSVP] Respuesta enviada a ${phone}: ${res.data.reply.slice(0, 50)}...${res.data.media_url ? ' [QR adjunto]' : ''}`);
