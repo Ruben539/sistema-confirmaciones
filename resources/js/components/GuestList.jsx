@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, Download, QrCode, BellRing } from 'lucide-react';
+import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, Download, QrCode, BellRing, AlertCircle } from 'lucide-react';
 
 export default function GuestList({
     guests,
@@ -16,6 +16,7 @@ export default function GuestList({
     onSendReminder,
     onRemindAllPending,
     onSendCorrections,
+    onSendCountCorrection,
     // Anfitriona: only sees the list (no adding, importing, sending, editing or deleting)
     readOnly = false,
     eventTitle = ''
@@ -74,6 +75,9 @@ export default function GuestList({
             } else if (sortField === 'table_number') {
                 aVal = a.table_number ? a.table_number.toLowerCase() : 'zzzz';
                 bVal = b.table_number ? b.table_number.toLowerCase() : 'zzzz';
+            } else if (sortField === 'passes') {
+                aVal = Number(a.passes) || 1;
+                bVal = Number(b.passes) || 1;
             } else if (sortField === 'category') {
                 aVal = (a.children || 0) > 0 ? 3 : (a.youth || 0) > 0 ? 2 : 1;
                 bVal = (b.children || 0) > 0 ? 3 : (b.youth || 0) > 0 ? 2 : 1;
@@ -367,6 +371,19 @@ export default function GuestList({
                         {selectedGuestIds.length} invitados seleccionados
                     </span>
                     <div className="flex items-center gap-2">
+                        {onSendCountCorrection && (() => {
+                            const confirmedSelected = guests.filter((g) => selectedGuestIds.includes(g.id) && ['confirmed', 'attended'].includes(g.status) && g.phone);
+                            return confirmedSelected.length > 0 && (
+                                <button
+                                    onClick={() => onSendCountCorrection(confirmedSelected)}
+                                    title="Disculpa con la cantidad de invitados correcta (solo ese mensaje)"
+                                    className="px-3 py-1.5 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 transition-colors flex items-center gap-1"
+                                >
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    <span>Enviar cantidad correcta ({confirmedSelected.length} confirmados)</span>
+                                </button>
+                            );
+                        })()}
                         <button
                             onClick={handleBulkDelete}
                             className="px-3 py-1.5 rounded-xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors flex items-center gap-1"
@@ -443,6 +460,12 @@ export default function GuestList({
                                         <ArrowUpDown className="w-3 h-3 text-zinc-400" />
                                     </div>
                                 </th>
+                                <th className="p-3.5 cursor-pointer hover:text-zinc-900 dark:hover:text-white" onClick={() => handleSort('passes')}>
+                                    <div className="flex items-center gap-1">
+                                        <span>Personas</span>
+                                        <ArrowUpDown className="w-3 h-3 text-zinc-400" />
+                                    </div>
+                                </th>
                                 <th className="p-3.5">Envío WhatsApp</th>
                                 <th className="p-3.5">Detalles / Dieta</th>
                                 <th className="p-3.5 text-right rounded-r-2xl">Acciones</th>
@@ -502,37 +525,46 @@ export default function GuestList({
                                         )}
                                     </td>
 
-                                    {/* Invitation composition (invited person + companions) */}
+                                    {/* Category: what kind of people the invitation includes */}
                                     <td className="p-3.5">
-                                        <div className="flex flex-wrap items-center gap-1">
-                                            {(guest.adults || 0) > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-xl border border-blue-200 dark:border-blue-800">
-                                                    👤 {guest.adults > 1 ? `${guest.adults} Adultos` : 'Adulto'}
-                                                </span>
-                                            )}
-                                            {(guest.youth || 0) > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 px-2.5 py-1 rounded-xl border border-violet-200 dark:border-violet-800">
-                                                    ⚡ {guest.youth > 1 ? `${guest.youth} Jóvenes` : 'Joven'}
-                                                </span>
-                                            )}
-                                            {(guest.children || 0) > 0 && (
-                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-xl border border-teal-200 dark:border-teal-800">
-                                                    👶 {guest.children > 1 ? `${guest.children} Niños` : 'Niño'}
-                                                </span>
-                                            )}
+                                        {(() => {
+                                            const types = [
+                                                ['adults', '👤', 'Adulto', 'Adultos', 'text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800'],
+                                                ['youth', '⚡', 'Joven', 'Jóvenes', 'text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 border-violet-200 dark:border-violet-800'],
+                                                ['children', '👶', 'Niño', 'Niños', 'text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800'],
+                                            ].filter(([key]) => (guest[key] || 0) > 0);
+                                            const mixed = types.length > 1;
+                                            return (
+                                                <div className="flex flex-wrap items-center gap-1">
+                                                    {types.map(([key, icon, one, many, cls]) => (
+                                                        <span key={key} className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-xl border ${cls}`}>
+                                                            {/* With several types, how many of each (e.g. 2 Adultos + 1 Niño) */}
+                                                            {icon} {mixed ? `${guest[key]} ${guest[key] > 1 ? many : one}` : (guest[key] > 1 ? many : one)}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
+                                    </td>
+
+                                    {/* People of the invitation (the invited person included) */}
+                                    <td className="p-3.5">
+                                        <div className="flex items-baseline gap-1">
+                                            <span className="text-base font-black text-zinc-900 dark:text-white">{Math.max(1, guest.passes || 1)}</span>
+                                            <span className="text-[11px] text-zinc-500">{Math.max(1, guest.passes || 1) === 1 ? 'persona' : 'personas'}</span>
                                         </div>
-                                        {guest.pending_correction_from != null && guest.status !== 'declined' && (
-                                            <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-1" title="Recibió la invitación o confirmó con la cantidad anterior">
-                                                ⚠️ Cambió de {guest.pending_correction_from} a {guest.passes}: falta avisar ({['confirmed', 'attended'].includes(guest.status) ? 'reenviar QR' : 'recordatorio'})
+                                        {['confirmed', 'attended'].includes(guest.status) && guest.confirmed_passes > 0 && guest.confirmed_passes !== guest.passes && (
+                                            <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-0.5" title="Lo que respondió el invitado: el pase QR es para esta cantidad">
+                                                ✅ Confirmaron {guest.confirmed_passes}
                                             </div>
                                         )}
-                                        {['confirmed', 'attended'].includes(guest.status) && guest.confirmed_passes > 0 && guest.confirmed_passes !== guest.passes && (
-                                            <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-1" title="Lo que respondió el invitado: el pase QR es para esta cantidad">
-                                                ✅ Confirmaron {guest.confirmed_passes} de {guest.passes}
+                                        {guest.pending_correction_from != null && guest.status !== 'declined' && (
+                                            <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-0.5" title="Recibió la invitación o confirmó con la cantidad anterior">
+                                                ⚠️ Antes {guest.pending_correction_from}: falta avisar ({['confirmed', 'attended'].includes(guest.status) ? 'reenviar QR' : 'recordatorio'})
                                             </div>
                                         )}
                                         {guest.companions && (
-                                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 truncate max-w-[180px]" title={guest.companions}>
+                                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate max-w-[180px]" title={guest.companions}>
                                                 + {guest.companions}
                                             </div>
                                         )}
@@ -590,6 +622,17 @@ export default function GuestList({
                                                     title="Enviar recordatorio (con la cantidad de lugares actual)"
                                                 >
                                                     <BellRing className="w-4 h-4" />
+                                                </button>
+                                            )}
+
+                                            {/* Apology with the right number of people (confirmed guests) */}
+                                            {onSendCountCorrection && ['confirmed', 'attended'].includes(guest.status) && guest.phone && (
+                                                <button
+                                                    onClick={() => onSendCountCorrection([guest])}
+                                                    className="p-2 rounded-xl text-zinc-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+                                                    title="Enviar disculpa con la cantidad correcta"
+                                                >
+                                                    <AlertCircle className="w-4 h-4" />
                                                 </button>
                                             )}
 

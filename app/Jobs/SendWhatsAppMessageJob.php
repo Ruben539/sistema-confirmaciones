@@ -74,10 +74,11 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
         // Which number writes: the guest's own, or by the event (auto = the bot up to its daily quota).
         // The QR pass goes to someone who already talks to us: their number, outside the first-message quota.
-        $channel = $this->messageMode === 'pass'
+        $toKnownGuest = in_array($this->messageMode, ['pass', 'correction'], true);
+        $channel = $toKnownGuest
             ? WhatsAppGateway::channelFor($guest)
             : WhatsAppGateway::channelForInvitation($guest);
-        if ($this->messageMode !== 'pass' && $channel === 'baileys' && WhatsAppGateway::baileysQuotaLeft() === 0) {
+        if (!$toKnownGuest && $channel === 'baileys' && WhatsAppGateway::baileysQuotaLeft() === 0) {
             // The bot already wrote first to as many people as is safe today
             $tomorrow = now()->addDay()->startOfDay()->setHour(config('whatsapp.window_start'));
             $this->release(max(60, (int) now()->diffInSeconds($tomorrow, false) + random_int(0, 900)));
@@ -123,6 +124,10 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
     private function alreadyHandled(Guest $guest): bool
     {
+        if ($this->messageMode === 'correction') {
+            // Apology with the right number of people: only to guests who confirmed
+            return !in_array($guest->status, ['confirmed', 'attended'], true);
+        }
         if ($this->messageMode === 'pass') {
             // QR with a corrected amount: only while it is still pending and the guest is still confirmed
             return $guest->pending_correction_from === null || !in_array($guest->status, ['confirmed', 'attended'], true);
@@ -145,6 +150,28 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
     private function send(Guest $guest, WhatsAppThrottle $throttle, string $channel, bool $allowFallback = true): void
     {
+        if ($this->messageMode === 'correction') {
+            $text = \App\Services\GuestMessages::countCorrection($guest, $guest->event);
+            $result = WhatsAppGateway::sendText($guest->phone, $text, null, [
+                'channel' => $channel,
+                'session_id' => WhatsAppThrottle::sessionForEvent($guest->event),
+                'name' => trim(explode(' ', trim($guest->name))[0]),
+            ]);
+            if ($result['ok']) {
+                $throttle->recordSent();
+                \App\Models\GuestMessage::logOutgoing($guest, $text);
+                \App\Models\GuestActivity::record($guest, 'count_corrected', "Se le envió la cantidad correcta ({$guest->passes} personas) con una disculpa");
+                if ($guest->pending_correction_from !== null) {
+                    $guest->update(['pending_correction_from' => null]);
+                }
+            } elseif (!empty($result['retry']) && empty($result['uncertain'])) {
+                $this->release($result['retry_after'] ?? 600);
+            } else {
+                Log::warning("WhatsApp Job: count correction not sent to {$guest->name}: " . ($result['error'] ?? ''));
+            }
+            return;
+        }
+
         if ($this->messageMode === 'pass') {
             // Same pass as the "Reenviar QR" button (it logs the message / activity and clears the correction)
             app(\App\Http\Controllers\GuestController::class)->sendWhatsAppQrPass($guest, true);

@@ -243,6 +243,21 @@ class GuestMessages
             . "\nMostralo en la recepción y vas a poder entrar sin filas. ¡Te esperamos!";
     }
 
+    // The number of people was wrong in an earlier message (corrected list): apology with the right amount
+    public static function countCorrection(Guest $guest, Event $event): string
+    {
+        $places = max(1, (int) $guest->passes);
+        $text = "¡Hola, " . self::firstName($guest) . "! 🙏 Te pedimos disculpas por la confusión: revisamos la lista de invitados de la celebración de "
+            . self::hosts($event) . " y tu invitación es para *{$places} " . ($places === 1 ? 'persona' : 'personas') . "*.";
+
+        $confirmed = (int) $guest->confirmed_passes;
+        if ($confirmed > 0 && $confirmed !== $places) {
+            $text .= "\n\nTenemos confirmadas *{$confirmed}*. Si cambia, respondé este mensaje y lo actualizamos.";
+        }
+
+        return $text . "\n\nTu pase de ingreso sigue siendo el mismo. ¡Gracias por tu comprensión! 💛";
+    }
+
     // ───────── Other situations ─────────
 
     public static function eventPassed(Guest $guest, Event $event): string

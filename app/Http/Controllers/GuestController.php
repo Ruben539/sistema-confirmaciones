@@ -555,6 +555,44 @@ class GuestController extends Controller
         ]);
     }
 
+    /**
+     * Apology with the right number of people, to confirmed guests (one or a selection). Only that text:
+     * no QR. Queued with the usual pauses; the same guest is not sent it twice within 12 h.
+     */
+    public function sendCountCorrection(Request $request, $eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, true)) {
+            return $denied;
+        }
+        $validated = $request->validate(['guest_ids' => 'required|array|min:1', 'guest_ids.*' => 'integer']);
+
+        $guests = Guest::where('event_id', $eventId)
+            ->whereIn('id', $validated['guest_ids'])
+            ->whereIn('status', ['confirmed', 'attended'])
+            ->whereNotNull('phone')
+            ->get()
+            ->filter(fn ($g) => Cache::add("count_fix:{$g->id}", true, now()->addHours(12)));
+
+        if ($guests->isEmpty()) {
+            return response()->json(['message' => 'No hay invitados confirmados a los que enviar la corrección (o ya se les envió en las últimas 12 h).'], 422);
+        }
+
+        $delay = 0;
+        foreach ($guests as $guest) {
+            SendWhatsAppMessageJob::dispatch($guest->id, 'correction')->delay(now()->addSeconds($delay));
+            $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+        }
+
+        $count = $guests->count();
+        return response()->json([
+            'message' => $count === 1
+                ? "Corrección en camino a {$guests->first()->name}."
+                : "📨 Corrección programada para {$count} invitados. Sale de a uno, con pausas para proteger el número.",
+            'count' => $count,
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $guest = Guest::with('event')->findOrFail($id);

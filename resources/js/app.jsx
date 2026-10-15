@@ -227,6 +227,22 @@ function Dashboard({ user, onLogout }) {
         loadGuests(activeEvent.id);
     };
 
+    // Apology with the right number of people, only that message (to confirmed guests)
+    const handleSendCountCorrection = async (list) => {
+        if (!activeEvent || !list.length) return;
+        const hosts = activeEvent.couple_names || activeEvent.title;
+        const first = list[0];
+        const places = first.passes || 1;
+        const preview = `¡Hola, ${first.name.split(' ')[0]}! 🙏 Te pedimos disculpas por la confusión: revisamos la lista de invitados de la celebración de ${hosts} y tu invitación es para ${places} ${places === 1 ? 'persona' : 'personas'}.\n\nTu pase de ingreso sigue siendo el mismo. ¡Gracias por tu comprensión! 💛`;
+        const who = list.length === 1 ? first.name : `${list.length} invitados confirmados`;
+        if (!window.confirm(`¿Enviar la cantidad correcta a ${who}?\n\nEjemplo del mensaje:\n\n${preview}`)) return;
+        const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-count-correction`, {
+            method: 'POST',
+            body: JSON.stringify({ guest_ids: list.map((g) => g.id) }),
+        });
+        showToast(json?.message || 'No se pudo programar la corrección.');
+    };
+
     const handleRemindAllPending = async () => {
         if (!activeEvent) return;
         const count = guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone).length;
@@ -486,6 +502,7 @@ function Dashboard({ user, onLogout }) {
                                     onSendReminder={handleSendReminder}
                                     onRemindAllPending={handleRemindAllPending}
                                     onSendCorrections={handleSendCorrections}
+                                    onSendCountCorrection={handleSendCountCorrection}
                                 />
                             </div>
                         )
@@ -597,6 +614,7 @@ function Dashboard({ user, onLogout }) {
                                         onSendReminder={handleSendReminder}
                                         onRemindAllPending={handleRemindAllPending}
                                         onSendCorrections={handleSendCorrections}
+                                        onSendCountCorrection={handleSendCountCorrection}
                                     />
                                 </>
                             )}
