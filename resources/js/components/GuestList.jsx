@@ -15,6 +15,7 @@ export default function GuestList({
     onResendQr,
     onSendReminder,
     onRemindAllPending,
+    onSendCorrections,
     // Anfitriona: only sees the list (no adding, importing, sending, editing or deleting)
     readOnly = false,
     eventTitle = ''
@@ -236,6 +237,17 @@ export default function GuestList({
                         <Upload className="w-4 h-4 text-emerald-600" />
                         <span>Subir Excel</span>
                     </button>
+
+                    {onSendCorrections && guests.some((g) => g.pending_correction_from != null && g.status !== 'declined') && (
+                        <button
+                            onClick={onSendCorrections}
+                            title="Invitados a los que les cambió la cantidad después de recibir la invitación o confirmar"
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-xs font-bold transition-all border border-rose-200/80 dark:border-rose-800"
+                        >
+                            <Send className="w-4 h-4" />
+                            <span>Enviar correcciones ({guests.filter((g) => g.pending_correction_from != null && g.status !== 'declined').length})</span>
+                        </button>
+                    )}
 
                     {onRemindAllPending && guests.some((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone) && (
                         <button
@@ -509,6 +521,11 @@ export default function GuestList({
                                                 </span>
                                             )}
                                         </div>
+                                        {guest.pending_correction_from != null && guest.status !== 'declined' && (
+                                            <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-1" title="Recibió la invitación o confirmó con la cantidad anterior">
+                                                ⚠️ Cambió de {guest.pending_correction_from} a {guest.passes}: falta avisar ({['confirmed', 'attended'].includes(guest.status) ? 'reenviar QR' : 'recordatorio'})
+                                            </div>
+                                        )}
                                         {['confirmed', 'attended'].includes(guest.status) && guest.confirmed_passes > 0 && guest.confirmed_passes !== guest.passes && (
                                             <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-1" title="Lo que respondió el invitado: el pase QR es para esta cantidad">
                                                 ✅ Confirmaron {guest.confirmed_passes} de {guest.passes}

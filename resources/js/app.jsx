@@ -217,6 +217,16 @@ function Dashboard({ user, onLogout }) {
         if (activeEvent) loadGuests(activeEvent.id);
     };
 
+    // Guests told a number of people that later changed (corrected list / edited): reminder or new QR
+    const handleSendCorrections = async () => {
+        if (!activeEvent) return;
+        const count = guests.filter((g) => g.pending_correction_from != null && g.status !== 'declined').length;
+        if (!window.confirm(`¿Enviar la corrección a ${count} invitados?\n\nLos que no respondieron reciben un recordatorio con los lugares corregidos; los confirmados, el pase QR con la cantidad nueva.`)) return;
+        const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-corrections`, { method: 'POST' });
+        showToast(json?.message || 'No se pudieron programar las correcciones.');
+        loadGuests(activeEvent.id);
+    };
+
     const handleRemindAllPending = async () => {
         if (!activeEvent) return;
         const count = guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone).length;
@@ -475,6 +485,7 @@ function Dashboard({ user, onLogout }) {
                                     onResendQr={handleResendQr}
                                     onSendReminder={handleSendReminder}
                                     onRemindAllPending={handleRemindAllPending}
+                                    onSendCorrections={handleSendCorrections}
                                 />
                             </div>
                         )
@@ -585,6 +596,7 @@ function Dashboard({ user, onLogout }) {
                                         onResendQr={handleResendQr}
                                         onSendReminder={handleSendReminder}
                                         onRemindAllPending={handleRemindAllPending}
+                                        onSendCorrections={handleSendCorrections}
                                     />
                                 </>
                             )}

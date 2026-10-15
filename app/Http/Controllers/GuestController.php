@@ -301,6 +301,7 @@ class GuestController extends Controller
 
         // Preload all existing guests for this event into a phone index map
         $existingGuests = Guest::where('event_id', $eventId)->get();
+        $corrections = [];
         $existingMap = [];
         foreach ($existingGuests as $eg) {
             $digits = preg_replace('/[^\d]/', '', $eg->phone);
@@ -383,9 +384,25 @@ class GuestController extends Controller
                 }
 
                 if (!empty($updateFields)) {
+                    $previousPasses = (int) $existingGuest->passes;
                     $existingGuest->update($updateFields);
                     $this->importMembers($existingGuest, $item['members'] ?? []);
                     $updated++;
+
+                    // The amount changed for someone who already got the invitation or confirmed: they must be told
+                    $wasContacted = $existingGuest->whatsapp_status === 'sent' || in_array($existingGuest->status, ['confirmed', 'attended'], true);
+                    if ($wasContacted && (int) $existingGuest->passes !== $previousPasses) {
+                        if ($existingGuest->pending_correction_from === null) {
+                            $existingGuest->update(['pending_correction_from' => $previousPasses]);
+                        }
+                        $corrections[] = [
+                            'id' => $existingGuest->id,
+                            'name' => $existingGuest->name,
+                            'from' => $previousPasses,
+                            'to' => (int) $existingGuest->passes,
+                            'action' => $existingGuest->correctionAction(),
+                        ];
+                    }
                 } elseif (!empty($item['members']) && !$existingGuest->members()->exists()) {
                     $this->importMembers($existingGuest, $item['members']);
                     $updated++;
@@ -492,7 +509,49 @@ class GuestController extends Controller
             'updated' => $updated,
             'skipped' => $skipped,
             'limit_reached' => $limitReached,
-            'unimported_due_to_limit' => $unimportedDueToLimit
+            'unimported_due_to_limit' => $unimportedDueToLimit,
+            // Guests whose number of people changed after being contacted (to send them the correction)
+            'corrections' => array_values(array_filter($corrections, fn ($c) => $c['action'] !== null)),
+        ]);
+    }
+
+    /**
+     * Sends the pending corrections of an event: a reminder with the current places to those who didn't
+     * answer, the QR with the new amount to those who confirmed. Queued with the usual pauses.
+     */
+    public function sendCorrections(Request $request, $eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, true)) {
+            return $denied;
+        }
+
+        $guests = Guest::with('event')->where('event_id', $eventId)->whereNotNull('pending_correction_from')->get()
+            ->filter(fn ($g) => $g->correctionAction() !== null);
+        if ($guests->isEmpty()) {
+            return response()->json(['message' => 'No hay correcciones pendientes de enviar.'], 422);
+        }
+
+        Cache::forget(SendWhatsAppMessageJob::cancelKey($eventId));
+        $delay = 0;
+        $counts = ['reminder' => 0, 'qr' => 0];
+        foreach ($guests as $guest) {
+            $action = $guest->correctionAction();
+            if ($action === 'reminder') {
+                $guest->update(['reminder_sent_at' => now()]);
+            }
+            SendWhatsAppMessageJob::dispatch($guest->id, $action === 'qr' ? 'pass' : 'reminder')->delay(now()->addSeconds($delay));
+            $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+            $counts[$action]++;
+        }
+
+        $parts = [];
+        if ($counts['reminder']) $parts[] = "{$counts['reminder']} recordatorios con los lugares corregidos";
+        if ($counts['qr']) $parts[] = "{$counts['qr']} pases QR con la cantidad nueva";
+
+        return response()->json([
+            'message' => '📨 Correcciones programadas: ' . implode(' y ', $parts) . '. Salen de a uno, con pausas para proteger el número.',
+            'count' => $guests->count(),
         ]);
     }
 
@@ -639,6 +698,9 @@ class GuestController extends Controller
             $result = \App\Services\WhatsAppGateway::sendPass($guest, $message, $qrUrl, WhatsAppThrottle::sessionForEvent($event));
             if ($result['ok']) {
                 \App\Models\GuestMessage::logOutgoing($guest, $message . "\n[Pase QR adjunto]");
+                if ($guest->pending_correction_from !== null) {
+                    $guest->update(['pending_correction_from' => null]);
+                }
             }
             \App\Models\GuestActivity::record(
                 $guest,

@@ -58,9 +58,19 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         const rsvpUrl = `${window.location.origin}/confirmar/${guest.token}`;
         const formattedLocation = formatLocation(event?.location);
 
-        return template
+        // Same rule as the server: groups get "Lugares reservados" before "Respondé..." (or where {lugares} is)
+        const places = Math.max(1, guest.passes || 1);
+        const placesText = places === 1 ? '1 persona' : `${places} personas`;
+        let text = template;
+        if (places > 1 && !text.includes('{lugares}')) {
+            const line = '🎟️ Lugares reservados: *{lugares}*';
+            text = /^.*respond/im.test(text) ? text.replace(/^(.*respond)/im, `${line}\n\n$1`) : `${text}\n\n${line}`;
+        }
+
+        return text
             .replace(/\{nombre\}/g, guest.name)
             .replace(/\{pareja\}/g, event?.couple_names || event?.title || 'nosotros')
+            .replace(/\{lugares\}/g, placesText)
             .replace(/\{lugar\}/g, formattedLocation)
             .replace(/\{link\}/g, rsvpUrl);
     };
@@ -516,6 +526,16 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-bold text-sm text-zinc-900 dark:text-white">{guest.name}</span>
                                             <span className="text-xs font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">{guest.phone}</span>
+
+                                            {/* People of the invitation (and what they confirmed, if different) */}
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950/40 px-2 py-0.5 rounded-full border border-teal-200 dark:border-teal-900" title="Lugares reservados en la invitación">
+                                                🎟️ {Math.max(1, guest.passes || 1)} {Math.max(1, guest.passes || 1) === 1 ? 'persona' : 'personas'}
+                                            </span>
+                                            {['confirmed', 'attended'].includes(guest.status) && guest.confirmed_passes > 0 && guest.confirmed_passes !== guest.passes && (
+                                                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400" title="Lo que respondió el invitado">
+                                                    ✅ confirmaron {guest.confirmed_passes}
+                                                </span>
+                                            )}
 
                                             {isSendingNow && (
                                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100 dark:bg-amber-950/80 px-2.5 py-0.5 rounded-full border border-amber-300 animate-pulse">

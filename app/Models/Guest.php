@@ -31,6 +31,7 @@ class Guest extends Model
         'notes',
         'whatsapp_status',
         'whatsapp_channel',
+        'pending_correction_from',
         'last_sent_at',
         'reminder_sent_at',
         'reminder_count',
@@ -68,6 +69,16 @@ class Guest extends Model
         static::updating(function ($guest) {
             if ($guest->isDirty(['adults', 'youth', 'children'])) {
                 $guest->passes = max(1, (int)$guest->adults + (int)$guest->youth + (int)$guest->children);
+                // Changed after the guest got the invitation or confirmed (Excel re-imported or edited by hand):
+                // remember the previous amount until they are told (reminder or new QR)
+                $before = (int) $guest->getOriginal('passes');
+                $contacted = $guest->getOriginal('whatsapp_status') === 'sent'
+                    || in_array($guest->getOriginal('status'), ['confirmed', 'attended'], true);
+                if ($contacted && $before > 0 && $before !== (int) $guest->passes && $guest->pending_correction_from === null) {
+                    $guest->pending_correction_from = $before;
+                } elseif ((int) $guest->pending_correction_from === (int) $guest->passes) {
+                    $guest->pending_correction_from = null; // back to what they were told
+                }
                 // The invitation was corrected below what was confirmed (e.g. a list re-imported with the right
                 // totals): the confirmation can't be for more people than invited
                 if ((int) $guest->confirmed_passes > $guest->passes) {
@@ -79,6 +90,10 @@ class Guest extends Model
             }
             if ($guest->isDirty(['confirmed_adults', 'confirmed_youth', 'confirmed_children'])) {
                 $guest->confirmed_passes = (int)$guest->confirmed_adults + (int)$guest->confirmed_youth + (int)$guest->confirmed_children;
+            }
+            // Answering after the change (the bot shows the current places) settles the pending correction
+            if ($guest->isDirty('status') && in_array($guest->status, ['confirmed', 'declined'], true) && $guest->getOriginal('status') === 'pending') {
+                $guest->pending_correction_from = null;
             }
             // Check-in by hand (or an old app) lets the whole group in; leaving "attended" resets the count
             if ($guest->isDirty('status')) {
@@ -148,6 +163,18 @@ class Guest extends Model
                 GuestActivity::record($guest, 'reminder_sent', "Recordatorio enviado por WhatsApp (#{$guest->reminder_count})");
             }
         });
+    }
+
+    // What has to be sent after a change of the number of people: a reminder (didn't answer yet) or the QR
+    public function correctionAction(): ?string
+    {
+        if ($this->pending_correction_from === null || empty(preg_replace('/[^\d]/', '', (string) $this->phone))) {
+            return null;
+        }
+        if (in_array($this->status, ['confirmed', 'attended'], true)) {
+            return 'qr';
+        }
+        return $this->status === 'pending' && $this->whatsapp_status === 'sent' ? 'reminder' : null;
     }
 
     // People of the invitation: the confirmed amount once they answered, otherwise the invited amount

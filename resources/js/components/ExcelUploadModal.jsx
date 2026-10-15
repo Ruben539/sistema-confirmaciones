@@ -12,6 +12,9 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const [mapping, setMapping] = useState({ name: '', last_name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
     // How to read each list: the amount column as total or as companions, and rows without phone under a guest
     const [options, setOptions] = useState({ countMode: 'companions', joinOrphans: true });
+    // After importing a corrected list: guests already contacted whose number of people changed
+    const [corrections, setCorrections] = useState(null);
+    const [sendingCorrections, setSendingCorrections] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const fileInputRef = useRef(null);
@@ -24,6 +27,59 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const capacityPercent = Math.min(100, Math.round((currentGuestsCount / maxGuests) * 100));
 
     if (!isOpen) return null;
+
+    const closeCorrections = () => {
+        setCorrections(null);
+        onClose();
+    };
+
+    const sendCorrectionsNow = async () => {
+        setSendingCorrections(true);
+        const { json } = await apiFetch(`/api/events/${activeEventId}/send-corrections`, { method: 'POST' });
+        setSendingCorrections(false);
+        onImportSuccess(json?.message || 'No se pudieron programar las correcciones.');
+        closeCorrections();
+    };
+
+    if (corrections) {
+        const reminders = corrections.filter((c) => c.action === 'reminder').length;
+        const passes = corrections.filter((c) => c.action === 'qr').length;
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-md animate-fade-in">
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                    <div className="p-6 border-b border-zinc-100 dark:border-zinc-800">
+                        <h2 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5 text-amber-500" /> Cambió la cantidad de {corrections.length} {corrections.length === 1 ? 'invitación ya enviada' : 'invitaciones ya enviadas'}
+                        </h2>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                            Estos invitados ya recibieron la invitación o confirmaron con la cantidad anterior. Conviene avisarles:
+                            {reminders > 0 && <> <strong>{reminders}</strong> sin responder reciben un recordatorio con los lugares corregidos;</>}
+                            {passes > 0 && <> <strong>{passes}</strong> confirmados reciben el pase QR con la cantidad nueva.</>}
+                        </p>
+                    </div>
+                    <div className="p-4 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
+                        {corrections.map((c) => (
+                            <div key={c.id} className="flex items-center justify-between gap-3 py-2">
+                                <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">{c.name}</span>
+                                <span className="shrink-0 text-zinc-500">
+                                    {c.from} → <strong className="text-zinc-900 dark:text-white">{c.to}</strong> personas ·{' '}
+                                    <span className={c.action === 'qr' ? 'text-emerald-600' : 'text-amber-600'}>{c.action === 'qr' ? 'nuevo QR' : 'recordatorio'}</span>
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="p-5 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row justify-end gap-2">
+                        <button onClick={closeCorrections} className="px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                            Más tarde (quedan marcados en la lista)
+                        </button>
+                        <button onClick={sendCorrectionsNow} disabled={sendingCorrections} className="px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold disabled:opacity-50">
+                            {sendingCorrections ? 'Programando...' : `Enviar correcciones (${corrections.length})`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     // Handle File Drop or Upload
     const handleFileChange = (e) => {
@@ -368,7 +424,11 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
             if (ok) {
                 onImportSuccess(json?.message || 'Invitados importados con éxito');
-                onClose();
+                if (json?.corrections?.length) {
+                    setCorrections(json.corrections);
+                } else {
+                    onClose();
+                }
             } else {
                 setError(json?.message || 'Error al guardar la lista de invitados');
             }

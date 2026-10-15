@@ -72,9 +72,12 @@ class SendWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
-        // Which number writes: the guest's own, or by the event (auto = the bot up to its daily quota)
-        $channel = WhatsAppGateway::channelForInvitation($guest);
-        if ($channel === 'baileys' && WhatsAppGateway::baileysQuotaLeft() === 0) {
+        // Which number writes: the guest's own, or by the event (auto = the bot up to its daily quota).
+        // The QR pass goes to someone who already talks to us: their number, outside the first-message quota.
+        $channel = $this->messageMode === 'pass'
+            ? WhatsAppGateway::channelFor($guest)
+            : WhatsAppGateway::channelForInvitation($guest);
+        if ($this->messageMode !== 'pass' && $channel === 'baileys' && WhatsAppGateway::baileysQuotaLeft() === 0) {
             // The bot already wrote first to as many people as is safe today
             $tomorrow = now()->addDay()->startOfDay()->setHour(config('whatsapp.window_start'));
             $this->release(max(60, (int) now()->diffInSeconds($tomorrow, false) + random_int(0, 900)));
@@ -120,6 +123,10 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
     private function alreadyHandled(Guest $guest): bool
     {
+        if ($this->messageMode === 'pass') {
+            // QR with a corrected amount: only while it is still pending and the guest is still confirmed
+            return $guest->pending_correction_from === null || !in_array($guest->status, ['confirmed', 'attended'], true);
+        }
         if ($this->messageMode === 'reminder') {
             // Guest answered in the meantime: no reminder needed
             if ($guest->status !== 'pending') {
@@ -138,6 +145,13 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
     private function send(Guest $guest, WhatsAppThrottle $throttle, string $channel, bool $allowFallback = true): void
     {
+        if ($this->messageMode === 'pass') {
+            // Same pass as the "Reenviar QR" button (it logs the message / activity and clears the correction)
+            app(\App\Http\Controllers\GuestController::class)->sendWhatsAppQrPass($guest, true);
+            $throttle->recordSent();
+            return;
+        }
+
         $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
         $mediaUrl = null;
@@ -185,6 +199,8 @@ class SendWhatsAppMessageJob implements ShouldQueue
                     'reminder_sent_at' => now(),
                     'reminder_count' => (int) $guest->reminder_count + 1,
                     'whatsapp_channel' => $channel,
+                    // The reminder says the current places: the correction is done
+                    'pending_correction_from' => null,
                 ]);
             } else {
                 $guest->update([
