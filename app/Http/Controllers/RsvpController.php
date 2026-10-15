@@ -423,6 +423,66 @@ class RsvpController extends Controller
 
         \Illuminate\Support\Facades\Log::info("[RSVP WhatsApp] Mensaje entrante de {$guest->name} ({$rawDigits}): '{$message}'");
 
+        // Every message is kept in the guest's history (the planner sees what the guest actually wrote)
+        $statusBefore = $guest->status;
+        \App\Models\GuestActivity::record($guest, 'message_received', 'Mensaje por WhatsApp: "' . mb_substr($message, 0, 450) . '"');
+
+        $response = $this->replyToGuest($guest, $message);
+
+        // Long messages are personal notes (excuses, questions, gifts...): save them in the guest's notes
+        // and forward them to the planner so nothing is lost behind the automatic answer
+        if (mb_strlen($message) >= self::LONG_MESSAGE_CHARS) {
+            $guest->refresh();
+            $note = '[WhatsApp ' . now()->format('d/m H:i') . '] ' . mb_substr($message, 0, 1000);
+            $guest->update(['notes' => $guest->notes ? $guest->notes . "\n" . $note : $note]);
+            $this->forwardMessageToPlanner($guest, $message, $statusBefore);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Sends the planner of the event a WhatsApp with a guest's long message
+     * (at most one every 10 minutes per guest, so a chatty guest doesn't flood her phone).
+     */
+    private function forwardMessageToPlanner(Guest $guest, string $message, ?string $statusBefore): void
+    {
+        $planner = $guest->event?->planner;
+        if (!$planner || empty($planner->phone) || !\Illuminate\Support\Facades\Cache::add("planner_forward:{$guest->id}", true, now()->addMinutes(10))) {
+            return;
+        }
+
+        $labels = ['pending' => 'Pendiente', 'confirmed' => 'Confirmado ✅', 'attended' => 'Ingresó', 'declined' => 'No asiste ❌'];
+        $status = $labels[$guest->status] ?? $guest->status;
+        $changed = $statusBefore !== $guest->status ? " (antes: " . ($labels[$statusBefore] ?? $statusBefore) . ")" : '';
+        $eventTitle = $guest->event->couple_names ?? $guest->event->title;
+
+        $text = "💬 *Mensaje de un invitado*\n"
+            . "🎪 Evento: {$eventTitle}\n"
+            . "👤 {$guest->name} ({$guest->phone})\n"
+            . "📋 Estado: {$status}{$changed}\n\n"
+            . "“" . mb_substr($message, 0, 1200) . "”\n\n"
+            . "Quedó guardado en las notas del invitado. Si hace falta, respondele directamente.";
+
+        try {
+            \Illuminate\Support\Facades\Http::timeout(8)->post(config('whatsapp.bot_url'), [
+                'phone' => preg_replace('/[^\d]/', '', $planner->phone),
+                'message' => $text,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("[RSVP WhatsApp] No se pudo reenviar el mensaje de {$guest->name} a la planner: " . $e->getMessage());
+        }
+    }
+
+    // From this length a guest's WhatsApp message is treated as a personal note (saved and forwarded)
+    private const LONG_MESSAGE_CHARS = 80;
+
+    /**
+     * Decides the bot's answer to a guest's WhatsApp message (confirm / decline / menu / reminder
+     * of the options) and applies the change to the guest.
+     */
+    private function replyToGuest(Guest $guest, string $message)
+    {
         $event = $guest->event;
 
         if ($event && !$event->is_enabled) {
@@ -480,9 +540,12 @@ class RsvpController extends Controller
         }
 
         // 3. Check for direct decline first to avoid positive matching on phrases like "no confirmo"
+        // "Starts with 2 / no" only counts in very short answers ("2", "No", "No, gracias"): "2 personas vamos" or "No sé si llego, pero voy" are not a decline
+        $isShortAnswer = mb_strlen($msgClean) <= 15 && !preg_match('/^no s[eé]\b/u', $msgClean);
         $isDecline = in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré', 'no voy', 'no asisto'])
-            || preg_match('/^(2\b|2️⃣|cancelar|rechazar|no\b)/i', $msgClean)
-            || preg_match('/\b(no puedo|no podre|no podré|no voy|no asisto|no asistire|no asistiré|no podremos)\b/i', $msgClean);
+            || ($isShortAnswer && preg_match('/^(2\b|2️⃣|cancelar|rechazar|no\b)/iu', $msgClean))
+            || preg_match('/\b(no puedo|no podre|no podré|no voy|no asisto|no asistire|no asistiré|no podremos)\b/iu', $msgClean)
+            || preg_match('/(no (voy|vamos) a (poder|ir|asistir|estar)|no (podre|podré|podremos|podria|podría|podriamos|podríamos) (ir|asistir|estar|acompa)|no poder (asistir|ir|estar|acompa)|no podemos (ir|asistir|estar)|(me|nos) es imposible|imposible (asistir|ir)|lamentablemente no|no (asistiremos|iremos|ire|iré)\b)/iu', $msgClean);
 
         if ($isDecline) {
             $guest->update([
@@ -507,7 +570,7 @@ class RsvpController extends Controller
 
         // 4. Check for direct confirm command ("1", "si", "confirmar", "confirmo", "confirm", "confirn", etc.)
         $isConfirm = in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'confirm', 'confirn', 'si', 'sí', 'asistire', 'asistiré', 'asisto', 'voy', 'claro', 'obvio'])
-            || preg_match('/^(1\b|1️⃣|confirm|confirn|si\b|sí\b|asist|voy\b)/i', $msgClean)
+            || ($isShortAnswer && preg_match('/^(1\b|1️⃣|confirm|confirn|si\b|sí\b|asist|voy\b)/iu', $msgClean))
             || preg_match('/\b(confirmar|confirmo|confirmamos|confirmacion|confirmación|confirm|confirn|asistire|asistiré|asisto|asistiremos)\b/i', $msgClean);
 
         if ($isConfirm) {
@@ -552,6 +615,15 @@ class RsvpController extends Controller
                 ]);
             }
 
+            // A long message here is a personal note, not a menu preference: keep asking for the menu
+            if (mb_strlen($message) >= self::LONG_MESSAGE_CHARS) {
+                return response()->json([
+                    'processed' => false,
+                    'reason' => 'Long message in dietary state',
+                    'reply' => "¡Gracias por tu mensaje, {$guest->name}! 💌 Se lo hacemos llegar a los organizadores.\n\nPara completar tu confirmación, contanos si tenés alguna restricción alimentaria:\n• Escribí tu restricción (ej: *Celíaco*, *Vegetariano*)\n• O respondé *Ninguna*",
+                ]);
+            }
+
             $noDietary = in_array($msgClean, ['ninguna', 'ninguno', 'ningun', 'no', 'ninguna restriccion', 'normal', 'sin restriccion']);
             $dietaryText = $noDietary ? 'Sin restricciones' : trim($message);
 
@@ -574,8 +646,11 @@ class RsvpController extends Controller
             ]);
         }
 
-        // Default: awaiting_attendance fallback for greetings or unknown text
-        $reply = "¡Hola {$guest->name}! 👋 Para confirmar tu asistencia al evento de {$coupleNames}, por favor respondé enviando únicamente el número de tu opción:{$locationText}\n\n1️⃣ Escribí *1* para **Confirmar Asistencia**\n2️⃣ Escribí *2* si **No podés asistir**";
+        // Default: awaiting_attendance fallback for greetings or unknown text.
+        // A long message is answered as such (it is forwarded to the planner by handleIncomingWhatsApp)
+        $reply = mb_strlen($message) >= self::LONG_MESSAGE_CHARS
+            ? "¡Gracias por tu mensaje, {$guest->name}! 💌 Se lo hacemos llegar a los organizadores.\n\nPara registrar tu respuesta, escribí:\n1️⃣ *1* si asistís al evento de {$coupleNames}\n2️⃣ *2* si no podés asistir"
+            : "¡Hola {$guest->name}! 👋 Para confirmar tu asistencia al evento de {$coupleNames}, por favor respondé enviando únicamente el número de tu opción:{$locationText}\n\n1️⃣ Escribí *1* para **Confirmar Asistencia**\n2️⃣ Escribí *2* si **No podés asistir**";
 
         return response()->json([
             'processed' => false,
@@ -583,6 +658,7 @@ class RsvpController extends Controller
             'reply' => $reply
         ]);
     }
+
 
     // Compares the last 9 digits so 0981..., 981... and 595981... all match
     private function isAdminPhone(string $rawDigits): bool

@@ -1,7 +1,5 @@
 import * as Baileys from "@whiskeysockets/baileys";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { makeInMemoryStore } = require("@whiskeysockets/baileys");
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const qrcode = require("qrcode-terminal") as { generate: (qr: string, opts: object) => void };
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const qrImage = require("qr-image") as { image: (text: string, opts: object) => NodeJS.ReadableStream };
@@ -28,34 +26,33 @@ export class BaileysTransporter implements LeadExternal {
     this.onMessageCallback = cb;
   }
 
-  private store: any = null;
   private lastMsgMap: Map<string, any> = new Map();
+
+  // Recent messages (incoming and sent), so Baileys can re-send one when the other side asks for a
+  // retry because it couldn't decrypt it. Bounded: the old in-memory store kept every chat forever
+  // and rewrote it to disk every 15 s, which slowed the bot down over time.
+  private messageCache: Map<string, any> = new Map();
+  private static readonly MESSAGE_CACHE_SIZE = 2000;
+
+  private rememberMessage(msg: any) {
+    const id = msg?.key?.id;
+    if (!id || !msg.message) return;
+    this.messageCache.delete(id);
+    this.messageCache.set(id, msg);
+    if (this.messageCache.size > BaileysTransporter.MESSAGE_CACHE_SIZE) {
+      const oldest = this.messageCache.keys().next().value;
+      if (oldest) this.messageCache.delete(oldest);
+    }
+  }
+
+  // Connection health (see startWatchdog)
+  private reconnectAttempts = 0;
+  private lastOpenAt = Date.now();
+  private waVersion: [number, number, number] | undefined;
 
   constructor(sessionName: string = "default", private baileys: typeof Baileys = Baileys) {
     this.sessionName = `tokens/${sessionName}`;
-    try {
-      if (typeof makeInMemoryStore === "function") {
-        this.store = makeInMemoryStore({ logger: pino({ level: "silent" }) as any });
-        const storeDir = path.join(process.cwd(), "tokens");
-        if (!fs.existsSync(storeDir)) {
-          fs.mkdirSync(storeDir, { recursive: true });
-        }
-        const storeFile = path.join(storeDir, `${sessionName}_store.json`);
-        if (fs.existsSync(storeFile)) {
-          try {
-            this.store.readFromFile(storeFile);
-          } catch (_) {}
-        }
-        // Guardar store periódicamente para responder a reintentos de cifrado (Signal Protocol)
-        setInterval(() => {
-          try {
-            if (this.store) this.store.writeToFile(storeFile);
-          } catch (_) {}
-        }, 15000);
-      }
-    } catch (e) {
-      console.warn("[Baileys] No se pudo crear inMemoryStore:", (e as Error).message);
-    }
+    this.startWatchdog();
     this.start();
   }
 
@@ -94,10 +91,18 @@ export class BaileysTransporter implements LeadExternal {
       }
 
       const { saveCreds, state } = await this.getAuth();
-      const { version } = await this.baileys.fetchLatestBaileysVersion();
+
+      // Asked to GitHub on every (re)connection: if it fails (network blip) use the last known one,
+      // or Baileys' built-in version, instead of aborting the reconnection
+      try {
+        const { version } = await this.baileys.fetchLatestBaileysVersion();
+        if (version) this.waVersion = version as [number, number, number];
+      } catch (e) {
+        console.warn("[Baileys] No se pudo consultar la versión de WhatsApp Web, se usa la conocida:", (e as Error).message);
+      }
 
       this.connection = this.baileys.makeWASocket({
-        version,
+        ...(this.waVersion ? { version: this.waVersion } : {}),
         browser: this.baileys.Browsers.ubuntu("Chrome"),
         //@ts-ignore
         logger: pino({ level: "silent" }),
@@ -106,17 +111,7 @@ export class BaileysTransporter implements LeadExternal {
         msgRetryCounterCache: this.msgRetryCounterCache as any,
         markOnlineOnConnect: true,
         syncFullHistory: false,
-        getMessage: async (key) => {
-          if (this.store && key.remoteJid && key.id) {
-            try {
-              const msg = await this.store.loadMessage(key.remoteJid, key.id);
-              return msg?.message || undefined;
-            } catch (e) {
-              return undefined;
-            }
-          }
-          return undefined;
-        },
+        getMessage: async (key) => (key.id ? this.messageCache.get(key.id)?.message : undefined),
         ...socketConfig,
         // Caché en memoria de las claves Signal: evita lecturas/escrituras concurrentes al disco que corrompen sesiones (Bad MAC)
         auth: socketConfig.auth || {
@@ -125,14 +120,12 @@ export class BaileysTransporter implements LeadExternal {
         },
       });
 
-      if (this.store) {
-        this.store.bind(this.connection.ev);
-      }
       this.connection.ev.on("creds.update", saveCreds);
       this.connection.ev.on("messages.upsert", async ({ messages, type }) => {
         const nowSeconds = Math.floor(Date.now() / 1000);
 
         for (const msg of messages) {
+          this.rememberMessage(msg);
           if (msg.key.fromMe) continue;
 
           // Ignorar chats históricos. Los "notify" pueden llegar tarde (bot reconectando o reintento de cifrado
@@ -170,7 +163,12 @@ export class BaileysTransporter implements LeadExternal {
           const groupJid = isGroup ? remoteJid : undefined;
 
           if (cleanPhone) {
+            this.lastMsgMap.delete(cleanPhone);
             this.lastMsgMap.set(cleanPhone, msg);
+            if (this.lastMsgMap.size > 5000) {
+              const oldest = this.lastMsgMap.keys().next().value;
+              if (oldest) this.lastMsgMap.delete(oldest);
+            }
           }
           if (phone && phone !== cleanPhone) {
             this.lastMsgMap.set(phone, msg);
@@ -263,6 +261,8 @@ export class BaileysTransporter implements LeadExternal {
         }
 
         if (state.connection === "open") {
+          this.reconnectAttempts = 0;
+          this.lastOpenAt = Date.now();
           console.log("✅ WhatsApp conectado correctamente.");
           this.onReady.forEach((cb) => cb(this.connection!));
         }
@@ -284,10 +284,20 @@ export class BaileysTransporter implements LeadExternal {
           this.clearSession();
         }
 
+        // 440 = connectionReplaced: another process/device opened this same session. Reconnecting fast
+        // makes both fight and corrupts the encryption sessions (Bad MAC): wait and warn instead.
+        if (statusCode === this.baileys.DisconnectReason.connectionReplaced) {
+          console.error("[Baileys] ⚠️ Otra instancia está usando esta misma sesión de WhatsApp (440). Revisá que el bot corra una sola vez (pm2 ls / ps aux | grep node).");
+          this.reconnect(60000);
+          return;
+        }
+
         this.reconnect();
       });
     } catch (error) {
-      console.error(error);
+      // Any failure while (re)connecting (auth files, network...) used to leave the bot dead until a manual restart
+      console.error("[Baileys] Error al conectar, se reintenta:", (error as Error)?.message || error);
+      this.reconnect();
     }
   }
 
@@ -298,13 +308,37 @@ export class BaileysTransporter implements LeadExternal {
 
   private reconnectTimer: NodeJS.Timeout | null = null;
 
-  private reconnect(socketConfig: Baileys.UserFacingSocketConfig = {} as any) {
+  // Exponential backoff: 2.5 s, 5 s, 10 s... up to 1 min, so a session that keeps failing doesn't
+  // hammer WhatsApp (which can get the number blocked). Reset when the connection opens.
+  private reconnect(forcedDelayMs?: number) {
+    if (this.isEnd) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    console.log("[Baileys] Reconectando en 2.5 segundos...");
+    const delay = forcedDelayMs ?? Math.min(60000, 2500 * 2 ** this.reconnectAttempts);
+    this.reconnectAttempts++;
+    console.log(`[Baileys] Reconectando en ${Math.round(delay / 1000)} s (intento ${this.reconnectAttempts})...`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.start(socketConfig);
-    }, 2500);
+      this.start();
+    }, delay);
+  }
+
+  // If WhatsApp stays disconnected for 5 minutes (and isn't just waiting for a QR scan), exit so PM2
+  // restarts the process: the same thing that was being done by hand with "pm2 restart".
+  private startWatchdog() {
+    const MAX_DOWN_MS = 5 * 60 * 1000;
+    setInterval(() => {
+      if (this.isEnd) return;
+      if (this.connectionState?.connection === "open") {
+        this.lastOpenAt = Date.now();
+        return;
+      }
+      if (this.connectionState?.qr) return; // waiting for someone to scan the QR
+      const downFor = Date.now() - this.lastOpenAt;
+      if (downFor > MAX_DOWN_MS) {
+        console.error(`[Baileys] ⚠️ WhatsApp lleva ${Math.round(downFor / 60000)} min sin conexión. Se reinicia el proceso (PM2 lo vuelve a levantar).`);
+        process.exit(1);
+      }
+    }, 60000);
   }
 
   // Respalda la carpeta de sesión vencida renombrándola (nunca se borra), para que el próximo
@@ -396,6 +430,7 @@ export class BaileysTransporter implements LeadExternal {
         response = await this.connection.sendMessage(jid, { text: `${message}${qrLink}` }, sendOptions);
       }
       this.lastSendTimestamp = Date.now();
+      this.rememberMessage(response);
       console.log(`[Baileys] <<< Enviado exitosamente a ${jid} -> id=${response?.key?.id ?? "sin id"}`);
       return response;
     } catch (error) {
