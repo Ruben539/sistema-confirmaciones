@@ -11,6 +11,8 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
     const [companions, setCompanions] = useState('');
     // Named companions (each can later sit at another table and is checked in on its own)
     const [members, setMembers] = useState([]);
+    // People who confirmed (what the guest answered), only for guests who already confirmed
+    const [confirmedPeople, setConfirmedPeople] = useState(null);
     const [notes, setNotes] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -29,6 +31,9 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
             });
             setCompanions(guestToEdit.companions || '');
             setMembers((guestToEdit.members || []).map((m) => ({ id: m.id, name: m.name, category: m.category, table_number: m.table_number })));
+            setConfirmedPeople(['confirmed', 'attended'].includes(guestToEdit.status)
+                ? (guestToEdit.confirmed_passes || guestToEdit.passes || 1)
+                : null);
         } else {
             setName('');
             setPhone('');
@@ -36,6 +41,7 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
             setCounts({ adults: 1, youth: 0, children: 0 });
             setCompanions('');
             setMembers([]);
+            setConfirmedPeople(null);
             setNotes('');
         }
         setError(null);
@@ -92,7 +98,15 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                     youth,
                     children,
                     companions,
-                    notes
+                    notes,
+                    // Confirmed people (adults first), never more than the invitation
+                    ...(confirmedPeople !== null ? (() => {
+                        const total = Math.max(1, Math.min(confirmedPeople, passes));
+                        const ca = Math.min(total, adults);
+                        const cy = Math.min(total - ca, youth);
+                        const cc = Math.min(total - ca - cy, children);
+                        return { confirmed_adults: ca + (total - ca - cy - cc), confirmed_youth: cy, confirmed_children: cc, confirmed_passes: total };
+                    })() : {})
                 })
             });
 
@@ -247,6 +261,20 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                                 </div>
                             ))}
                         </div>
+
+                        {confirmedPeople !== null && (
+                            <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50">
+                                <div className="text-xs">
+                                    <div className="font-bold text-emerald-800 dark:text-emerald-200">Confirmaron</div>
+                                    <div className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">Lo que respondió el invitado. El pase QR es para esta cantidad.</div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button type="button" onClick={() => setConfirmedPeople((n) => Math.max(1, n - 1))} className="w-7 h-7 rounded-full border border-emerald-300 text-emerald-700 dark:text-emerald-300 flex items-center justify-center"><Minus className="w-3.5 h-3.5" /></button>
+                                    <span className="text-sm font-black text-emerald-800 dark:text-emerald-200 min-w-[3.5rem] text-center">{Math.min(confirmedPeople, totalPeople)} de {totalPeople}</span>
+                                    <button type="button" onClick={() => setConfirmedPeople((n) => Math.min(totalPeople, n + 1))} className="w-7 h-7 rounded-full border border-emerald-300 text-emerald-700 dark:text-emerald-300 flex items-center justify-center"><Plus className="w-3.5 h-3.5" /></button>
+                                </div>
+                            </div>
+                        )}
 
                         <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                             Incluí al invitado principal. Ej: una mamá que lleva a su hija → 1 adulto + 1 niño. Recibe un solo link y confirma por las dos.

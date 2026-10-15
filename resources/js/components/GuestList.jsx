@@ -509,6 +509,11 @@ export default function GuestList({
                                                 </span>
                                             )}
                                         </div>
+                                        {['confirmed', 'attended'].includes(guest.status) && guest.confirmed_passes > 0 && guest.confirmed_passes !== guest.passes && (
+                                            <div className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 mt-1" title="Lo que respondió el invitado: el pase QR es para esta cantidad">
+                                                ✅ Confirmaron {guest.confirmed_passes} de {guest.passes}
+                                            </div>
+                                        )}
                                         {guest.companions && (
                                             <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 truncate max-w-[180px]" title={guest.companions}>
                                                 + {guest.companions}

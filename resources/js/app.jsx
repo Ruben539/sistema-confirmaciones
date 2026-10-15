@@ -229,7 +229,10 @@ function Dashboard({ user, onLogout }) {
     // Sends the entry pass again by WhatsApp (e.g. after correcting how many people it is for)
     const handleResendQr = async (guest) => {
         const people = guest.confirmed_passes || guest.passes || 1;
-        if (!window.confirm(`¿Reenviar el pase QR a ${guest.name} por WhatsApp?\n\nEl mensaje dirá que es válido para ${people} ${people === 1 ? 'persona' : 'personas'}.`)) return;
+        const partial = guest.confirmed_passes > 0 && guest.confirmed_passes !== guest.passes
+            ? `\n(La invitación es para ${guest.passes}; confirmaron ${guest.confirmed_passes}. Si van todos, corregilo antes con ✏️ Editar → Confirmaron.)`
+            : '';
+        if (!window.confirm(`¿Reenviar el pase QR a ${guest.name} por WhatsApp?\n\nEl mensaje dirá que es válido para ${people} ${people === 1 ? 'persona' : 'personas'}.${partial}`)) return;
         const { json } = await apiFetch(`/api/guests/${guest.id}/resend-qr`, { method: 'POST' });
         showToast(json?.message || 'No se pudo reenviar el QR.');
     };
