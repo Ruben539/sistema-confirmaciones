@@ -399,7 +399,18 @@ export class BaileysTransporter implements LeadExternal {
 
   private sendQueue: Promise<any> = Promise.resolve();
   private lastSendTimestamp: number = 0;
-  private MANDATORY_DELAY_MS: number = 15000;
+  // Gaps between two messages of the bot, to anyone (seconds, from the .env; random inside each range):
+  //  - first messages (invitations, reminders, notices): never closer than this
+  //  - answers to a guest who wrote: text / with an image (the QR pass after confirming)
+  private MANDATORY_DELAY_MS: number = Number(process.env.BOT_SEND_DELAY_SECONDS || 15) * 1000;
+  private REPLY_DELAY_MS: [number, number] = [
+    Number(process.env.BOT_REPLY_MIN_SECONDS || 4) * 1000,
+    Number(process.env.BOT_REPLY_MAX_SECONDS || 10) * 1000,
+  ];
+  private MEDIA_REPLY_DELAY_MS: [number, number] = [
+    Number(process.env.BOT_MEDIA_MIN_SECONDS || 15) * 1000,
+    Number(process.env.BOT_MEDIA_MAX_SECONDS || 30) * 1000,
+  ];
 
   async sendMsg({ message, phone, groupJid, replyJid, mediaUrl }: { message: string; phone: string; groupJid?: string; replyJid?: string; mediaUrl?: string }): Promise<any> {
     this.sendQueue = this.sendQueue.then(() => this.executeSend({ message, phone, groupJid, replyJid, mediaUrl }));
@@ -408,15 +419,19 @@ export class BaileysTransporter implements LeadExternal {
 
   private async executeSend({ message, phone, groupJid, replyJid, mediaUrl }: { message: string; phone: string; groupJid?: string; replyJid?: string; mediaUrl?: string }): Promise<any> {
     const isConversationalReply = !!replyJid;
-    const requiredDelay = isConversationalReply ? 1000 : this.MANDATORY_DELAY_MS;
+    const hasMedia = !!(mediaUrl && mediaUrl.trim());
+    // Several guests confirming at once don't get their QR one right after the other
+    const requiredDelay = !isConversationalReply
+      ? Math.max(this.MANDATORY_DELAY_MS, hasMedia ? this.MEDIA_REPLY_DELAY_MS[0] : 0)
+      : hasMedia
+        ? this.randomBetween(this.MEDIA_REPLY_DELAY_MS[0], this.MEDIA_REPLY_DELAY_MS[1])
+        : this.randomBetween(this.REPLY_DELAY_MS[0], this.REPLY_DELAY_MS[1]);
 
     if (this.lastSendTimestamp > 0) {
       const elapsed = Date.now() - this.lastSendTimestamp;
       if (elapsed < requiredDelay) {
         const waitMs = requiredDelay - elapsed;
-        if (!isConversationalReply) {
-          console.log(`[Baileys Anti-Spam Queue] Esperando ${(waitMs / 1000).toFixed(1)}s para respetar el delay obligatorio de 15s entre envíos masivos...`);
-        }
+        console.log(`[Baileys Anti-Spam Queue] Esperando ${(waitMs / 1000).toFixed(1)}s antes del próximo mensaje${hasMedia ? " (con imagen)" : ""}...`);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
     }
