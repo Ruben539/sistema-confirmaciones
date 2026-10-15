@@ -1,0 +1,275 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Guest;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Every outgoing WhatsApp message goes through here, by the channel set in WHATSAPP_DRIVER:
+ *  - "baileys": our Node bot (POST to WHATSAPP_BOT_URL), as before.
+ *  - "cloud":   the official WhatsApp Cloud API. Free text only inside the 24 h after the person last
+ *               wrote to us; otherwise an approved template (invitation, reminder, pass or notice).
+ *
+ * Result: ['ok' => bool, 'retry' => bool (safe to try again later), 'uncertain' => bool (may have been
+ * sent anyway: don't retry, it would duplicate), 'retry_after' => seconds, 'error' => string].
+ */
+class WhatsAppGateway
+{
+    public static function isCloud(): bool
+    {
+        return config('whatsapp.driver') === 'cloud';
+    }
+
+    // The person wrote to us in the last 24 h: free text is allowed (set by the Cloud webhook)
+    public static function markInbound(string $phone): void
+    {
+        Cache::put('wa:in:' . self::digits($phone), now()->timestamp, now()->addHours(23));
+    }
+
+    public static function inWindow(string $phone): bool
+    {
+        return Cache::has('wa:in:' . self::digits($phone));
+    }
+
+    /**
+     * Free text (with an optional image: URL or local file). Cloud: outside the 24 h window it goes as the
+     * "notice" template ("Hola {{1}} 👋 ... {{2}}"), unless $opts['outside_window'] === 'fail'.
+     * $opts: name (for the notice greeting), session_id (Baileys), timeout.
+     */
+    public static function sendText(string $phone, string $text, ?string $media = null, array $opts = []): array
+    {
+        $phone = self::digits($phone);
+        if (!self::isCloud()) {
+            return self::baileys(array_filter([
+                'phone' => $phone,
+                'message' => $text,
+                'mediaUrl' => $media,
+                'session_id' => $opts['session_id'] ?? null,
+            ]), $opts['timeout'] ?? 15);
+        }
+
+        if (self::inWindow($phone)) {
+            return $media ? self::cloudImage($phone, $media, $text) : self::cloudText($phone, $text);
+        }
+        if (($opts['outside_window'] ?? 'template') === 'fail') {
+            return ['ok' => false, 'retry' => false, 'error' => 'window_closed'];
+        }
+
+        return self::template($phone, config('whatsapp.cloud.templates.notice'), [($opts['name'] ?? '') ?: 'qué tal', $text]);
+    }
+
+    /**
+     * Invitation or reminder to a guest. Baileys: the text built from the event's message. Cloud: the
+     * approved template with the guest's data and the "Sí, voy" / "No voy a poder" buttons (they answer 1 / 2).
+     */
+    public static function sendInvitation(Guest $guest, string $mode, string $text, ?string $media, ?string $sessionId = null): array
+    {
+        if (!self::isCloud()) {
+            return self::sendText($guest->phone, $text, $media, ['session_id' => $sessionId]);
+        }
+
+        $event = $guest->event;
+        $hosts = GuestMessages::hosts($event);
+        $places = max(1, (int) $guest->passes);
+        $placesText = $places === 1 ? '1 persona' : "{$places} personas";
+        $buttons = ['1', '2'];
+
+        if ($mode === 'reminder') {
+            $deadline = $event?->rsvpDeadline();
+            return self::template($guest->phone, config('whatsapp.cloud.templates.reminder'), [
+                self::firstName($guest),
+                $hosts,
+                $deadline ? $deadline->locale('es')->isoFormat('D [de] MMMM') : 'la fecha indicada',
+            ], null, $buttons);
+        }
+
+        $withImage = $media && config('whatsapp.cloud.templates.invitation_image');
+        return self::template($guest->phone, config($withImage ? 'whatsapp.cloud.templates.invitation_image' : 'whatsapp.cloud.templates.invitation'), [
+            self::firstName($guest),
+            $hosts,
+            $event?->location ?: 'el lugar que te van a indicar',
+            $placesText,
+        ], $withImage ? $media : null, $buttons);
+    }
+
+    // Entry pass (QR image). Cloud outside the 24 h window: the "pass" template with the QR as header
+    public static function sendPass(Guest $guest, string $text, string $qrUrl, ?string $sessionId = null): array
+    {
+        if (!self::isCloud() || self::inWindow($guest->phone)) {
+            return self::sendText($guest->phone, $text, $qrUrl, ['session_id' => $sessionId, 'timeout' => 10]);
+        }
+
+        $people = $guest->groupSize();
+        return self::template($guest->phone, config('whatsapp.cloud.templates.pass'), [
+            self::firstName($guest),
+            GuestMessages::hosts($guest->event),
+            $people === 1 ? '1 persona' : "{$people} personas",
+        ], $qrUrl);
+    }
+
+    // Blue ticks on the guest's message (Cloud only)
+    public static function markRead(string $messageId): void
+    {
+        if (self::isCloud()) {
+            self::cloudPost(['status' => 'read', 'message_id' => $messageId]);
+        }
+    }
+
+    // ───────── Baileys ─────────
+
+    private static function baileys(array $payload, int $timeout): array
+    {
+        try {
+            $res = Http::timeout($timeout)->post(config('whatsapp.bot_url'), $payload);
+        } catch (ConnectionException $e) {
+            // cURL 7: the bot is down, nothing was sent. A timeout may have been sent anyway.
+            $down = str_contains($e->getMessage(), 'cURL error 7');
+            return ['ok' => false, 'retry' => $down, 'uncertain' => !$down, 'retry_after' => 300, 'error' => $e->getMessage()];
+        }
+
+        if ($res->successful()) {
+            return ['ok' => true];
+        }
+        // Bot up but its WhatsApp session is disconnected / busy
+        return ['ok' => false, 'retry' => $res->serverError(), 'retry_after' => 600, 'error' => $res->body()];
+    }
+
+    // ───────── Cloud API ─────────
+
+    private static function cloudText(string $phone, string $text): array
+    {
+        return self::cloudPost([
+            'to' => $phone,
+            'type' => 'text',
+            'text' => ['body' => mb_substr($text, 0, 4096), 'preview_url' => true],
+        ]);
+    }
+
+    private static function cloudImage(string $phone, string $media, string $caption): array
+    {
+        $image = self::mediaRef($media);
+        if (!$image) {
+            return self::cloudText($phone, $caption);
+        }
+        // Captions are limited to 1024 characters: longer texts go right after the image
+        if (mb_strlen($caption) <= 1024) {
+            return self::cloudPost(['to' => $phone, 'type' => 'image', 'image' => $image + ['caption' => $caption]]);
+        }
+        $sent = self::cloudPost(['to' => $phone, 'type' => 'image', 'image' => $image]);
+        return $sent['ok'] ? self::cloudText($phone, $caption) : $sent;
+    }
+
+    private static function template(string $phone, ?string $name, array $bodyParams, ?string $headerImage = null, array $quickReplies = []): array
+    {
+        if (!$name) {
+            return ['ok' => false, 'retry' => false, 'error' => 'Plantilla de WhatsApp no configurada'];
+        }
+
+        $components = [];
+        if ($headerImage && ($image = self::mediaRef($headerImage))) {
+            $components[] = ['type' => 'header', 'parameters' => [['type' => 'image', 'image' => $image]]];
+        }
+        $components[] = [
+            'type' => 'body',
+            'parameters' => array_map(fn ($p) => ['type' => 'text', 'text' => self::templateParam($p)], $bodyParams),
+        ];
+        foreach (array_values($quickReplies) as $i => $payload) {
+            $components[] = [
+                'type' => 'button',
+                'sub_type' => 'quick_reply',
+                'index' => (string) $i,
+                'parameters' => [['type' => 'payload', 'payload' => $payload]],
+            ];
+        }
+
+        return self::cloudPost([
+            'to' => self::digits($phone),
+            'type' => 'template',
+            'template' => [
+                'name' => $name,
+                'language' => ['code' => config('whatsapp.cloud.language', 'es')],
+                'components' => $components,
+            ],
+        ]);
+    }
+
+    private static function cloudPost(array $payload): array
+    {
+        $cfg = config('whatsapp.cloud');
+        if (empty($cfg['phone_number_id']) || empty($cfg['token'])) {
+            return ['ok' => false, 'retry' => false, 'error' => 'Faltan WHATSAPP_CLOUD_PHONE_NUMBER_ID / WHATSAPP_CLOUD_TOKEN en el .env'];
+        }
+        $url = "https://graph.facebook.com/{$cfg['graph_version']}/{$cfg['phone_number_id']}/messages";
+
+        try {
+            $res = Http::withToken($cfg['token'])->timeout(20)->post($url, ['messaging_product' => 'whatsapp'] + $payload);
+        } catch (ConnectionException $e) {
+            // Couldn't connect: nothing sent. A timeout after connecting may have been sent.
+            $notConnected = str_contains($e->getMessage(), 'cURL error 6') || str_contains($e->getMessage(), 'cURL error 7');
+            return ['ok' => false, 'retry' => $notConnected, 'uncertain' => !$notConnected, 'retry_after' => 300, 'error' => $e->getMessage()];
+        }
+
+        if ($res->successful()) {
+            return ['ok' => true, 'id' => $res->json('messages.0.id')];
+        }
+
+        $code = (int) $res->json('error.code');
+        $message = $res->json('error.error_data.details') ?: $res->json('error.message') ?: $res->body();
+        // Rate limits / temporary problems on Meta's side: try again later
+        $retry = $res->serverError() || in_array($code, [4, 80007, 130429, 131016, 131048, 131056], true);
+        Log::warning("[WhatsApp Cloud] {$code}: {$message}");
+
+        return ['ok' => false, 'retry' => $retry, 'retry_after' => 900, 'code' => $code, 'error' => "{$code}: {$message}"];
+    }
+
+    // Public URL as a link; a local file (event photo stored on the server) is uploaded to Meta first
+    private static function mediaRef(string $media): ?array
+    {
+        if (preg_match('#^https?://#i', $media)) {
+            return ['link' => $media];
+        }
+        if (!is_file($media)) {
+            return null;
+        }
+
+        $cfg = config('whatsapp.cloud');
+        try {
+            $res = Http::withToken($cfg['token'])->timeout(60)
+                ->attach('file', fopen($media, 'r'), basename($media))
+                ->post("https://graph.facebook.com/{$cfg['graph_version']}/{$cfg['phone_number_id']}/media", [
+                    'messaging_product' => 'whatsapp',
+                    'type' => mime_content_type($media) ?: 'image/jpeg',
+                ]);
+            if ($res->successful() && $res->json('id')) {
+                return ['id' => $res->json('id')];
+            }
+            Log::warning('[WhatsApp Cloud] No se pudo subir la imagen: ' . $res->body());
+        } catch (\Throwable $e) {
+            Log::warning('[WhatsApp Cloud] No se pudo subir la imagen: ' . $e->getMessage());
+        }
+        return null;
+    }
+
+    // Meta rejects template parameters with line breaks, tabs or 4+ spaces in a row
+    private static function templateParam($value): string
+    {
+        $text = preg_replace('/\s*[\r\n\t]+\s*/u', ' · ', trim((string) $value));
+        $text = preg_replace('/ {2,}/', ' ', $text);
+        $text = mb_substr($text, 0, 1000);
+        return $text !== '' ? $text : '-';
+    }
+
+    private static function firstName(Guest $guest): string
+    {
+        return trim(explode(' ', trim($guest->name))[0]) ?: $guest->name;
+    }
+
+    private static function digits(string $phone): string
+    {
+        return preg_replace('/[^\d]/', '', $phone);
+    }
+}

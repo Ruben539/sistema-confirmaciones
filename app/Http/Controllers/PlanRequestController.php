@@ -56,16 +56,12 @@ class PlanRequestController extends Controller
         }
         $adminPhones = array_values(array_unique(array_filter($adminPhones)));
 
-        $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
-        $sentCount = 0;
+                $sentCount = 0;
 
         foreach ($adminPhones as $adminPhone) {
             try {
-                $res = Http::timeout(8)->post($botUrl, [
-                    'phone' => preg_replace('/[^\d]/', '', $adminPhone),
-                    'message' => $whatsappMessage
-                ]);
-                if ($res->successful()) {
+                $res = \App\Services\WhatsAppGateway::sendText(preg_replace('/[^\d]/', '', $adminPhone), $whatsappMessage, null, ['timeout' => 8, 'name' => 'administrador']);
+                if ($res['ok']) {
                     $sentCount++;
                 }
             } catch (\Exception $e) {
@@ -263,14 +259,10 @@ class PlanRequestController extends Controller
         if ($planner && !empty($planner->phone)) {
             $cleanPlannerPhone = $this->formatParaguayPhone($planner->phone);
             $eventTitle = $event->couple_names ?? $event->title;
-            $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
             try {
-                Http::timeout(8)->post($botUrl, [
-                    'phone' => preg_replace('/[^\d]/', '', $cleanPlannerPhone),
-                    'message' => $planRequest->isDigitalInvitation()
+                \App\Services\WhatsAppGateway::sendText(preg_replace('/[^\d]/', '', $cleanPlannerPhone), $planRequest->isDigitalInvitation()
                         ? "🎉 ¡Hola {$planner->name}! La *Invitación Digital* para el evento '{$eventTitle}' ya está *HABILITADA*.\n\nYa podés configurarla desde la sección Invitación Digital del panel."
-                        : "🎉 ¡Hola {$planner->name}! Tu solicitud de ampliación de plan para el evento '{$eventTitle}' fue *APROBADA*.\n\nNuevo plan: *" . (Event::PLANS[$planRequest->requested_plan]['label'] ?? $planRequest->requested_plan) . "* con un cupo máximo de *{$planRequest->requested_guests} invitados*. Ya podés continuar cargando invitados."
-                ]);
+                        : "🎉 ¡Hola {$planner->name}! Tu solicitud de ampliación de plan para el evento '{$eventTitle}' fue *APROBADA*.\n\nNuevo plan: *" . (Event::PLANS[$planRequest->requested_plan]['label'] ?? $planRequest->requested_plan) . "* con un cupo máximo de *{$planRequest->requested_guests} invitados*. Ya podés continuar cargando invitados.", null, ['timeout' => 8, 'name' => $planner->name]);
             } catch (\Exception $e) {
                 Log::warning("Error notificando aprobación a planner: " . $e->getMessage());
             }
@@ -310,12 +302,8 @@ class PlanRequestController extends Controller
         if ($planner && !empty($planner->phone)) {
             $cleanPlannerPhone = $this->formatParaguayPhone($planner->phone);
             $eventTitle = $planRequest->event ? ($planRequest->event->couple_names ?? $planRequest->event->title) : 'tu evento';
-            $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
             try {
-                Http::timeout(8)->post($botUrl, [
-                    'phone' => preg_replace('/[^\d]/', '', $cleanPlannerPhone),
-                    'message' => "ℹ️ Hola {$planner->name}. Tu solicitud de " . ($planRequest->isDigitalInvitation() ? 'Invitación Digital' : 'ampliación de plan') . " para el evento '{$eventTitle}' no fue autorizada en esta ocasión.\n\nMotivo: \"{$adminNotes}\"\n\nPodés comunicarte con la administración ante cualquier duda."
-                ]);
+                \App\Services\WhatsAppGateway::sendText(preg_replace('/[^\d]/', '', $cleanPlannerPhone), "ℹ️ Hola {$planner->name}. Tu solicitud de " . ($planRequest->isDigitalInvitation() ? 'Invitación Digital' : 'ampliación de plan') . " para el evento '{$eventTitle}' no fue autorizada en esta ocasión.\n\nMotivo: \"{$adminNotes}\"\n\nPodés comunicarte con la administración ante cualquier duda.", null, ['timeout' => 8, 'name' => $planner->name]);
             } catch (\Exception $e) {
                 Log::warning("Error notificando rechazo a planner: " . $e->getMessage());
             }

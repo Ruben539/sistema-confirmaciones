@@ -8,7 +8,6 @@ use App\Models\GuestMessage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
 /**
  * "Mensajes": every WhatsApp conversation goes through the event's single number (the bot), so the
@@ -111,16 +110,17 @@ class ConversationController extends Controller
             return response()->json(['message' => 'Este invitado no tiene un teléfono registrado.'], 422);
         }
 
-        try {
-            $res = Http::timeout(30)->post(config('whatsapp.bot_url'), [
-                'phone' => $phone,
-                'message' => $validated['message'],
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json(['message' => 'No se pudo contactar al WhatsApp del sistema. Intentá de nuevo en unos minutos.'], 502);
-        }
-        if (!$res->successful()) {
-            return response()->json(['message' => 'El WhatsApp del sistema no pudo enviar el mensaje. Revisá que el bot esté conectado.'], 502);
+        // Official API: more than 24 h after the guest's last message it goes as the approved "notice" template
+        $result = \App\Services\WhatsAppGateway::sendText($phone, $validated['message'], null, [
+            'name' => trim(explode(' ', trim($guest->name))[0]),
+            'timeout' => 30,
+        ]);
+        if (!$result['ok']) {
+            return response()->json([
+                'message' => !empty($result['retry'])
+                    ? 'No se pudo contactar al WhatsApp del sistema. Intentá de nuevo en unos minutos.'
+                    : 'El WhatsApp del sistema no pudo enviar el mensaje' . (!empty($result['error']) ? ' (' . $result['error'] . ')' : '') . '.',
+            ], 502);
         }
 
         $message = GuestMessage::create([

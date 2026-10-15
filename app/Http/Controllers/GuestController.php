@@ -627,34 +627,23 @@ class GuestController extends Controller
     {
         try {
             $event = $guest->event;
-            $botUrl = config('whatsapp.bot_url') ?: 'http://127.0.0.1:3001/lead';
-            $coupleNames = $event ? ($event->couple_names ?? $event->title) : 'los novios';
-            $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
-
             $message = \App\Services\GuestMessages::passMessage($guest, $event, $isResend);
 
-            $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
-
-            $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
-                'phone' => $cleanPhone,
-                'message' => $message,
-                'mediaUrl' => $qrUrl,
-                'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
-            ]);
-            if ($response->successful()) {
+            $result = \App\Services\WhatsAppGateway::sendPass($guest, $message, $qrUrl, WhatsAppThrottle::sessionForEvent($event));
+            if ($result['ok']) {
                 \App\Models\GuestMessage::logOutgoing($guest, $message . "\n[Pase QR adjunto]");
             }
             \App\Models\GuestActivity::record(
                 $guest,
-                $response->successful() ? 'qr_sent' : 'qr_failed',
-                $response->successful()
+                $result['ok'] ? 'qr_sent' : 'qr_failed',
+                $result['ok']
                     ? ($isResend ? 'Pase QR reenviado por WhatsApp' : 'Pase QR enviado por WhatsApp')
-                    : 'No se pudo enviar el pase QR (el bot no respondió)'
+                    : 'No se pudo enviar el pase QR por WhatsApp'
             );
-            return $response->successful();
+            return $result['ok'];
         } catch (\Throwable $e) {
-            \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR: sin conexión con el bot');
+            \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR por WhatsApp');
             \Illuminate\Support\Facades\Log::warning("[GuestController] No se pudo enviar WhatsApp con QR: " . $e->getMessage());
             return false;
         }
@@ -697,7 +686,6 @@ class GuestController extends Controller
 
         $mode = $request->input('mode', 'invitation');
         $message = WhatsAppMessage::build($guest, $mode);
-        $botUrl = config('whatsapp.bot_url');
 
         // Manual sends count against the same per-number pacing and daily limit as bulk sends
         $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
@@ -724,19 +712,11 @@ class GuestController extends Controller
         }
 
         try {
-            $payload = [
-                'phone' => preg_replace('/[^\d]/', '', $guest->phone),
-                'message' => $message,
-                'session_id' => $event->user_id ? "planner_{$event->user_id}" : "default"
-            ];
-            if ($mediaUrl) {
-                $payload['mediaUrl'] = $mediaUrl;
-            }
+            $result = \App\Services\WhatsAppGateway::sendInvitation($guest, $mode, $message, $mediaUrl, WhatsAppThrottle::sessionForEvent($event));
 
-            $response = \Illuminate\Support\Facades\Http::timeout(15)->post($botUrl, $payload);
-
-            if ($response->successful()) {
+            if ($result['ok']) {
                 $throttle->recordSent();
+                \App\Models\GuestMessage::logOutgoing($guest, $message);
                 $guest->update([
                     'whatsapp_status' => 'sent',
                     'last_sent_at' => now(),
@@ -747,18 +727,19 @@ class GuestController extends Controller
                     'guest' => $guest
                 ]);
             }
+            \Illuminate\Support\Facades\Log::warning('No se pudo enviar el WhatsApp: ' . ($result['error'] ?? ''));
         } catch (\Throwable $e) {
             try {
-                \Illuminate\Support\Facades\Log::warning('Error conectando con el bot de WhatsApp: ' . $e->getMessage());
+                \Illuminate\Support\Facades\Log::warning('Error enviando WhatsApp: ' . $e->getMessage());
             } catch (\Throwable $logError) {
                 // Ignore storage log permission issues
             }
         } finally {
-            $lock->release();
+            $lock?->release();
         }
 
         return response()->json([
-            'message' => 'No se pudo conectar con el bot Baileys de WhatsApp. Verificá que el servicio esté ejecutándose en el puerto 3001 o enviá el mensaje manualmente.',
+            'message' => 'No se pudo enviar por el WhatsApp del sistema. Intentá de nuevo en unos minutos o enviá el mensaje manualmente.',
             'guest' => $guest
         ], 500);
     }

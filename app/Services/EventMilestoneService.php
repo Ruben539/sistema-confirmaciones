@@ -127,12 +127,8 @@ class EventMilestoneService
 
         if (!$message) return;
 
-        $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
         try {
-            Http::timeout(8)->post($botUrl, [
-                'phone' => preg_replace('/[^\d]/', '', $cleanPhone),
-                'message' => $message
-            ]);
+            \App\Services\WhatsAppGateway::sendText(preg_replace('/[^\d]/', '', $cleanPhone), $message, null, ['timeout' => 8, 'name' => $planner->name]);
             Log::info("Milestone WhatsApp sent to planner {$planner->name} for event '{$eventTitle}' at {$threshold}%");
         } catch (\Exception $e) {
             Log::warning("Error sending milestone WhatsApp to planner: " . $e->getMessage());

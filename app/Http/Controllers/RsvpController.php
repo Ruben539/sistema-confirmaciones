@@ -149,27 +149,16 @@ class RsvpController extends Controller
     {
         try {
             $event = $guest->event;
-            $botUrl = config('whatsapp.bot_url') ?: 'http://127.0.0.1:3001/lead';
-            $coupleNames = $event ? ($event->couple_names ?? $event->title) : 'los novios';
-            $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
-
             $message = GuestMessages::passMessage($guest, $event, false);
 
-            $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
-
-            $response = \Illuminate\Support\Facades\Http::timeout(10)->post($botUrl, [
-                'phone' => $cleanPhone,
-                'message' => $message,
-                'mediaUrl' => $qrUrl,
-                'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
-            ]);
-            if ($response->successful()) {
+            $result = \App\Services\WhatsAppGateway::sendPass($guest, $message, $qrUrl, \App\Services\WhatsAppThrottle::sessionForEvent($event));
+            if ($result['ok']) {
                 \App\Models\GuestMessage::logOutgoing($guest, $message . "\n[Pase QR adjunto]");
             }
-            \App\Models\GuestActivity::record($guest, $response->successful() ? 'qr_sent' : 'qr_failed', $response->successful() ? 'Pase QR enviado por WhatsApp' : 'No se pudo enviar el pase QR (el bot no respondió)');
+            \App\Models\GuestActivity::record($guest, $result['ok'] ? 'qr_sent' : 'qr_failed', $result['ok'] ? 'Pase QR enviado por WhatsApp' : 'No se pudo enviar el pase QR por WhatsApp');
         } catch (\Throwable $e) {
-            \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR: sin conexión con el bot');
+            \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR por WhatsApp');
             \Illuminate\Support\Facades\Log::warning("[RsvpController] No se pudo enviar WhatsApp con QR al confirmar desde el formulario web: " . $e->getMessage());
         }
     }

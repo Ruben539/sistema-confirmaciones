@@ -24,6 +24,10 @@ class WhatsAppThrottle
 
     public static function sessionForEvent($event): string
     {
+        // Cloud API: one official number for everyone, so one shared pace and daily limit
+        if (config('whatsapp.driver') === 'cloud') {
+            return 'cloud';
+        }
         return $event && $event->user_id ? "planner_{$event->user_id}" : 'default';
     }
 

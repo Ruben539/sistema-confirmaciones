@@ -14,6 +14,7 @@ use App\Http\Controllers\PlanRequestController;
 use App\Http\Controllers\TimingController;
 use App\Http\Controllers\EventTypeController;
 use App\Http\Controllers\SpotifyController;
+use App\Http\Controllers\WhatsAppCloudWebhookController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -27,6 +28,10 @@ Route::prefix('api')->group(function () {
 
     // Webhook del bot de WhatsApp (protegido con WHATSAPP_WEBHOOK_SECRET dentro del controlador)
     Route::post('/rsvp/incoming-whatsapp', [RsvpController::class, 'handleIncomingWhatsApp']);
+
+    // Webhook de la API oficial de WhatsApp (Meta): verificación (GET) y mensajes firmados (POST)
+    Route::get('/whatsapp/webhook', [WhatsAppCloudWebhookController::class, 'verify']);
+    Route::post('/whatsapp/webhook', [WhatsAppCloudWebhookController::class, 'receive']);
 
     // Páginas del invitado: el token / public_code del link es la llave.
     // Límites por IP generosos: en el salón muchos invitados comparten el mismo WiFi (misma IP pública).
@@ -162,6 +167,11 @@ Route::prefix('api')->group(function () {
         Route::post('/events/{eventId}/timing/items/{itemId}/toggle', [TimingController::class, 'toggleItem']);
     });
 });
+
+// Páginas legales (las pide Meta para publicar la app de WhatsApp)
+Route::view('/privacidad', 'legal.privacy');
+Route::view('/terminos', 'legal.terms');
+Route::view('/eliminar-datos', 'legal.data-deletion');
 
 // Fallback SPA renderiza la plantilla de React
 Route::get('/{any?}', function () {

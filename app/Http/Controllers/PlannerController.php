@@ -103,13 +103,9 @@ class PlannerController extends Controller
             $encodedText = urlencode($welcomeMessage);
             $directWhatsAppUrl = "https://api.whatsapp.com/send?phone=" . preg_replace('/[^\d]/', '', $cleanPhone) . "&text={$encodedText}";
 
-            $botUrl = env('WHATSAPP_BOT_URL', 'http://127.0.0.1:3001/lead');
             try {
-                $res = Http::timeout(8)->post($botUrl, [
-                    'phone' => preg_replace('/[^\d]/', '', $cleanPhone),
-                    'message' => $welcomeMessage
-                ]);
-                if ($res->successful()) {
+                $res = \App\Services\WhatsAppGateway::sendText(preg_replace('/[^\d]/', '', $cleanPhone), $welcomeMessage, null, ['timeout' => 8, 'name' => $newUser->name]);
+                if ($res['ok']) {
                     $whatsappSent = true;
                 }
             } catch (\Exception $e) {

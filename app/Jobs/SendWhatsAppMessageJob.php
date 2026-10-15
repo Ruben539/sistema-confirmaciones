@@ -3,16 +3,15 @@
 namespace App\Jobs;
 
 use App\Models\Guest;
+use App\Services\WhatsAppGateway;
 use App\Services\WhatsAppMessage;
 use App\Services\WhatsAppThrottle;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class SendWhatsAppMessageJob implements ShouldQueue
@@ -142,35 +141,20 @@ class SendWhatsAppMessageJob implements ShouldQueue
             }
         }
 
-        try {
-            $payload = [
-                'phone' => $cleanPhone,
-                'message' => WhatsAppMessage::build($guest, $this->messageMode),
-                'session_id' => WhatsAppThrottle::sessionForEvent($guest->event),
-            ];
-            if ($mediaUrl) {
-                $payload['mediaUrl'] = $mediaUrl;
-            }
+        $message = WhatsAppMessage::build($guest, $this->messageMode);
+        $result = WhatsAppGateway::sendInvitation($guest, $this->messageMode, $message, $mediaUrl, WhatsAppThrottle::sessionForEvent($guest->event));
 
-            $response = Http::timeout(15)->post(config('whatsapp.bot_url'), $payload);
-        } catch (ConnectionException $e) {
-            if (str_contains($e->getMessage(), 'cURL error 7')) {
-                // Bot not reachable: nothing was sent, safe to retry later
-                Log::warning("WhatsApp Job: bot unreachable, retrying {$guest->name} in 5 min.");
-                $this->release(300);
-                return;
-            }
-
-            // Timeout: the bot may have sent it anyway. Don't retry to avoid a duplicate message.
+        if (!$result['ok'] && !empty($result['uncertain'])) {
+            // Timeout: it may have been sent anyway. Don't retry to avoid a duplicate message.
             $throttle->recordSent();
-            \App\Models\GuestActivity::record($guest, 'send_uncertain', ($this->messageMode === 'reminder' ? 'Recordatorio' : 'Invitación') . ': el bot tardó en responder, puede que no se haya enviado');
-            Log::warning("WhatsApp Job: timeout sending to {$guest->name} ({$cleanPhone}); not retrying to avoid a duplicate. Check manually. " . $e->getMessage());
+            \App\Models\GuestActivity::record($guest, 'send_uncertain', ($this->messageMode === 'reminder' ? 'Recordatorio' : 'Invitación') . ': WhatsApp tardó en responder, puede que no se haya enviado');
+            Log::warning("WhatsApp Job: timeout sending to {$guest->name} ({$cleanPhone}); not retrying to avoid a duplicate. Check manually. " . ($result['error'] ?? ''));
             return;
         }
 
-        if ($response->successful()) {
+        if ($result['ok']) {
             $throttle->recordSent();
-            \App\Models\GuestMessage::logOutgoing($guest, $payload['message']);
+            \App\Models\GuestMessage::logOutgoing($guest, $message);
             if ($this->messageMode === 'reminder') {
                 $guest->update([
                     'reminder_sent_at' => now(),
@@ -186,14 +170,14 @@ class SendWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
-        if ($response->serverError()) {
-            // Bot up but session disconnected / busy: retry later
-            Log::warning("WhatsApp Job: bot error for {$guest->name}, retrying in 10 min: " . $response->body());
-            $this->release(600);
+        if (!empty($result['retry'])) {
+            // Bot down / session disconnected / Meta rate limit: nothing was sent, try again later
+            Log::warning("WhatsApp Job: could not send to {$guest->name}, retrying in " . ($result['retry_after'] ?? 600) . "s: " . ($result['error'] ?? ''));
+            $this->release($result['retry_after'] ?? 600);
             return;
         }
 
-        Log::warning("WhatsApp Job: rejected for {$guest->name}: " . $response->body());
+        Log::warning("WhatsApp Job: rejected for {$guest->name}: " . ($result['error'] ?? ''));
         \App\Models\GuestActivity::record($guest, $this->messageMode === 'reminder' ? 'reminder_failed' : 'invitation_failed', 'El WhatsApp del sistema rechazó el envío (revisar el número)');
         $this->clearReminderMark($guest);
     }
