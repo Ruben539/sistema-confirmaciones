@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Guest;
 use App\Services\EventMilestoneService;
+use App\Services\GuestMessages;
 use Illuminate\Http\Request;
 
 class RsvpController extends Controller
@@ -139,7 +140,7 @@ class RsvpController extends Controller
         }
 
         return response()->json([
-            'message' => '¡Gracias! Tu respuesta ha sido registrada con éxito.',
+            'message' => '¡Gracias! Ya recibimos tu respuesta 💛',
             'guest' => $guest->fresh()
         ]);
     }
@@ -153,7 +154,7 @@ class RsvpController extends Controller
             $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
 
-            $message = "¡Hola {$guest->name}! 🎉 Tu asistencia al evento de {$coupleNames} ha sido confirmada.{$locationText}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento. Presentalo en la recepción para tu ingreso rápido. ¡Te esperamos!";
+            $message = GuestMessages::passMessage($guest, $event, false);
 
             $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
@@ -163,6 +164,9 @@ class RsvpController extends Controller
                 'mediaUrl' => $qrUrl,
                 'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
             ]);
+            if ($response->successful()) {
+                \App\Models\GuestMessage::logOutgoing($guest, $message . "\n[Pase QR adjunto]");
+            }
             \App\Models\GuestActivity::record($guest, $response->successful() ? 'qr_sent' : 'qr_failed', $response->successful() ? 'Pase QR enviado por WhatsApp' : 'No se pudo enviar el pase QR (el bot no respondió)');
         } catch (\Throwable $e) {
             \App\Models\GuestActivity::record($guest, 'qr_failed', 'No se pudo enviar el pase QR: sin conexión con el bot');
@@ -402,12 +406,12 @@ class RsvpController extends Controller
                 $pending = \Illuminate\Support\Facades\Cache::pull("wa_lid_pending:{$rawDigits}");
                 if (empty($pending)) {
                     $menu = ($guest->conversation_state ?? 'awaiting_attendance') === 'awaiting_attendance'
-                        ? "\n\nAhora respondé con tu opción:\n1️⃣ Escribí *1* para **Confirmar Asistencia**\n2️⃣ Escribí *2* si **No podés asistir**"
+                        ? "\n\n¿Vas a poder acompañarnos? Respondé con:\n*1* — ¡Sí, voy!\n*2* — No voy a poder"
                         : "";
                     return response()->json([
                         'processed' => true,
                         'reason' => 'WhatsApp LID linked to guest',
-                        'reply' => "¡Gracias {$guest->name}! Ya identificamos tu invitación ✅{$menu}"
+                        'reply' => "¡Gracias, {$guest->name}! 😊 Ya encontramos tu invitación.{$menu}"
                     ]);
                 }
                 $message = trim($pending);
@@ -423,59 +427,58 @@ class RsvpController extends Controller
 
         \Illuminate\Support\Facades\Log::info("[RSVP WhatsApp] Mensaje entrante de {$guest->name} ({$rawDigits}): '{$message}'");
 
-        // Every message is kept in the guest's history (the planner sees what the guest actually wrote)
-        $statusBefore = $guest->status;
-        \App\Models\GuestActivity::record($guest, 'message_received', 'Mensaje por WhatsApp: "' . mb_substr($message, 0, 450) . '"');
-
+        // The conversation is kept per guest (guest_messages) and shown to the planner in "Mensajes" of
+        // the panel: everything goes through one WhatsApp number, so that is where a person reads and answers
+        $this->needsPerson = false;
         $response = $this->replyToGuest($guest, $message);
+        $botReply = $response->getData(true)['reply'] ?? null;
 
-        // Long messages are personal notes (excuses, questions, gifts...): save them in the guest's notes
-        // and forward them to the planner so nothing is lost behind the automatic answer
-        if (mb_strlen($message) >= self::LONG_MESSAGE_CHARS) {
-            $guest->refresh();
+        // Long messages are personal notes (excuses, questions, gifts...): also kept in the guest's notes
+        $isLong = mb_strlen($message) >= self::LONG_MESSAGE_CHARS;
+        $guest->refresh();
+        $updates = [
+            'last_message_at' => now(),
+            'unread_messages' => (int) $guest->unread_messages + 1,
+            'needs_reply' => $guest->needs_reply || $isLong || $this->needsPerson,
+        ];
+        if ($isLong) {
             $note = '[WhatsApp ' . now()->format('d/m H:i') . '] ' . mb_substr($message, 0, 1000);
-            $guest->update(['notes' => $guest->notes ? $guest->notes . "\n" . $note : $note]);
-            $this->forwardMessageToPlanner($guest, $message, $statusBefore);
+            $updates['notes'] = $guest->notes ? $guest->notes . "\n" . $note : $note;
+        }
+        $guest->update($updates);
+
+        \App\Models\GuestMessage::create([
+            'event_id' => $guest->event_id,
+            'guest_id' => $guest->id,
+            'direction' => 'in',
+            'author' => 'guest',
+            'body' => mb_substr($message, 0, 4000),
+        ]);
+        if ($botReply) {
+            \App\Models\GuestMessage::create([
+                'event_id' => $guest->event_id,
+                'guest_id' => $guest->id,
+                'direction' => 'out',
+                'author' => 'bot',
+                'body' => mb_substr($botReply, 0, 4000),
+            ]);
         }
 
         return $response;
     }
 
-    /**
-     * Sends the planner of the event a WhatsApp with a guest's long message
-     * (at most one every 10 minutes per guest, so a chatty guest doesn't flood her phone).
-     */
-    private function forwardMessageToPlanner(Guest $guest, string $message, ?string $statusBefore): void
-    {
-        $planner = $guest->event?->planner;
-        if (!$planner || empty($planner->phone) || !\Illuminate\Support\Facades\Cache::add("planner_forward:{$guest->id}", true, now()->addMinutes(10))) {
-            return;
-        }
-
-        $labels = ['pending' => 'Pendiente', 'confirmed' => 'Confirmado ✅', 'attended' => 'Ingresó', 'declined' => 'No asiste ❌'];
-        $status = $labels[$guest->status] ?? $guest->status;
-        $changed = $statusBefore !== $guest->status ? " (antes: " . ($labels[$statusBefore] ?? $statusBefore) . ")" : '';
-        $eventTitle = $guest->event->couple_names ?? $guest->event->title;
-
-        $text = "💬 *Mensaje de un invitado*\n"
-            . "🎪 Evento: {$eventTitle}\n"
-            . "👤 {$guest->name} ({$guest->phone})\n"
-            . "📋 Estado: {$status}{$changed}\n\n"
-            . "“" . mb_substr($message, 0, 1200) . "”\n\n"
-            . "Quedó guardado en las notas del invitado. Si hace falta, respondele directamente.";
-
-        try {
-            \Illuminate\Support\Facades\Http::timeout(8)->post(config('whatsapp.bot_url'), [
-                'phone' => preg_replace('/[^\d]/', '', $planner->phone),
-                'message' => $text,
-            ]);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("[RSVP WhatsApp] No se pudo reenviar el mensaje de {$guest->name} a la planner: " . $e->getMessage());
-        }
-    }
-
     // From this length a guest's WhatsApp message is treated as a personal note (saved and forwarded)
     private const LONG_MESSAGE_CHARS = 80;
+
+    // Set by replyToGuest when the message needs a person (comment or question after answering):
+    // it is highlighted in the panel's "Mensajes" inbox
+    private bool $needsPerson = false;
+
+    // "Lorena y Claudio lamentan" / "Candela lamenta"
+    private function hostsVerb(string $hosts, string $singular, string $plural): string
+    {
+        return preg_match('/\s(y|e)\s|&|,/iu', $hosts) ? $plural : $singular;
+    }
 
     /**
      * Decides the bot's answer to a guest's WhatsApp message (confirm / decline / menu / reminder
@@ -489,7 +492,7 @@ class RsvpController extends Controller
             return response()->json([
                 'processed' => false,
                 'reason' => 'Event is disabled',
-                'reply' => "¡Hola {$guest->name}! El evento no se encuentra activo o habilitado en este momento."
+                'reply' => GuestMessages::eventPaused($guest)
             ]);
         }
 
@@ -504,7 +507,7 @@ class RsvpController extends Controller
                 $eventDate = \Carbon\Carbon::parse($event->event_date)->endOfDay();
                 if (now()->greaterThan($eventDate)) {
                     $formattedDate = \Carbon\Carbon::parse($event->event_date)->format('d/m/Y');
-                    $reply = "¡Hola {$guest->name}! 👋 El evento de {$coupleNames} ya se ha realizado el {$formattedDate}.{$locationText}\n\n¡Muchas gracias por tu mensaje!";
+                    $reply = GuestMessages::eventPassed($guest, $event);
                     return response()->json([
                         'processed' => true,
                         'reason' => 'Event date has passed',
@@ -516,27 +519,54 @@ class RsvpController extends Controller
             }
         }
 
-        // 2. Escenario: Si el invitado ya completó toda su confirmación previamente
+        // 2. Guest who already answered and writes again: a conversation, not the same status card every time
         if ($currentState === 'completed') {
-            $statusText = $guest->status === 'confirmed' ? 'Confirmada ✅' : 'Rechazada ❌';
-            $dietaryNote = ($guest->status === 'confirmed' && !empty($guest->dietary_restrictions))
-                ? "\n🍽️ Preferencia registrada: *{$guest->dietary_restrictions}*"
-                : "";
+            $isAttending = in_array($guest->status, ['confirmed', 'attended']);
+            $deadline = $event?->rsvpDeadline();
+            $canChange = $guest->status !== 'attended' && (!$deadline || now()->lessThanOrEqualTo($deadline));
+            $saysYes = in_array($msgClean, ['1', '1️⃣', 'si', 'sí', 'confirmo']);
+            $saysNo = in_array($msgClean, ['2', '2️⃣', 'no']);
 
-            $qrUrl = ($guest->status === 'confirmed')
-                ? "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token)
-                : null;
+            if ($canChange && (($saysYes && !$isAttending) || ($saysNo && $isAttending))) {
+                // Changed their mind before the deadline: process it as a new answer (steps 3 / 4 below)
+                $currentState = 'awaiting_attendance';
+            } else {
 
-            $reply = "¡Hola {$guest->name}! 👋 Tu respuesta ya se encuentra registrada como *{$statusText}* para el evento de {$coupleNames}.{$locationText}{$dietaryNote}\n\n¡Muchas gracias!";
+                // Asks for the entry pass
+                if ($isAttending && preg_match('/\b(qr|pase|entrada|c[oó]digo)\b/iu', $msgClean)) {
+                    return response()->json([
+                        'processed' => true,
+                        'reason' => 'QR requested',
+                        'reply' => GuestMessages::passAgain($guest),
+                        'media_url' => "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token),
+                    ]);
+                }
 
-            return response()->json([
-                'processed' => true,
-                'status' => $guest->status,
-                'conversation_state' => 'completed',
-                'guest' => $guest,
-                'reply' => $reply,
-                'media_url' => $qrUrl
-            ]);
+                // A question about the event: answer it (and the planner gets it too)
+                if (str_contains($message, '?') || preg_match('/\b(hora|horario|direcci[oó]n|ubicaci[oó]n|d[oó]nde|lugar|vestimenta|dress|estacionamiento)\b/iu', $msgClean)) {
+                    $this->needsPerson = true;
+                    return response()->json([
+                        'processed' => true,
+                        'reason' => 'Question after answering',
+                        'reply' => GuestMessages::eventInfo($guest, $event),
+                    ]);
+                }
+
+                // Any other comment: thank them warmly ONCE (then stay quiet for a while) and flag it for a
+                // person (the planner, in "Mensajes"), instead of repeating the automatic card on every message
+                $this->needsPerson = true;
+                if (!\Illuminate\Support\Facades\Cache::add("guest_ack:{$guest->id}", true, now()->addHours(6))) {
+                    return response()->json(['processed' => true, 'reason' => 'Comment after answering (already acknowledged)']);
+                }
+
+                $reply = GuestMessages::thanksForComment($guest, $event, $isAttending);
+
+                return response()->json([
+                    'processed' => true,
+                    'reason' => 'Comment after answering',
+                    'reply' => $reply,
+                ]);
+            }
         }
 
         // 3. Check for direct decline first to avoid positive matching on phrases like "no confirmo"
@@ -557,7 +587,8 @@ class RsvpController extends Controller
                 'confirmed_passes' => 0,
             ]);
 
-            $reply = "Muchas gracias por avisarnos, {$guest->name}. Lamentamos que no puedas acompañarnos al evento de {$coupleNames} 😔";
+            $deadline = $event?->rsvpDeadline();
+            $reply = GuestMessages::declined($guest, $event, $deadline && now()->lessThanOrEqualTo($deadline) ? $deadline : null);
 
             return response()->json([
                 'processed' => true,
@@ -589,7 +620,7 @@ class RsvpController extends Controller
 
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
 
-            $reply = "¡Excelente {$guest->name}! Confirmamos tu asistencia al evento de {$coupleNames} 🎉{$locationText}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada. Presentalo en la recepción para tu ingreso rápido.\n\n🍽️ *Menú Especial:* Si tenés alguna restricción alimentaria (ej: celíaco, vegetariano), respondé a este mensaje con tu preferencia (o escribí 'Ninguna').";
+            $reply = GuestMessages::confirmed($guest, $event);
 
             EventMilestoneService::checkMilestone($guest->event_id);
 
@@ -607,7 +638,7 @@ class RsvpController extends Controller
         if ($currentState === 'awaiting_dietary') {
             $isGreeting = in_array($msgClean, ['hola', 'buenas', 'buen dia', 'buenas tardes', 'buenas noches', 'info', 'hola!', 'holaa', 'como estas', 'quien habla']);
             if ($isGreeting) {
-                $reply = "¡Hola {$guest->name}! 👋 Tu asistencia ya está *Confirmada* al evento de {$coupleNames}.{$locationText}\n\nPara completar tu confirmación, decinos si tenés alguna restricción alimentaria o menú especial:\n• Escribí tu restricción (ej: *Celíaco*, *Vegetariano*)\n• O respondé *Ninguna*";
+                $reply = GuestMessages::askMenu($guest);
                 return response()->json([
                     'processed' => false,
                     'reason' => 'Greeting in dietary state',
@@ -620,7 +651,7 @@ class RsvpController extends Controller
                 return response()->json([
                     'processed' => false,
                     'reason' => 'Long message in dietary state',
-                    'reply' => "¡Gracias por tu mensaje, {$guest->name}! 💌 Se lo hacemos llegar a los organizadores.\n\nPara completar tu confirmación, contanos si tenés alguna restricción alimentaria:\n• Escribí tu restricción (ej: *Celíaco*, *Vegetariano*)\n• O respondé *Ninguna*",
+                    'reply' => GuestMessages::thanksAndAskMenu($guest, $event),
                 ]);
             }
 
@@ -634,7 +665,7 @@ class RsvpController extends Controller
 
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
 
-            $reply = "¡Perfecto {$guest->name}! Registramos tu preferencia: '{$dietaryText}' 🍽️\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento de {$coupleNames}.{$locationText}\nPresentá este código en la recepción para tu ingreso rápido. ¡Te esperamos!";
+            $reply = GuestMessages::menuSaved($guest, $event, $noDietary ? null : $dietaryText);
 
             return response()->json([
                 'processed' => true,
@@ -649,8 +680,8 @@ class RsvpController extends Controller
         // Default: awaiting_attendance fallback for greetings or unknown text.
         // A long message is answered as such (it is forwarded to the planner by handleIncomingWhatsApp)
         $reply = mb_strlen($message) >= self::LONG_MESSAGE_CHARS
-            ? "¡Gracias por tu mensaje, {$guest->name}! 💌 Se lo hacemos llegar a los organizadores.\n\nPara registrar tu respuesta, escribí:\n1️⃣ *1* si asistís al evento de {$coupleNames}\n2️⃣ *2* si no podés asistir"
-            : "¡Hola {$guest->name}! 👋 Para confirmar tu asistencia al evento de {$coupleNames}, por favor respondé enviando únicamente el número de tu opción:{$locationText}\n\n1️⃣ Escribí *1* para **Confirmar Asistencia**\n2️⃣ Escribí *2* si **No podés asistir**";
+            ? GuestMessages::thanksAndAskAttendance($guest, $event)
+            : GuestMessages::askAttendance($guest, $event);
 
         return response()->json([
             'processed' => false,
@@ -721,7 +752,7 @@ class RsvpController extends Controller
             return response()->json([
                 'processed' => false,
                 'reason' => 'LID phone not found',
-                'reply' => "No encontramos ese número en la lista de invitados 🤔\nPor favor escribí el número exacto al que te llegó la invitación (ej: *0981 123456*)."
+                'reply' => "Mmm, no encontramos ese número en la lista de invitados 🤔\n¿Nos pasás el número exacto al que te llegó la invitación? (ej: *0981 123456*)"
             ]);
         }
 
@@ -731,7 +762,7 @@ class RsvpController extends Controller
         return response()->json([
             'processed' => false,
             'reason' => 'Unknown WhatsApp LID, asked for phone',
-            'reply' => "¡Hola! 👋 Para identificar tu invitación, respondé con tu *número de teléfono* (el mismo al que te llegó la invitación, ej: *0981 123456*)."
+            'reply' => "¡Hola! 😊 Para encontrar tu invitación, ¿nos pasás tu *número de teléfono*? (el mismo al que te llegó la invitación, ej: *0981 123456*)"
         ]);
     }
 

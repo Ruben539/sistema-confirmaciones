@@ -25,8 +25,8 @@ class WhatsAppMessage
         $greeting = self::GREETINGS[array_rand(self::GREETINGS)];
 
         if ($mode === 'reminder') {
-            $deadline = self::deadlineText($event);
-            $template = "{$greeting} ⏰ Recordatorio: el plazo para confirmar tu asistencia al evento de {pareja} vence pronto{$deadline}.\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+            $deadline = $event->rsvpDeadline();
+            $template = GuestMessages::reminder($event, $greeting, $deadline ? $deadline->locale('es')->isoFormat('D [de] MMMM') : '');
         } else {
             $template = $event->message_template ?? "{$greeting} Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
             if (!str_contains($template, '{nombre}')) {

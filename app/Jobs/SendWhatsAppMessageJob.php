@@ -170,6 +170,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
         if ($response->successful()) {
             $throttle->recordSent();
+            \App\Models\GuestMessage::logOutgoing($guest, $payload['message']);
             if ($this->messageMode === 'reminder') {
                 $guest->update([
                     'reminder_sent_at' => now(),

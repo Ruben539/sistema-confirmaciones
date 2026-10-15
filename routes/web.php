@@ -6,6 +6,7 @@ use App\Http\Controllers\GuestController;
 use App\Http\Controllers\HostessController;
 use App\Http\Controllers\RsvpController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ConversationController;
 use App\Http\Controllers\AppReleaseController;
 use App\Http\Controllers\PlannerController;
 use App\Http\Controllers\TableController;
@@ -72,6 +73,16 @@ Route::prefix('api')->group(function () {
         Route::post('/planners', [PlannerController::class, 'store']);
         Route::put('/planners/{id}', [PlannerController::class, 'update']);
         Route::delete('/planners/{id}', [PlannerController::class, 'destroy']);
+
+        // Mensajes: conversaciones de WhatsApp por evento (planner y admin); limpieza solo admin
+        Route::get('/events/{eventId}/conversations', [ConversationController::class, 'index']);
+        Route::delete('/events/{eventId}/messages', [ConversationController::class, 'destroyEventMessages']);
+        Route::get('/guests/{guestId}/conversation', [ConversationController::class, 'show']);
+        Route::post('/guests/{guestId}/conversation', [ConversationController::class, 'reply']);
+        Route::post('/guests/{guestId}/conversation/resolve', [ConversationController::class, 'resolve']);
+        Route::delete('/guests/{guestId}/conversation', [ConversationController::class, 'destroyConversation']);
+        Route::get('/messages/stats', [ConversationController::class, 'stats']);
+        Route::post('/messages/purge', [ConversationController::class, 'purge']);
 
         // Aplicación móvil: el admin sube el APK, planners y anfitrionas lo descargan
         Route::get('/app-releases', [AppReleaseController::class, 'index']);

@@ -33,6 +33,9 @@ class Guest extends Model
         'last_sent_at',
         'reminder_sent_at',
         'reminder_count',
+        'last_message_at',
+        'unread_messages',
+        'needs_reply',
         'attended_at',
         'token',
         'song_suggestion',
@@ -42,6 +45,8 @@ class Guest extends Model
         'attended_at' => 'datetime',
         'last_sent_at' => 'datetime',
         'reminder_sent_at' => 'datetime',
+        'last_message_at' => 'datetime',
+        'needs_reply' => 'boolean',
     ];
 
     protected static function booted()
@@ -102,6 +107,12 @@ class Guest extends Model
                 GuestActivity::record($guest, 'reminder_sent', "Recordatorio enviado por WhatsApp (#{$guest->reminder_count})");
             }
         });
+    }
+
+    // WhatsApp conversation (see ConversationController)
+    public function messages()
+    {
+        return $this->hasMany(GuestMessage::class);
     }
 
     public function activities()

@@ -20,6 +20,7 @@ import EventTiming from './components/EventTiming';
 import EventTypesManagement from './components/EventTypesManagement';
 import HostessesManagement from './components/HostessesManagement';
 import AppReleases from './components/AppReleases';
+import MessagesInbox from './components/MessagesInbox';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
@@ -55,6 +56,21 @@ function Dashboard({ user, onLogout }) {
         setAppUpdate((prev) => ({ ...prev, has_update: false }));
         await apiFetch('/api/app-releases/seen', { method: 'POST' });
     };
+    // Unread WhatsApp messages of the active event (badge in the sidebar)
+    const [unreadMessages, setUnreadMessages] = useState(0);
+    useEffect(() => {
+        if (isHostess || !activeEvent?.id) {
+            setUnreadMessages(0);
+            return;
+        }
+        const loadUnread = async () => {
+            const { ok, json } = await apiFetch(`/api/events/${activeEvent.id}/conversations`);
+            if (ok && json) setUnreadMessages(json.totals?.unread || 0);
+        };
+        loadUnread();
+        const timer = setInterval(loadUnread, 60000);
+        return () => clearInterval(timer);
+    }, [activeEvent?.id, isHostess]);
     const [toastMessage, setToastMessage] = useState(null);
     const [preselectedPlannerId, setPreselectedPlannerId] = useState(null);
     const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
@@ -275,6 +291,7 @@ function Dashboard({ user, onLogout }) {
                 onToggleTheme={handleToggleTheme}
                 pendingRequestsCount={pendingRequestsCount}
                 hasAppUpdate={appUpdate.has_update}
+                unreadMessages={unreadMessages}
             />
 
             {/* Main Area */}
@@ -325,6 +342,8 @@ function Dashboard({ user, onLogout }) {
                     {/* Active View based on activeTab */}
                     {activeTab === 'app' ? (
                         <AppReleases user={user} showToast={showToast} onReleasesChanged={loadAppUpdate} />
+                    ) : activeTab === 'messages' && !isHostess ? (
+                        <MessagesInbox event={activeEvent} user={user} showToast={showToast} onUnreadChange={setUnreadMessages} />
                     ) : activeTab === 'hostesses' && (user?.role === 'admin' || user?.role === 'planner') ? (
                         <HostessesManagement user={user} events={events} showToast={showToast} />
                     ) : activeTab === 'planners' && user?.role === 'admin' ? (

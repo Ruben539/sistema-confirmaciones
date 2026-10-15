@@ -616,10 +616,7 @@ class GuestController extends Controller
             $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
 
-            $intro = $isResend
-                ? "¡Hola {$guest->name}! 👋 Te reenviamos tu pase para el evento de {$coupleNames}.{$locationText}"
-                : "¡Hola {$guest->name}! 🎉 Tu asistencia al evento de {$coupleNames} ha sido confirmada.{$locationText}";
-            $message = "{$intro}\n\n🎟️ *PASE DE INGRESO DIGITAL*\nAquí tenés tu código QR para la entrada al evento. Presentalo en la recepción para tu ingreso rápido. ¡Te esperamos!";
+            $message = \App\Services\GuestMessages::passMessage($guest, $event, $isResend);
 
             $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
@@ -629,6 +626,9 @@ class GuestController extends Controller
                 'mediaUrl' => $qrUrl,
                 'session_id' => ($event && $event->user_id) ? "planner_{$event->user_id}" : "default"
             ]);
+            if ($response->successful()) {
+                \App\Models\GuestMessage::logOutgoing($guest, $message . "\n[Pase QR adjunto]");
+            }
             \App\Models\GuestActivity::record(
                 $guest,
                 $response->successful() ? 'qr_sent' : 'qr_failed',
