@@ -4,6 +4,29 @@ import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Use
 import { apiFetch } from '../api';
 import { getPlanLabel } from '../plans';
 
+// "Larisa Rojas y " -> "Larisa Rojas", "Gerardo  SANCHEZ Hermosa" -> "Gerardo Sanchez Hermosa":
+// extra spaces, a loose connector at the end and words in CAPITALS (initials like "M." stay as they are)
+export const cleanGuestName = (name) => {
+    let text = String(name || '').replace(/\s+/g, ' ').trim();
+    let previous;
+    do {
+        previous = text;
+        text = text.replace(/[\s,/&+-]+(y|e)?$/i, '').replace(/\s+(y|e)$/i, '').trim();
+    } while (text !== previous);
+    return text.replace(/\p{L}{3,}/gu, (word) => (word === word.toUpperCase() ? word.charAt(0) + word.slice(1).toLowerCase() : word));
+};
+
+// Same rule as the server (GuestController::formatParaguayPhone): 0981… / 981… -> 595981…, others as they are
+export const normalizePhone = (phone) => {
+    const digits = String(phone || '').replace(/[^\d]/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('09') && digits.length === 10) return `595${digits.slice(1)}`;
+    if (digits.startsWith('9') && digits.length === 9) return `595${digits}`;
+    if (digits.startsWith('595')) return digits;
+    if (digits.length >= 9 && digits.slice(-9).startsWith('9') && !digits.startsWith('54')) return `595${digits.slice(-9)}`;
+    return digits;
+};
+
 export default function ExcelUploadModal({ isOpen, onClose, event, eventId, currentGuestsCount = 0, onImportSuccess, onOpenUpgradeBot }) {
     const [file, setFile] = useState(null);
     const [parsedData, setParsedData] = useState([]);
@@ -14,6 +37,8 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const [options, setOptions] = useState({ countMode: 'companions', joinOrphans: true });
     // After importing a corrected list: guests already contacted whose number of people changed
     const [corrections, setCorrections] = useState(null);
+    // Merged cells of the sheet (e.g. one phone cell merged over the rows of a whole family)
+    const [merges, setMerges] = useState([]);
     const [sendingCorrections, setSendingCorrections] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -123,7 +148,14 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 const ws = wb.Sheets[wsname];
 
                 // Convert sheet to json array of objects
-                const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+                const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: true });
+                // Remember the sheet row of each row and the merged cells, relative to the table's first column
+                const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 } };
+                allRows.forEach((row, i) => { row.__r = range.s.r + i; });
+                const sheetMerges = (ws['!merges'] || [])
+                    .filter((m) => m.e.r > m.s.r)
+                    .map((m) => ({ sr: m.s.r, er: m.e.r, c: m.s.c - range.s.c, ec: m.e.c - range.s.c }));
+                setMerges(sheetMerges);
 
                 // The header row may come after a title ("Lista de invitados - Boda..."): the row among the
                 // first ones that looks most like column names
@@ -205,7 +237,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 }
                 setOptions(autoOptions);
                 setMapping(autoMapping);
-                buildParsedList(fileHeaders, fileRows, autoMapping, autoOptions);
+                buildParsedList(fileHeaders, fileRows, autoMapping, autoOptions, sheetMerges);
             } catch (err) {
                 console.error(err);
                 setError('Error al procesar el archivo Excel. Asegúrate de que sea un archivo .xlsx, .xls o .csv válido.');
@@ -215,7 +247,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         reader.readAsArrayBuffer(uploadedFile);
     };
 
-    const buildParsedList = (currentHeaders, currentRows, currentMap, currentOptions = options) => {
+    const buildParsedList = (currentHeaders, currentRows, currentMap, currentOptions = options, currentMerges = merges) => {
         const nameIdx = currentHeaders.indexOf(currentMap.name);
         const lastNameIdx = currentHeaders.indexOf(currentMap.last_name);
         const phoneIdx = currentHeaders.indexOf(currentMap.phone);
@@ -230,7 +262,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
         const list = currentRows.map((row, index) => {
             const lastName = lastNameIdx !== -1 ? String(row[lastNameIdx] || '').trim() : '';
-            const rawName = [nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '', lastName].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ');
+            const rawName = cleanGuestName([nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '', lastName].filter(Boolean).join(' '));
             let rawPhone = phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '';
             
             // Clean phone number (remove spaces, hyphens)
@@ -285,6 +317,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
             return {
                 id: index,
+                sheetRow: row.__r,
                 name: rawName,
                 phone: rawPhone,
                 table_number: tableVal,
@@ -300,6 +333,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 passes: 1 + (compAdults || 0) + (compChildren || 0),
                 // The amount of people comes from a total: rows below can only fill those places
                 hasTotal: Boolean(totalPeople),
+                ownCount: totalPeople || null,
                 members: [],
                 attachedTo: null,
                 warnings: [],
@@ -311,6 +345,12 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
         // Rows without phone right under a guest are companions of that invitation ("Marcos Pereira 6"
         // followed by "Adriana Ojeda", "Pauli Ojeda"...): they become named companions instead of being dropped
+        // Phone cell merged over several rows: everyone in those rows shares that phone (one invitation)
+        const covering = (colIdx) => (colIdx === -1 ? [] : currentMerges.filter((m) => m.c <= colIdx && colIdx <= m.ec));
+        const phoneGroups = covering(currentHeaders.indexOf(currentMap.phone));
+        const totalGroups = covering(totalIdx);
+        const groupStartOf = (sheetRow) => phoneGroups.find((m) => sheetRow > m.sr && sheetRow <= m.er)?.sr;
+
         let holder = null;
         list.forEach((row) => {
             if (row.isValid) {
@@ -318,6 +358,26 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 return;
             }
             if (!row.name) return;
+
+            const groupStart = row.sheetRow !== undefined ? groupStartOf(row.sheetRow) : undefined;
+            if (groupStart !== undefined && holder && holder.sheetRow === groupStart) {
+                const category = row.children ? 'child' : row.youth ? 'youth' : 'adult';
+                holder.members.push({ name: row.name, category });
+                const totalCoversGroup = totalGroups.some((m) => m.sr === groupStart);
+                // Their own amount when the row has one; otherwise one more person, unless the holder's total
+                // (merged over the group, or simply big enough) already counts them
+                const extra = row.ownCount
+                    ? (totalCoversGroup ? 0 : row.ownCount)
+                    : (holder.hasTotal && holder.passes >= 1 + holder.members.length ? 0 : 1);
+                if (extra > 0) {
+                    if (category === 'child') holder.companion_children = (holder.companion_children || 0) + extra;
+                    else holder.companion_adults = (holder.companion_adults || 0) + extra;
+                    holder.passes += extra;
+                }
+                row.attachedTo = holder.name;
+                row.sharedPhone = true;
+                return;
+            }
             if (!row.phone && currentOptions.joinOrphans && holder) {
                 const free = holder.hasTotal ? holder.passes - 1 - holder.members.length : Infinity;
                 if (free > 0) {
@@ -376,6 +436,44 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         const updated = { ...mapping, [field]: selectedHeader };
         setMapping(updated);
         buildParsedList(headers, rawRows, updated);
+    };
+
+    // The uploaded list in the system's template format (same columns and order as the downloadable template),
+    // already interpreted: totals, phones 595…, companions in rows below joined in one cell, clean names.
+    // What couldn't be solved goes to a second sheet, "Para revisar".
+    const handleDownloadCorrected = () => {
+        const valid = parsedData.filter((r) => r.isValid);
+        const rows = valid.map((r) => ({
+            'Nombre Completo': r.name,
+            'Teléfono (WhatsApp)': normalizePhone(r.phone),
+            'Número de Mesa': r.table_number || '',
+            'Tipo de Invitado': r.categoryLabel,
+            'Total Personas': r.passes,
+            'Acompañantes Niños': r.companion_children || 0,
+            'Nombres Acompañantes': r.companions || '',
+            'Restricción Alimentaria': r.dietary_restrictions || '',
+            'Familia / Notas': r.notes || '',
+        }));
+        const review = parsedData
+            .filter((r) => r.warnings.length && !r.attachedTo)
+            .map((r) => ({
+                'Nombre Completo': r.name || '(sin nombre)',
+                'Teléfono (WhatsApp)': r.phone ? normalizePhone(r.phone) : '',
+                'Total Personas': r.isValid ? r.passes : '',
+                'Motivo': r.warnings.join(' '),
+            }));
+
+        const workbook = XLSX.utils.book_new();
+        const sheet = XLSX.utils.json_to_sheet(rows);
+        sheet['!cols'] = [30, 18, 16, 16, 14, 18, 40, 24, 24].map((wch) => ({ wch }));
+        XLSX.utils.book_append_sheet(workbook, sheet, 'Invitados');
+        if (review.length) {
+            const reviewSheet = XLSX.utils.json_to_sheet(review);
+            reviewSheet['!cols'] = [30, 18, 14, 70].map((wch) => ({ wch }));
+            XLSX.utils.book_append_sheet(workbook, reviewSheet, 'Para revisar');
+        }
+        const base = (file?.name || 'Lista').replace(/\.[^.]+$/, '');
+        XLSX.writeFile(workbook, `${base} - corregida.xlsx`);
     };
 
     const handleDownloadTemplate = () => {
@@ -798,7 +896,18 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                             <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
                                 <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 font-bold text-xs text-zinc-700 dark:text-zinc-300 flex justify-between items-center">
                                     <span>Vista previa de datos ({parsedData.length} filas)</span>
-                                    <span className="text-[11px] text-zinc-500 font-normal">Verificá que el nombre, teléfono, mesa y tipo de invitado estén correctos</span>
+                                    <div className="flex items-center gap-3">
+                                        <span className="hidden md:inline text-[11px] text-zinc-500 font-normal">Verificá que el nombre, teléfono, mesa y tipo de invitado estén correctos</span>
+                                        <button
+                                            type="button"
+                                            onClick={handleDownloadCorrected}
+                                            disabled={!parsedData.some((r) => r.isValid)}
+                                            title="La lista en el formato de la plantilla: columnas en orden, totales, teléfonos 595…, acompañantes juntos y nombres limpios"
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold disabled:opacity-50"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> Descargar Excel corregido
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="max-h-60 overflow-y-auto">
@@ -834,7 +943,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                         )}
                                                     </td>
                                                     <td className="p-3 font-medium text-zinc-900 dark:text-white">
-                                                        {row.attachedTo ? <span className="text-zinc-500">↳ {row.name} <span className="text-[10px]">(de {row.attachedTo})</span></span> : (row.name || '(Sin nombre)')}
+                                                        {row.attachedTo ? <span className="text-zinc-500">↳ {row.name} <span className="text-[10px]">(de {row.attachedTo}{row.sharedPhone ? ' · teléfono combinado' : ''})</span></span> : (row.name || '(Sin nombre)')}
                                                         {row.warnings.map((w, i) => (
                                                             <div key={i} className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 mt-0.5">⚠️ {w}</div>
                                                         ))}
