@@ -9,6 +9,8 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
     // People covered by this invitation: the invited person plus companions (e.g. a mother and her daughter)
     const [counts, setCounts] = useState({ adults: 1, youth: 0, children: 0 });
     const [companions, setCompanions] = useState('');
+    // Named companions (each can later sit at another table and is checked in on its own)
+    const [members, setMembers] = useState([]);
     const [notes, setNotes] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -26,12 +28,14 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                 children: guestToEdit.children ?? 0,
             });
             setCompanions(guestToEdit.companions || '');
+            setMembers((guestToEdit.members || []).map((m) => ({ id: m.id, name: m.name, category: m.category, table_number: m.table_number })));
         } else {
             setName('');
             setPhone('');
             setTableNumber('');
             setCounts({ adults: 1, youth: 0, children: 0 });
             setCompanions('');
+            setMembers([]);
             setNotes('');
         }
         setError(null);
@@ -40,6 +44,21 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
     if (!isOpen) return null;
 
     const totalPeople = counts.adults + counts.youth + counts.children;
+
+    // One row per companion; the default category follows the counts (the invited person is the first adult)
+    const slotCategories = [
+        ...Array(counts.adults).fill('adult'),
+        ...Array(counts.youth).fill('youth'),
+        ...Array(counts.children).fill('child'),
+    ].slice(1);
+    const memberRows = slotCategories.map((cat, i) => members[i] || { name: '', category: cat });
+    const setMemberRow = (i, patch) => {
+        setMembers(() => {
+            const next = memberRows.map((m) => ({ ...m }));
+            next[i] = { ...next[i], ...patch };
+            return next;
+        });
+    };
 
     const changeCount = (key, delta) => {
         setCounts(prev => ({ ...prev, [key]: Math.max(0, Math.min(20, prev[key] + delta)) }));
@@ -77,7 +96,22 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                 })
             });
 
+            // Named companions: saved after the invitation (they need its id)
+            const named = memberRows.filter((m) => m.name.trim()).map((m) => ({ ...m, name: m.name.trim() }));
+            const hadMembers = (guestToEdit?.members || []).length > 0;
+            let savedGuest = json?.guest || (isEditing ? guestToEdit : null);
+            if (ok && savedGuest?.id && (named.length > 0 || hadMembers)) {
+                const res = await apiFetch(`/api/guests/${savedGuest.id}/members`, { method: 'PUT', body: JSON.stringify({ members: named }) });
+                if (!res.ok) {
+                    setError(res.json?.message || 'El invitado se guardó, pero no se pudieron guardar los acompañantes.');
+                    setLoading(false);
+                    return;
+                }
+                savedGuest = res.json?.guest || savedGuest;
+            }
+
             if (ok) {
+                if (json) json.guest = savedGuest;
                 if (isEditing) {
                     if (onGuestUpdated) onGuestUpdated(json?.guest || { ...guestToEdit, name, phone, table_number: tableNumber, adults, youth, children, companions, notes, passes });
                 } else {
@@ -123,7 +157,7 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
                     {error && (
                         <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 text-xs font-semibold">
                             {error}
@@ -219,18 +253,37 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                         </p>
 
                         {totalPeople > 1 && (
-                            <div>
-                                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                            <div className="space-y-1.5">
+                                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
                                     <Baby className="w-3.5 h-3.5 text-teal-500" /> Nombres de acompañantes (Opcional)
                                 </label>
-                                <input
-                                    type="text"
-                                    value={companions}
-                                    onChange={(e) => setCompanions(e.target.value)}
-                                    maxLength={255}
-                                    className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
-                                    placeholder="ej: Sofía (hija, 4 años)"
-                                />
+                                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                    Con nombre, la recepción ve quién entra y en Mesas podés sentar a cada uno por separado.
+                                </p>
+                                {memberRows.map((m, i) => (
+                                    <div key={i} className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={m.name}
+                                            onChange={(e) => setMemberRow(i, { name: e.target.value })}
+                                            maxLength={120}
+                                            className="flex-1 text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                                            placeholder={`Acompañante ${i + 1}`}
+                                        />
+                                        <select
+                                            value={m.category || 'adult'}
+                                            onChange={(e) => setMemberRow(i, { category: e.target.value })}
+                                            className="text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5"
+                                        >
+                                            <option value="adult">Adulto</option>
+                                            <option value="youth">Joven</option>
+                                            <option value="child">Niño</option>
+                                        </select>
+                                    </div>
+                                ))}
+                                {members.length === 0 && companions && (
+                                    <p className="text-[11px] text-amber-600 dark:text-amber-400">Nota cargada: «{companions}». Escribí los nombres arriba para identificarlos uno por uno.</p>
+                                )}
                             </div>
                         )}
                     </div>

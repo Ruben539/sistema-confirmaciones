@@ -36,7 +36,7 @@ class GuestMessages
 
     // ───────── Attendance ─────────
 
-    public static function confirmed(Guest $guest, Event $event): string
+    public static function confirmed(Guest $guest, Event $event, bool $askHeadcount = false): string
     {
         $hosts = self::hosts($event);
         $name = self::firstName($guest);
@@ -51,9 +51,74 @@ class GuestMessages
             $opening = str_replace("{$hosts} se van a poner muy felices", "{$hosts} se va a poner muy feliz", $opening);
         }
 
-        return $opening
-            . "\n\n🎟️ *Tu pase de ingreso*\nTe lo dejamos en esta imagen: mostralo en la recepción y vas a poder entrar sin filas."
-            . "\n\n🍽️ Una última cosita: ¿tenés alguna restricción alimentaria? (celíaco, vegetariano, sin lactosa…). Contanos, o respondé *Ninguna*.";
+        $text = $opening
+            . "\n\n🎟️ *Tu pase de ingreso*\nTe lo dejamos en esta imagen: mostralo en la recepción y vas a poder entrar sin filas.";
+
+        // Group invitation: first how many are coming (the menu question comes after)
+        $places = (int) $guest->passes;
+        if ($places > 1 && $askHeadcount) {
+            return $text . "\n\n" . self::headcountQuestion($places);
+        }
+        if ((int) $guest->confirmed_passes > 1) {
+            $text .= " Sirve para las *{$guest->confirmed_passes} personas*.";
+        }
+
+        return $text . "\n\n" . self::menuQuestion();
+    }
+
+    private static function menuQuestion(): string
+    {
+        return "🍽️ Una última cosita: ¿tenés alguna restricción alimentaria? (celíaco, vegetariano, sin lactosa…). Contanos, o respondé *Ninguna*.";
+    }
+
+    // ───────── How many people of a group invitation are coming ─────────
+
+    private static function headcountQuestion(int $places): string
+    {
+        return "👥 Tu invitación es para *{$places} personas*. ¿Cuántos van a ir? Respondé con el número (del 1 al {$places}) o *Todos*.";
+    }
+
+    public static function askHeadcountAgain(Guest $guest): string
+    {
+        return "¡Perdón, " . self::firstName($guest) . "! 😊 No llegamos a entender cuántos van a ir.\n\n" . self::headcountQuestion((int) $guest->passes);
+    }
+
+    public static function headcountSaved(Guest $guest, int $people): string
+    {
+        $places = (int) $guest->passes;
+        $text = $people === 1
+            ? "¡Perfecto, " . self::firstName($guest) . "! Anotamos *1 persona* 🙌"
+            : "¡Perfecto, " . self::firstName($guest) . "! Anotamos *{$people} personas* 🙌 El mismo pase sirve para todos.";
+        if ($people < $places) {
+            $text .= "\nSi al final se suma alguien, avisanos (tenés hasta {$places} lugares).";
+        }
+
+        return $text . "\n\n" . self::menuQuestion();
+    }
+
+    // Didn't understand twice: keep the whole invitation and move on
+    public static function headcountKeptAll(Guest $guest): string
+    {
+        $places = (int) $guest->passes;
+
+        return "¡Gracias, " . self::firstName($guest) . "! 😊 Dejamos reservados los *{$places} lugares*. Si van menos, escribinos por ejemplo *Somos 2* y lo actualizamos."
+            . "\n\n" . self::menuQuestion();
+    }
+
+    // "Somos 2" after having confirmed
+    public static function headcountUpdated(Guest $guest, int $people): string
+    {
+        return "¡Listo, " . self::firstName($guest) . "! 👥 Actualizamos tu confirmación a *{$people} " . ($people === 1 ? 'persona' : 'personas') . "*. Tu pase sigue siendo el mismo.";
+    }
+
+    public static function headcountTooMany(Guest $guest, Event $event): string
+    {
+        $places = (int) $guest->passes;
+        $hosts = self::hosts($event);
+
+        return "¡Gracias por avisar, " . self::firstName($guest) . "! 💛 Tu invitación es para *{$places} " . ($places === 1 ? 'persona' : 'personas') . "*."
+            . ($places > 1 ? " ¿Cuántos van a ir? (del 1 al {$places})" : '')
+            . "\nSi necesitás sumar a alguien más, se lo consultamos a {$hosts} y te respondemos por acá.";
     }
 
     public static function declined(Guest $guest, Event $event, ?\Carbon\Carbon $changeUntil = null): string
@@ -171,9 +236,11 @@ class GuestMessages
         $intro = $isResend
             ? "¡Hola, {$name}! 👋 Te reenviamos tu pase para la celebración de {$hosts}."
             : "¡Hola, {$name}! 🎉 ¡Qué alegría que vengas a la celebración de {$hosts}!";
+        $people = $guest->groupSize();
 
         return $intro
-            . "\n\n🎟️ *Tu pase de ingreso*\nMostralo en la recepción y vas a poder entrar sin filas. ¡Te esperamos!";
+            . "\n\n🎟️ *Tu pase de ingreso*" . ($people > 1 ? " (válido para {$people} personas)" : '')
+            . "\nMostralo en la recepción y vas a poder entrar sin filas. ¡Te esperamos!";
     }
 
     // ───────── Other situations ─────────

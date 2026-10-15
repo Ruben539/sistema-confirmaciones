@@ -41,9 +41,19 @@ class WhatsAppMessage
             $formattedLocation = $rawLocation;
         }
 
+        // Group invitation: say how many places are reserved (custom templates can place it with {lugares})
+        $places = max(1, (int) $guest->passes);
+        $placesText = $places > 1 ? "{$places} personas" : '1 persona';
+        if ($places > 1 && !str_contains($template, '{lugares}')) {
+            $line = "🎟️ Lugares reservados: *{lugares}*";
+            $template = preg_match('/^.*respond/imu', $template)
+                ? preg_replace('/^(.*respond)/imu', $line . "\n\n$1", $template, 1)
+                : $template . "\n\n" . $line;
+        }
+
         return str_replace(
-            ['{nombre}', '{pareja}', '{lugar}', '{link}'],
-            [$guest->name, $event->couple_names ?? $event->title, $formattedLocation, url('/confirmar/' . $guest->token)],
+            ['{nombre}', '{pareja}', '{lugar}', '{link}', '{lugares}'],
+            [$guest->name, $event->couple_names ?? $event->title, $formattedLocation, url('/confirmar/' . $guest->token), $placesText],
             $template
         );
     }

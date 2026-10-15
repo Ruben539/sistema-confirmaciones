@@ -113,6 +113,7 @@ Route::prefix('api')->group(function () {
         Route::post('/guests/{id}/reminder', [GuestController::class, 'sendReminder']);
         Route::post('/guests/{id}/resend-qr', [GuestController::class, 'resendQrPass']);
         Route::get('/guests/{id}/activity', [GuestController::class, 'activity']);
+        Route::put('/guests/{id}/members', [GuestController::class, 'updateMembers']);
         Route::delete('/guests/{id}', [GuestController::class, 'destroy']);
 
         // Seating Tables Routes
@@ -122,6 +123,7 @@ Route::prefix('api')->group(function () {
         Route::put('/tables/{id}', [TableController::class, 'update']);
         Route::delete('/tables/{id}', [TableController::class, 'destroy']);
         Route::post('/tables/assign', [TableController::class, 'assignGuest']);
+        Route::post('/tables/assign-member', [TableController::class, 'assignMember']);
         Route::post('/events/{eventId}/tables/import', [TableController::class, 'importAssignments']);
         Route::put('/events/{eventId}/tables/layout', [TableController::class, 'saveLayout']);
 

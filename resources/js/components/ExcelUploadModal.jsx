@@ -9,7 +9,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const [parsedData, setParsedData] = useState([]);
     const [rawRows, setRawRows] = useState([]);
     const [headers, setHeaders] = useState([]);
-    const [mapping, setMapping] = useState({ name: '', phone: '', table_number: '', category: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
+    const [mapping, setMapping] = useState({ name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const fileInputRef = useRef(null);
@@ -64,7 +64,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
                 setHeaders(fileHeaders);
                 setRawRows(fileRows);                // Auto-detect column mapping
-                const autoMapping = { name: '', phone: '', table_number: '', category: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
+                const autoMapping = { name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
 
                 fileHeaders.forEach((h, index) => {
                     const lower = h.toLowerCase();
@@ -77,6 +77,12 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         } else if (!autoMapping.companion_adults) {
                             autoMapping.companion_adults = h;
                         }
+                        return;
+                    }
+                    // "Cantidad", "Total personas", "Pases"...: the WHOLE invitation (invited person included).
+                    // Before the name rule: "Cantidad de invitados" would otherwise be taken as the name
+                    if (!autoMapping.total_people && /(cantidad|total|personas|pases|lugares|cupo)/.test(lower) && !lower.includes('mesa')) {
+                        autoMapping.total_people = h;
                         return;
                     }
                     if (!autoMapping.name && (lower.includes('nombre') || lower.includes('name') || lower.includes('invitado'))) {
@@ -114,6 +120,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         const phoneIdx = currentHeaders.indexOf(currentMap.phone);
         const tableIdx = currentHeaders.indexOf(currentMap.table_number);
         const categoryIdx = currentHeaders.indexOf(currentMap.category);
+        const totalIdx = currentHeaders.indexOf(currentMap.total_people);
         const compAdultsIdx = currentHeaders.indexOf(currentMap.companion_adults);
         const compChildrenIdx = currentHeaders.indexOf(currentMap.companion_children);
         const companionsIdx = currentHeaders.indexOf(currentMap.companions);
@@ -140,8 +147,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 const n = parseInt(String(row[idx] ?? '').replace(/[^\d]/g, ''), 10);
                 return Number.isNaN(n) ? 0 : Math.min(20, n);
             };
-            const compAdults = toCount(compAdultsIdx);
+            let compAdults = toCount(compAdultsIdx);
             const compChildren = toCount(compChildrenIdx);
+            // Total of the invitation: the rest (minus the invited person and the children) are adult companions
+            const totalPeople = toCount(totalIdx);
+            if (totalPeople) {
+                compAdults = Math.max(0, totalPeople - 1 - (compChildren || 0));
+            }
             const companionsVal = companionsIdx !== -1 ? String(row[companionsIdx] || '').trim() : '';
             const dietaryVal = dietaryIdx !== -1 ? String(row[dietaryIdx] || '').trim() : '';
             const notesVal = notesIdx !== -1 ? String(row[notesIdx] || '').trim() : '';
@@ -202,9 +214,11 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
     const handleDownloadTemplate = () => {
         const templateData = [
-            { "Nombre Completo": "María García", "Teléfono (WhatsApp)": "595981123456", "Número de Mesa": "Mesa 1", "Tipo de Invitado": "Adulto", "Acompañantes Adultos": 0, "Acompañantes Niños": 1, "Nombres Acompañantes": "Sofía (hija, 4 años)", "Restricción Alimentaria": "Celíaco", "Familia / Notas": "Familia de la Novia" },
-            { "Nombre Completo": "Carlos Rodríguez", "Teléfono (WhatsApp)": "595981654321", "Número de Mesa": "Mesa 5", "Tipo de Invitado": "Joven", "Acompañantes Adultos": 0, "Acompañantes Niños": 0, "Nombres Acompañantes": "", "Restricción Alimentaria": "", "Familia / Notas": "Amigo del Novio" },
-            { "Nombre Completo": "Lucas Martínez", "Teléfono (WhatsApp)": "595981999888", "Número de Mesa": "Mesa Principal", "Tipo de Invitado": "Niño", "Acompañantes Adultos": 0, "Acompañantes Niños": 0, "Nombres Acompañantes": "", "Restricción Alimentaria": "Intolerante a la lactosa", "Familia / Notas": "Hijo de Padrinos" }
+            // "Total Personas" = the whole invitation (the invited person included); "Acompañantes Niños" are part of that total
+            { "Nombre Completo": "María García", "Teléfono (WhatsApp)": "595981123456", "Número de Mesa": "Mesa 1", "Tipo de Invitado": "Adulto", "Total Personas": 2, "Acompañantes Niños": 1, "Nombres Acompañantes": "Sofía (hija, 4 años)", "Restricción Alimentaria": "Celíaco", "Familia / Notas": "Familia de la Novia" },
+            { "Nombre Completo": "Rubén Flores", "Teléfono (WhatsApp)": "595981777666", "Número de Mesa": "Mesa 3", "Tipo de Invitado": "Adulto", "Total Personas": 5, "Acompañantes Niños": 0, "Nombres Acompañantes": "Ana Flores, Juan Flores, Marta Gómez y Luis Flores", "Restricción Alimentaria": "", "Familia / Notas": "Amigos del Novio" },
+            { "Nombre Completo": "Carlos Rodríguez", "Teléfono (WhatsApp)": "595981654321", "Número de Mesa": "Mesa 5", "Tipo de Invitado": "Joven", "Total Personas": 1, "Acompañantes Niños": 0, "Nombres Acompañantes": "", "Restricción Alimentaria": "", "Familia / Notas": "Amigo del Novio" },
+            { "Nombre Completo": "Lucas Martínez", "Teléfono (WhatsApp)": "595981999888", "Número de Mesa": "Mesa Principal", "Tipo de Invitado": "Niño", "Total Personas": 1, "Acompañantes Niños": 0, "Nombres Acompañantes": "", "Restricción Alimentaria": "Intolerante a la lactosa", "Familia / Notas": "Hijo de Padrinos" }
         ];
 
         const worksheet = XLSX.utils.json_to_sheet(templateData);
@@ -482,6 +496,18 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                     </div>
 
                                     <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Total de personas (incluye al invitado)</label>
+                                        <select
+                                            value={mapping.total_people}
+                                            onChange={(e) => handleMappingChange('total_people', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
                                         <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Acompañantes Adultos (cant.)</label>
                                         <select
                                             value={mapping.companion_adults}
@@ -543,6 +569,17 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                 </div>
                             </div>
 
+                            {/* How the amount of people is read: the usual mistake is a total in the companions column */}
+                            {mapping.total_people ? (
+                                <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900/50 text-[11px] text-sky-800 dark:text-sky-200">
+                                    La columna <strong>«{mapping.total_people}»</strong> se toma como el <strong>total de la invitación</strong>: un 5 son 5 personas (el invitado + 4 acompañantes).
+                                </div>
+                            ) : mapping.companion_adults ? (
+                                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-200">
+                                    La columna <strong>«{mapping.companion_adults}»</strong> se toma como acompañantes <strong>además</strong> del invitado: un 4 son 5 personas (el invitado + 4). Si tu columna tiene el total, elegila en <strong>Total de personas</strong>.
+                                </div>
+                            ) : null}
+
                             {/* Data Preview Table */}
                             <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
                                 <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 font-bold text-xs text-zinc-700 dark:text-zinc-300 flex justify-between items-center">
@@ -559,7 +596,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                 <th className="p-3">Teléfono</th>
                                                 <th className="p-3">Nº Mesa</th>
                                                 <th className="p-3">Tipo Invitado</th>
-                                                <th className="p-3">Acompañantes</th>
+                                                <th className="p-3">Personas</th>
                                                 <th className="p-3">Dieta</th>
                                                 <th className="p-3">Notas</th>
                                             </tr>
@@ -589,9 +626,9 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                     <td className="p-3 text-zinc-500">
                                                         {row.passes > 1 ? (
                                                             <span className="font-bold text-teal-700 dark:text-teal-300">
-                                                                +{row.passes - 1}{row.companions ? ` · ${row.companions}` : ''}
+                                                                {row.passes} <span className="font-normal text-zinc-500">(1 + {row.passes - 1}){row.companions ? ` · ${row.companions}` : ''}</span>
                                                             </span>
-                                                        ) : '-'}
+                                                        ) : '1'}
                                                     </td>
                                                     <td className="p-3 text-zinc-500">{row.dietary_restrictions || '-'}</td>
                                                     <td className="p-3 text-zinc-500">{row.notes || '-'}</td>

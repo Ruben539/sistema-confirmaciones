@@ -132,12 +132,13 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
 
     const handleAssignGuest = async (guestId, targetTableName) => {
         try {
-            const { ok, json } = await apiFetch(`/api/tables/assign`, {
+            // "m12": a named companion seated on its own (null = back with the person holding the invitation)
+            const isMember = String(guestId).startsWith('m');
+            const { ok, json } = await apiFetch(isMember ? '/api/tables/assign-member' : `/api/tables/assign`, {
                 method: 'POST',
-                body: JSON.stringify({
-                    guest_id: guestId,
-                    table_name: targetTableName
-                })
+                body: JSON.stringify(isMember
+                    ? { member_id: Number(String(guestId).slice(1)), table_name: targetTableName }
+                    : { guest_id: guestId, table_name: targetTableName })
             });
 
             if (ok) {
@@ -536,6 +537,7 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                                         </span>
                                     </div>
 
+                                    <MembersHere guest={guest} onDragStart={handleDragStart} />
                                     <div className="flex items-center justify-between text-[10px] text-zinc-500">
                                         <span>{guest.youth || 0} Jóv · {guest.adults || 0} Ad · {guest.children || 0} Niñ</span>
 
@@ -722,8 +724,15 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                                                                 onDragStart={(e) => handleDragStart(e, g)}
                                                                 className="p-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200/50 dark:border-zinc-700/50 flex items-center justify-between text-xs transition-colors group cursor-grab"
                                                             >
-                                                                <div className="font-semibold text-zinc-800 dark:text-zinc-200 truncate max-w-[140px]">
-                                                                    {g.name}
+                                                                <div className="min-w-0">
+                                                                    <div className="font-semibold text-zinc-800 dark:text-zinc-200 truncate max-w-[140px]">
+                                                                        {g.name}
+                                                                    </div>
+                                                                    {g.is_member ? (
+                                                                        <div className="text-[10px] text-violet-600 dark:text-violet-400 truncate max-w-[140px]">acompañante de {g.holder_name}</div>
+                                                                    ) : (
+                                                                        <MembersHere guest={g} onDragStart={handleDragStart} />
+                                                                    )}
                                                                 </div>
 
                                                                 <div className="flex items-center gap-1.5 shrink-0">
@@ -733,7 +742,7 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                                                                     <button
                                                                         onClick={() => handleAssignGuest(g.id, null)}
                                                                         className="text-zinc-400 hover:text-rose-500 p-0.5 rounded"
-                                                                        title="Quitar de esta mesa"
+                                                                        title={g.is_member ? 'Volver a la mesa de su grupo' : 'Quitar de esta mesa'}
                                                                     >
                                                                         <X className="w-3.5 h-3.5" />
                                                                     </button>
@@ -954,6 +963,28 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                 confirmText={confirmModal.confirmText}
                 variant="danger"
             />
+        </div>
+    );
+}
+
+// Named companions sitting with the holder of the invitation: they can be dragged on their own to another table
+function MembersHere({ guest, onDragStart }) {
+    const key = (t) => String(t || '').trim().toLowerCase();
+    const here = (guest.members || []).filter((m) => !m.table_number || key(m.table_number) === key(guest.table_number));
+    if (here.length === 0) return null;
+    return (
+        <div className="flex flex-wrap gap-1 mt-0.5">
+            {here.map((m) => (
+                <span
+                    key={m.id}
+                    draggable
+                    onDragStart={(e) => { e.stopPropagation(); onDragStart(e, { id: `m${m.id}`, name: m.name, is_member: true }); }}
+                    title="Arrastralo a otra mesa para sentarlo por separado"
+                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-900 cursor-grab"
+                >
+                    + {m.name}
+                </span>
+            ))}
         </div>
     );
 }

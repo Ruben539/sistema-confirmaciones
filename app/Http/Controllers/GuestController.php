@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Event;
 use App\Models\Guest;
+use App\Models\GuestMember;
 use App\Models\Table;
 use App\Jobs\SendWhatsAppMessageJob;
 use App\Services\WhatsAppMessage;
@@ -57,7 +58,8 @@ class GuestController extends Controller
             return $denied;
         }
 
-        $guests = Guest::where('event_id', $eventId)
+        $guests = Guest::with('members')
+            ->where('event_id', $eventId)
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -115,7 +117,9 @@ class GuestController extends Controller
             'confirmed_youth' => $confirmedOrAttended->sum(fn ($g) => $confirmedPeople($g)['youth']),
             'confirmed_children' => $confirmedOrAttended->sum(fn ($g) => $confirmedPeople($g)['children']),
             'attended_guests' => $attended->count(),
-            'attended_passes' => $attended->sum(fn($g) => $g->confirmed_passes > 0 ? $g->confirmed_passes : $g->passes),
+            'attended_passes' => $attended->sum(fn($g) => (int) $g->attended_people > 0 ? (int) $g->attended_people : $g->groupSize()),
+            // Groups with people still to arrive (came in parts)
+            'partial_groups' => $attended->filter(fn($g) => (int) $g->attended_people > 0 && (int) $g->attended_people < $g->groupSize())->count(),
             'pending_arrival' => max(0, $confirmedOrAttended->count() - $attended->count()),
             'declined_guests' => $guests->where('status', 'declined')->count(),
             'pending_guests' => $pending->count(),
@@ -190,6 +194,9 @@ class GuestController extends Controller
             'youth' => 'nullable|integer|min:0|max:20',
             'children' => 'nullable|integer|min:0|max:20',
             'companions' => 'nullable|string|max:255',
+            'members' => 'nullable|array|max:19',
+            'members.*.name' => 'required|string|max:120',
+            'members.*.category' => 'nullable|in:adult,youth,child',
             'notes' => 'nullable|string',
         ]);
 
@@ -252,9 +259,15 @@ class GuestController extends Controller
             'token' => Str::random(32),
         ]);
 
+        if (!empty($validated['members'])) {
+            $this->saveMembers($guest, $validated['members']);
+        } else {
+            $this->membersFromText($guest);
+        }
+
         return response()->json([
             'message' => 'Invitado agregado con éxito',
-            'guest' => $guest
+            'guest' => $guest->load('members')
         ], 201);
     }
 
@@ -368,6 +381,7 @@ class GuestController extends Controller
 
                 if (!empty($updateFields)) {
                     $existingGuest->update($updateFields);
+                    $this->membersFromText($existingGuest);
                     $updated++;
                 } else {
                     $skipped++;
@@ -396,6 +410,8 @@ class GuestController extends Controller
                 'status' => 'pending',
                 'token' => Str::random(32),
             ]);
+
+            $this->membersFromText($newGuest);
 
             $existingMap[$phoneKey] = $newGuest;
             $created++;
@@ -847,6 +863,84 @@ class GuestController extends Controller
         return response()->json(['message' => 'Lista de invitados reiniciada']);
     }
 
+    /**
+     * Named companions written in the "Acompañantes" text become people of the invitation, but only when
+     * they are exactly the companions invited ("Ana y Carlos" for 3 people). "Esposa y padres" for 4 people
+     * stays as a note: the planner can name them from the guest form.
+     */
+    private function membersFromText(Guest $guest): void
+    {
+        if ($guest->members()->exists()) {
+            return;
+        }
+        $people = GuestMember::parseNames($guest->companions);
+        if (count($people) === 0 || count($people) !== max(1, (int) $guest->passes) - 1) {
+            return;
+        }
+        foreach ($people as $i => $person) {
+            $guest->members()->create(['event_id' => $guest->event_id, 'name' => $person['name'], 'category' => $person['category'], 'position' => $i]);
+        }
+    }
+
+    // Replaces the named companions of an invitation (keeps table / check-in of the ones that stay)
+    private function saveMembers(Guest $guest, array $members): void
+    {
+        $keep = [];
+        foreach (array_values($members) as $i => $data) {
+            $fields = [
+                'event_id' => $guest->event_id,
+                'name' => trim($data['name']),
+                'category' => $data['category'] ?? 'adult',
+                'position' => $i,
+            ];
+            if (array_key_exists('table_number', $data)) {
+                $fields['table_number'] = Table::normalizeName($data['table_number']);
+            }
+            $member = !empty($data['id']) ? $guest->members()->whereKey($data['id'])->first() : null;
+            $member ? $member->update($fields) : ($member = $guest->members()->create($fields));
+            $keep[] = $member->id;
+        }
+        $guest->members()->whereNotIn('id', $keep ?: [0])->delete();
+
+        // The free text follows the names, so searches and exports show them
+        $names = $guest->members()->pluck('name')->implode(', ');
+        $guest->update(['companions' => $names !== '' ? mb_substr($names, 0, 255) : $guest->companions]);
+    }
+
+    public function updateMembers(Request $request, $id)
+    {
+        $guest = Guest::with('event')->findOrFail($id);
+        if ($denied = $this->validateEventAccess($guest->event, false)) {
+            return $denied;
+        }
+
+        $validated = $request->validate([
+            'members' => 'present|array|max:19',
+            'members.*.id' => 'nullable|integer',
+            'members.*.name' => 'required|string|max:120',
+            'members.*.category' => 'nullable|in:adult,youth,child',
+            'members.*.table_number' => 'nullable|string|max:100',
+        ]);
+
+        $places = max(1, (int) $guest->passes) - 1;
+        if (count($validated['members']) > $places) {
+            return response()->json([
+                'message' => $places === 0
+                    ? 'Esta invitación es para 1 persona: no tiene acompañantes. Aumentá la cantidad de personas primero.'
+                    : "Esta invitación tiene {$places} " . ($places === 1 ? 'acompañante' : 'acompañantes') . ': no se pueden cargar más nombres.',
+            ], 422);
+        }
+        foreach ($validated['members'] as $m) {
+            if (!empty($m['table_number']) && !Table::findByName($guest->event_id, $m['table_number'])) {
+                return response()->json(['message' => "La mesa '{$m['table_number']}' no existe."], 422);
+            }
+        }
+
+        $this->saveMembers($guest, $validated['members']);
+
+        return response()->json(['message' => 'Acompañantes guardados.', 'guest' => $guest->fresh('members')]);
+    }
+
     public function scanQrCheckIn(Request $request, $token = null)
     {
         $inputToken = $token ?? $request->input('token') ?? $request->input('qr_data') ?? $request->input('code');
@@ -865,7 +959,7 @@ class GuestController extends Controller
             $cleanToken = substr($cleanToken, strrpos($cleanToken, '/') + 1);
         }
 
-        $guest = Guest::with('event')->where('token', $cleanToken)->first();
+        $guest = Guest::with(['event', 'members'])->where('token', $cleanToken)->first();
 
         if (!$guest) {
             return response()->json([
@@ -898,35 +992,114 @@ class GuestController extends Controller
             ], 422);
         }
 
-        // Check if already checked in
-        if ($guest->attended_at !== null || $guest->status === 'attended') {
+        // Group invitations can come in parts: the same QR is valid until the whole group went in.
+        // At the door the whole invitation counts, even if the holder confirmed fewer people
+        $group = max($guest->groupSize(), (int) $guest->passes);
+        $inside = $guest->status === 'attended' ? ((int) $guest->attended_people > 0 ? (int) $guest->attended_people : $group) : 0;
+        $remaining = max(0, $group - $inside);
+
+        if ($remaining === 0) {
             \App\Models\GuestActivity::record($guest, 'scan_repeated', 'Se volvió a escanear un QR ya utilizado');
             $carbonTime = $guest->attended_at ? \Carbon\Carbon::parse($guest->attended_at)->setTimezone('America/Asuncion') : null;
             $formattedTime = $carbonTime ? $carbonTime->format('H:i') : 'anteriormente';
             $formattedDate = $carbonTime ? $carbonTime->format('d/m/Y') : '';
+            $who = $group > 1 ? "Las {$group} personas de {$guest->name} ya ingresaron" : "{$guest->name} ya ingresó";
             return response()->json([
                 'success' => false,
                 'status' => 'already_used',
                 'already_checked_in' => true,
-                'message' => "⚠️ ¡PASE YA UTILIZADO! {$guest->name} ya ingresó el {$formattedDate} a las {$formattedTime} hs.",
+                'message' => "⚠️ ¡PASE YA UTILIZADO! {$who} (primer ingreso el {$formattedDate} a las {$formattedTime} hs).",
                 'guest' => $guest,
                 'event' => $event,
                 'attended_at' => $formattedTime,
             ], 409);
         }
 
-        // Valid first-time accreditation!
+        // Who of the group is already inside, by name (holder + named companions)
+        $peopleList = collect([[
+            'key' => 'holder',
+            'name' => $guest->name,
+            'category' => null,
+            'table_number' => $guest->table_number,
+            'inside' => $inside > 0 && ($guest->holder_attended_at !== null || $guest->members->isEmpty()),
+        ]])->concat($guest->members->map(fn ($m) => [
+            'key' => (string) $m->id,
+            'name' => $m->name,
+            'category' => $m->category,
+            'table_number' => $m->table_number ?: $guest->table_number,
+            'inside' => $m->attended_at !== null,
+        ]))->values();
+
+        // Every person of the invitation is listed, also the companions without a name loaded
+        // ("Acompañante 3"): those are only counted, so the first ones already counted show as inside
+        $unnamed = max(0, $group - $peopleList->count());
+        $unnamedInside = max(0, $inside - $peopleList->where('inside', true)->count());
+        for ($i = 1; $i <= $unnamed; $i++) {
+            $peopleList->push([
+                'key' => "u{$i}",
+                'name' => 'Acompañante ' . ($peopleList->count()),
+                'category' => null,
+                'table_number' => $guest->table_number,
+                'inside' => $i <= $unnamedInside,
+                'unnamed' => true,
+            ]);
+        }
+
+        // The app asks how many are entering now (apps without this ask let the whole remaining group in)
+        $people = $request->input('people');
+        $chosen = collect((array) $request->input('members', []))->map(fn ($k) => (string) $k);
+        // Group invitation: the app shows everyone of the invitation and the hostess ticks who is here
+        if ($people === null && $chosen->isEmpty() && $request->boolean('partial') && $group > 1) {
+            return response()->json([
+                'success' => false,
+                'status' => 'ask_people',
+                'message' => $inside > 0
+                    ? "Ya ingresaron {$inside} de {$group} personas de {$guest->name}. Marcá quiénes llegaron."
+                    : "La invitación de {$guest->name} es para {$group} personas. Marcá quiénes llegaron.",
+                'guest' => $guest,
+                'group' => $group,
+                'confirmed' => (int) $guest->confirmed_passes,
+                'inside' => $inside,
+                'remaining' => $remaining,
+                'people' => $peopleList->values(),
+            ]);
+        }
+        $entering = $people === null && $chosen->isEmpty()
+            ? $remaining
+            : max(1, min($remaining, $people !== null ? (int) $people : $chosen->count()));
+
+        // Named people going in: the ones chosen, or everyone still outside when the whole rest enters
+        $enteringNames = ($chosen->isEmpty() && $entering === $remaining)
+            ? $peopleList->where('inside', false)->pluck('key')
+            : $chosen->intersect($peopleList->where('inside', false)->pluck('key'))->take($entering);
+        $memberIds = $enteringNames->reject(fn ($k) => $k === 'holder' || str_starts_with($k, 'u'))->map(fn ($k) => (int) $k)->values();
+
         $nowLocal = now()->setTimezone('America/Asuncion');
-        \App\Models\GuestActivity::withContext(['via' => 'scan'], fn () => $guest->update([
+        if ($memberIds->isNotEmpty()) {
+            $guest->members()->whereIn('id', $memberIds)->whereNull('attended_at')->update(['attended_at' => $nowLocal]);
+        }
+        \App\Models\GuestActivity::withContext(['via' => 'scan'], fn () => $guest->update(array_filter([
             'status' => 'attended',
-            'attended_at' => $nowLocal,
-        ]));
+            'attended_at' => $guest->attended_at ?? $nowLocal,
+            'attended_people' => $inside + $entering,
+            'holder_attended_at' => $enteringNames->contains('holder') ? $nowLocal : null,
+        ], fn ($v) => $v !== null)));
+        $enteringList = $peopleList->whereIn('key', $enteringNames->all())->pluck('name')->values();
+
+        $insideNow = $inside + $entering;
+        $groupText = $group > 1
+            ? ($insideNow < $group ? " Ingresan {$entering} · {$insideNow} de {$group} (faltan " . ($group - $insideNow) . ").": " Grupo completo: {$group} de {$group}.")
+            : '';
 
         return response()->json([
             'success' => true,
             'status' => 'success',
-            'message' => "✅ ¡ENTRADA VÁLIDA! Bienvenido/a {$guest->name}.",
-            'guest' => $guest->fresh(),
+            'message' => "✅ ¡ENTRADA VÁLIDA! Bienvenido/a {$guest->name}.{$groupText}",
+            'entering' => $entering,
+            'entering_names' => $enteringList,
+            'inside' => $insideNow,
+            'group' => $group,
+            'guest' => $guest->fresh('members'),
             'event' => $event,
             'passes' => $guest->confirmed_passes > 0 ? $guest->confirmed_passes : $guest->passes,
             'table_number' => $guest->table_number ?? 'Sin mesa asignada',

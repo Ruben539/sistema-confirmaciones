@@ -474,6 +474,59 @@ class RsvpController extends Controller
     // it is highlighted in the panel's "Mensajes" inbox
     private bool $needsPerson = false;
 
+    private const HEADCOUNT_WORDS = ['uno' => 1, 'una' => 1, 'dos' => 2, 'tres' => 3, 'cuatro' => 4, 'cinco' => 5, 'seis' => 6, 'siete' => 7, 'ocho' => 8, 'nueve' => 9, 'diez' => 10];
+
+    /**
+     * How many people the guest says are coming: "somos 3", "vamos los dos", "2 personas", "solo yo"...
+     * $bareAnswer also accepts a plain number ("3") and "todos": only when the bot just asked how many.
+     */
+    private function headcountFrom(string $msgClean, int $places, bool $bareAnswer): ?int
+    {
+        $num = '(\d{1,2}|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)';
+        $toInt = fn ($v) => is_numeric($v) ? (int) $v : (self::HEADCOUNT_WORDS[$v] ?? null);
+
+        if ($bareAnswer) {
+            if (preg_match('/^\s*' . $num . '\s*(personas?|adultos?|lugares?)?\s*[.!]*\s*$/u', $msgClean, $m)) {
+                return $toInt($m[1]) ?: null;
+            }
+            if (preg_match('/\b(todos|todas|todo el grupo|completos?)\b/u', $msgClean)) {
+                return $places;
+            }
+        }
+        if (preg_match('/\b(s[oó]lo yo|yo s[oó]lo|yo sola|solamente yo|voy s[oó]lo|voy sola|s[oó]lo voy yo)\b/u', $msgClean)) {
+            return 1;
+        }
+        if (preg_match('/\b(vamos|iremos|vamos a ir|somos|venimos|vendremos) (ambos|ambas)\b|\b(ambos|ambas) (vamos|iremos|asistiremos)\b/u', $msgClean)) {
+            return 2;
+        }
+        if (preg_match('/\b(somos|seremos|vamos|iremos|vendremos|venimos|asistimos|asistiremos|estaremos|confirmamos|van|ir[aá]n)\s+(?:a\s+(?:ser|ir)\s+)?(?:s[oó]lo\s+|solamente\s+)?(?:los\s+|las\s+)?' . $num . '\b/u', $msgClean, $m)) {
+            return $toInt($m[2]) ?: null;
+        }
+        if (preg_match('/(?<!de )\b' . $num . '\s+(personas|adultos|lugares|pases)\b/u', $msgClean, $m)) {
+            return $toInt($m[1]) ?: null;
+        }
+
+        return null;
+    }
+
+    // Confirmed people of the invitation: adults first, then youth, then children
+    private function applyHeadcount(Guest $guest, int $people): void
+    {
+        $adults = min($people, (int) $guest->adults);
+        $youth = min($people - $adults, (int) $guest->youth);
+        $children = min($people - $adults - $youth, (int) $guest->children);
+        if ($adults + $youth + $children < $people) {
+            $adults = $people - $youth - $children; // invitation without composition
+        }
+
+        $guest->update([
+            'confirmed_adults' => $adults,
+            'confirmed_youth' => $youth,
+            'confirmed_children' => $children,
+            'confirmed_passes' => $people,
+        ]);
+    }
+
     // "Lorena y Claudio lamentan" / "Candela lamenta"
     private function hostsVerb(string $hosts, string $singular, string $plural): string
     {
@@ -532,6 +585,20 @@ class RsvpController extends Controller
                 $currentState = 'awaiting_attendance';
             } else {
 
+                // "Somos 2" / "al final vamos 4": change how many are coming
+                $people = $isAttending ? $this->headcountFrom($msgClean, (int) $guest->passes, false) : null;
+                if ($people !== null) {
+                    if ($people > (int) $guest->passes) {
+                        $this->needsPerson = true;
+                        return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountTooMany($guest, $event)]);
+                    }
+                    if ($canChange) {
+                        $this->applyHeadcount($guest, $people);
+                        return response()->json(['processed' => true, 'reason' => 'Headcount updated', 'reply' => GuestMessages::headcountUpdated($guest, $people)]);
+                    }
+                    $this->needsPerson = true; // after the deadline a person decides
+                }
+
                 // Asks for the entry pass
                 if ($isAttending && preg_match('/\b(qr|pase|entrada|c[oó]digo)\b/iu', $msgClean)) {
                     return response()->json([
@@ -569,13 +636,45 @@ class RsvpController extends Controller
             }
         }
 
+        // Clear "we can't go" phrases (valid in any state, even while asking the menu or how many)
+        $strongDecline = (bool) preg_match('/(no (voy|vamos) a (poder|ir|asistir|estar)|no (podre|podré|podremos|podria|podría|podriamos|podríamos) (ir|asistir|estar|acompa)|no poder (asistir|ir|estar|acompa)|no podemos (ir|asistir|estar)|(me|nos) es imposible|imposible (asistir|ir)|lamentablemente no|no (asistiremos|iremos|ire|iré)\b)/iu', $msgClean);
+
+        // Group invitation just confirmed: how many are coming ("3", "todos", "somos 2"...)
+        if ($currentState === 'awaiting_count' && !$strongDecline) {
+            $places = (int) $guest->passes;
+            $people = $this->headcountFrom($msgClean, $places, true);
+
+            if ($people !== null && $people > $places) {
+                $this->needsPerson = true;
+                return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountTooMany($guest, $event)]);
+            }
+            if ($people !== null) {
+                $this->applyHeadcount($guest, $people);
+                $guest->update(['conversation_state' => 'awaiting_dietary']);
+                return response()->json(['processed' => true, 'reason' => 'Headcount saved', 'reply' => GuestMessages::headcountSaved($guest, $people)]);
+            }
+
+            // Not understood: ask once more, then keep the whole invitation and move on
+            if (mb_strlen($message) >= self::LONG_MESSAGE_CHARS) {
+                $this->needsPerson = true;
+            }
+            if (\Illuminate\Support\Facades\Cache::add("headcount_ask:{$guest->id}", true, now()->addDays(2))) {
+                return response()->json(['processed' => false, 'reason' => 'Headcount not understood', 'reply' => GuestMessages::askHeadcountAgain($guest)]);
+            }
+            \Illuminate\Support\Facades\Cache::forget("headcount_ask:{$guest->id}");
+            $guest->update(['conversation_state' => 'awaiting_dietary']);
+            return response()->json(['processed' => true, 'reason' => 'Headcount kept as invited', 'reply' => GuestMessages::headcountKeptAll($guest)]);
+        }
+
+        // While asking the menu, "No" means "no restrictions", not "I'm not going"
+        $answeringMenu = $currentState === 'awaiting_dietary' && $guest->status === 'confirmed';
+
         // 3. Check for direct decline first to avoid positive matching on phrases like "no confirmo"
         // "Starts with 2 / no" only counts in very short answers ("2", "No", "No, gracias"): "2 personas vamos" or "No sé si llego, pero voy" are not a decline
         $isShortAnswer = mb_strlen($msgClean) <= 15 && !preg_match('/^no s[eé]\b/u', $msgClean);
-        $isDecline = in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré', 'no voy', 'no asisto'])
+        $isDecline = $strongDecline || !$answeringMenu && (in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré', 'no voy', 'no asisto'])
             || ($isShortAnswer && preg_match('/^(2\b|2️⃣|cancelar|rechazar|no\b)/iu', $msgClean))
-            || preg_match('/\b(no puedo|no podre|no podré|no voy|no asisto|no asistire|no asistiré|no podremos)\b/iu', $msgClean)
-            || preg_match('/(no (voy|vamos) a (poder|ir|asistir|estar)|no (podre|podré|podremos|podria|podría|podriamos|podríamos) (ir|asistir|estar|acompa)|no poder (asistir|ir|estar|acompa)|no podemos (ir|asistir|estar)|(me|nos) es imposible|imposible (asistir|ir)|lamentablemente no|no (asistiremos|iremos|ire|iré)\b)/iu', $msgClean);
+            || preg_match('/\b(no puedo|no podre|no podré|no voy|no asisto|no asistire|no asistiré|no podremos)\b/iu', $msgClean));
 
         if ($isDecline) {
             $guest->update([
@@ -602,32 +701,51 @@ class RsvpController extends Controller
         // 4. Check for direct confirm command ("1", "si", "confirmar", "confirmo", "confirm", "confirn", etc.)
         $isConfirm = in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'confirm', 'confirn', 'si', 'sí', 'asistire', 'asistiré', 'asisto', 'voy', 'claro', 'obvio'])
             || ($isShortAnswer && preg_match('/^(1\b|1️⃣|confirm|confirn|si\b|sí\b|asist|voy\b)/iu', $msgClean))
-            || preg_match('/\b(confirmar|confirmo|confirmamos|confirmacion|confirmación|confirm|confirn|asistire|asistiré|asisto|asistiremos)\b/i', $msgClean);
+            || preg_match('/\b(confirmar|confirmo|confirmamos|confirmacion|confirmación|confirm|confirn|asistire|asistiré|asisto|asistiremos)\b/i', $msgClean)
+            // "Vamos 3" / "somos 2 personas" as the first answer is a yes with a headcount
+            || ($currentState === 'awaiting_attendance' && $this->headcountFrom($msgClean, max(1, (int) $guest->passes), false) !== null);
+
+        // Already confirmed and being asked the menu: "sí" is not a new confirmation
+        if ($isConfirm && $answeringMenu) {
+            return response()->json(['processed' => false, 'reason' => 'Yes while asking the menu', 'reply' => GuestMessages::askMenu($guest)]);
+        }
 
         if ($isConfirm) {
             $confAdults = $guest->adults > 0 ? $guest->adults : 1;
             $confPasses = max(1, (int)$guest->adults + (int)$guest->youth + (int)$guest->children);
 
+            // Group invitation: the whole group is confirmed until they say how many ("sí, vamos 3" says it already)
+            $people = $confPasses > 1 ? $this->headcountFrom($msgClean, $confPasses, false) : null;
+            $askHeadcount = $confPasses > 1 && ($people === null || $people > $confPasses);
+            // Invited alone but says they are more: a person (the planner) has to decide
+            if ($confPasses === 1 && ($this->headcountFrom($msgClean, 1, false) ?? 0) > 1) {
+                $this->needsPerson = true;
+            }
+            \Illuminate\Support\Facades\Cache::forget("headcount_ask:{$guest->id}");
+
             $guest->update([
                 'status' => 'confirmed',
-                'conversation_state' => 'awaiting_dietary',
+                'conversation_state' => $askHeadcount ? 'awaiting_count' : 'awaiting_dietary',
                 'confirmed_adults' => $confAdults,
                 'confirmed_youth' => $guest->youth,
                 'confirmed_children' => $guest->children,
                 // Confirm the whole invitation, including companions
                 'confirmed_passes' => $confPasses,
             ]);
+            if (!$askHeadcount && $people !== null) {
+                $this->applyHeadcount($guest, $people);
+            }
 
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
 
-            $reply = GuestMessages::confirmed($guest, $event);
+            $reply = GuestMessages::confirmed($guest, $event, $askHeadcount);
 
             EventMilestoneService::checkMilestone($guest->event_id);
 
             return response()->json([
                 'processed' => true,
                 'status' => 'confirmed',
-                'conversation_state' => 'awaiting_dietary',
+                'conversation_state' => $guest->conversation_state,
                 'guest' => $guest,
                 'reply' => $reply,
                 'media_url' => $qrUrl
@@ -653,6 +771,17 @@ class RsvpController extends Controller
                     'reason' => 'Long message in dietary state',
                     'reply' => GuestMessages::thanksAndAskMenu($guest, $event),
                 ]);
+            }
+
+            // "Somos 2 personas" is not a menu: it is how many are coming
+            $people = $this->headcountFrom($msgClean, (int) $guest->passes, false);
+            if ($people !== null) {
+                if ($people > (int) $guest->passes) {
+                    $this->needsPerson = true;
+                    return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountTooMany($guest, $event)]);
+                }
+                $this->applyHeadcount($guest, $people);
+                return response()->json(['processed' => true, 'reason' => 'Headcount updated in menu step', 'reply' => GuestMessages::headcountSaved($guest, $people)]);
             }
 
             $noDietary = in_array($msgClean, ['ninguna', 'ninguno', 'ningun', 'no', 'ninguna restriccion', 'normal', 'sin restriccion']);

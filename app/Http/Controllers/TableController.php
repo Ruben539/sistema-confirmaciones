@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Table;
 use App\Models\Guest;
+use App\Models\GuestMember;
 use App\Models\Event;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -46,13 +47,42 @@ class TableController extends Controller
         // Guests who declined don't take a seat
         $allGuests = Guest::where('event_id', $eventId)->get();
         $guests = $allGuests->where('status', '!=', 'declined')->values();
-        $guests->each(fn($g) => $g->setAttribute('seats', $this->seatsFor($g)));
+        $guests->load('members');
+
+        // Named companions seated at another table than the person holding the invitation: they take their
+        // seat there (and one less at the holder's table)
+        $away = collect();
+        foreach ($guests as $g) {
+            foreach ($g->members as $m) {
+                if ($m->table_number && Table::nameKey($m->table_number) !== Table::nameKey($g->table_number)) {
+                    $away->push([
+                        'id' => 'm' . $m->id,
+                        'member_id' => $m->id,
+                        'guest_id' => $g->id,
+                        'is_member' => true,
+                        'name' => $m->name,
+                        'holder_name' => $g->name,
+                        'table_number' => $m->table_number,
+                        'status' => $g->status,
+                        'seats' => 1,
+                        'adults' => $m->category === 'adult' ? 1 : 0,
+                        'youth' => $m->category === 'youth' ? 1 : 0,
+                        'children' => $m->category === 'child' ? 1 : 0,
+                    ]);
+                }
+            }
+        }
+        $awayByGuest = $away->countBy('guest_id');
+        $guests->each(fn($g) => $g->setAttribute('seats', max(1, $this->seatsFor($g) - (int) ($awayByGuest[$g->id] ?? 0))));
 
         // Same rule everywhere: a guest belongs to the table whose normalized name matches
         $guestsByTable = $guests->groupBy(fn($g) => Table::nameKey($g->table_number) ?? '');
+        $awayByTable = $away->groupBy(fn($m) => Table::nameKey($m['table_number']) ?? '');
 
-        $tableData = $tables->map(function ($table) use ($guestsByTable) {
-            $assignedGuests = ($guestsByTable->get(Table::nameKey($table->name)) ?? collect())->values();
+        $tableData = $tables->map(function ($table) use ($guestsByTable, $awayByTable) {
+            $assignedGuests = ($guestsByTable->get(Table::nameKey($table->name)) ?? collect())->values()
+                ->concat(($awayByTable->get(Table::nameKey($table->name)) ?? collect())->map(fn ($m) => (object) $m))
+                ->values();
 
             $occupiedPasses = $assignedGuests->sum('seats');
             $youth = $assignedGuests->sum('youth');
@@ -78,7 +108,7 @@ class TableController extends Controller
         });
 
         // Unassigned guests (guests not assigned to any existing table)
-        $allAssignedGuestIds = $tableData->flatMap(fn($t) => $t['guests']->pluck('id'))->flip();
+        $allAssignedGuestIds = $tableData->flatMap(fn($t) => $t['guests']->pluck('id'))->filter(fn ($id) => is_int($id))->flip();
         $unassignedGuests = $guests->filter(fn($g) => !$allAssignedGuestIds->has($g->id))->values();
 
         $totalCapacity = $tables->sum('capacity');
@@ -218,6 +248,34 @@ class TableController extends Controller
             'message' => 'Invitado asignado correctamente',
             'guest' => $guest
         ]);
+    }
+
+    // A named companion to another table, or back with the holder of the invitation (table_name null)
+    public function assignMember(Request $request)
+    {
+        $validated = $request->validate([
+            'member_id' => 'required|integer|exists:guest_members,id',
+            'table_name' => 'nullable|string|max:100',
+        ]);
+
+        $member = GuestMember::with('guest.event')->findOrFail($validated['member_id']);
+        $this->checkEventAccess($member->guest->event);
+
+        $tableName = null;
+        if (!empty($validated['table_name'])) {
+            $table = Table::findByName($member->guest->event_id, $validated['table_name']);
+            if (!$table) {
+                return response()->json(['message' => "La mesa '{$validated['table_name']}' no existe."], 422);
+            }
+            // Same table as the holder = sits with the group
+            $tableName = Table::nameKey($table->name) === Table::nameKey($member->guest->table_number) ? null : $table->name;
+        }
+
+        $member->update(['table_number' => $tableName]);
+        $label = $tableName ?: ($member->guest->table_number ?: 'sin mesa');
+        \App\Models\GuestActivity::record($member->guest, 'table_changed', "{$member->name} (acompañante): {$label}");
+
+        return response()->json(['message' => 'Acompañante ubicado.', 'member' => $member]);
     }
 
     public function autoCreateFromGuests($eventId)

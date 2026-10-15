@@ -162,6 +162,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
     const previewMessageText = (formData.message_template || '')
         .replace(/\{nombre\}/g, 'Juan Pérez')
         .replace(/\{pareja\}/g, formData.couple_names || formData.title || 'nosotros')
+        .replace(/\{lugares\}/g, '3 personas')
         .replace(/\{lugar\}/g, formData.location || 'Salón de Eventos')
         .replace(/\{link\}/g, `${window.location.origin}/confirmar/ejemplo`);
 
@@ -445,7 +446,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                 <span className="flex items-center gap-1">
                                     <MessageSquare className="w-3.5 h-3.5 text-green-500" /> Plantilla de Mensaje de WhatsApp
                                 </span>
-                                <span className="text-[11px] text-zinc-400 font-normal">Variables: &#123;nombre&#125;, &#123;pareja&#125;, &#123;lugar&#125;, &#123;link&#125;</span>
+                                <span className="text-[11px] text-zinc-400 font-normal">Variables: &#123;nombre&#125;, &#123;pareja&#125;, &#123;lugar&#125;, &#123;lugares&#125;, &#123;link&#125;</span>
                             </label>
                             <textarea
                                 rows={5}
@@ -453,6 +454,9 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                 onChange={(e) => setFormData({ ...formData, message_template: e.target.value })}
                                 className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-rose-500 outline-none leading-relaxed"
                             />
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                                En invitaciones de 2 o más personas se agrega solo «🎟️ Lugares reservados: 5 personas» antes de «Respondé…». Usá &#123;lugares&#125; si querés ubicarlo vos.
+                            </p>
                         </div>
 
                         {/* Interactive WhatsApp Live Preview */}

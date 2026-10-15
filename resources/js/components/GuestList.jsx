@@ -142,10 +142,12 @@ export default function GuestList({
             'Notas': g.notes || '',
             'Invitación por WhatsApp': g.whatsapp_status === 'sent' ? 'Enviada' : 'No enviada',
             'Ingresó al evento': g.status === 'attended' ? (formatTime(g.attended_at) || 'Sí') : '',
+            // Groups can come in parts
+            'Personas ingresadas': g.status === 'attended' ? (g.attended_people || g.confirmed_passes || g.passes || 1) : 0,
         }));
 
         const sheet = XLSX.utils.json_to_sheet(rows);
-        sheet['!cols'] = [6, 30, 16, 20, 10, 20, 12, 14, 22, 26, 26, 14, 16].map((wch) => ({ wch }));
+        sheet['!cols'] = [6, 30, 16, 20, 10, 20, 12, 14, 22, 26, 26, 14, 16, 12].map((wch) => ({ wch }));
         sheet['!autofilter'] = { ref: sheet['!ref'] };
         const book = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(book, sheet, 'Invitados');
