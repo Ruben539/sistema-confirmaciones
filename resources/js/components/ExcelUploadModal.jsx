@@ -9,7 +9,9 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const [parsedData, setParsedData] = useState([]);
     const [rawRows, setRawRows] = useState([]);
     const [headers, setHeaders] = useState([]);
-    const [mapping, setMapping] = useState({ name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
+    const [mapping, setMapping] = useState({ name: '', last_name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
+    // How to read each list: the amount column as total or as companions, and rows without phone under a guest
+    const [options, setOptions] = useState({ countMode: 'companions', joinOrphans: true });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const fileInputRef = useRef(null);
@@ -46,13 +48,35 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         const reader = new FileReader();
         reader.onload = (evt) => {
             try {
-                const bstr = evt.target.result;
-                const wb = XLSX.read(bstr, { type: 'binary' });
+                const buffer = evt.target.result;
+                const isText = /\.(csv|txt)$/i.test(uploadedFile.name);
+                let wb;
+                if (isText) {
+                    // CSV saved by Excel on Windows comes in Windows-1252 (ñ, tildes), other ones in UTF-8
+                    let text;
+                    try {
+                        text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+                    } catch {
+                        text = new TextDecoder('windows-1252').decode(buffer);
+                    }
+                    wb = XLSX.read(text.replace(/^\uFEFF/, ''), { type: 'string' });
+                } else {
+                    wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+                }
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
 
                 // Convert sheet to json array of objects
-                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+                // The header row may come after a title ("Lista de invitados - Boda..."): the row among the
+                // first ones that looks most like column names
+                const headerScore = (row) => row.filter((c) => /nombre|invitad|tel[eé]f|celular|whatsapp|m[oó]vil|mesa|acompa|cantidad|total|personas/i.test(String(c))).length;
+                let headerIndex = 0;
+                allRows.slice(0, 10).forEach((row, i) => {
+                    if (headerScore(row) > headerScore(allRows[headerIndex] || [])) headerIndex = i;
+                });
+                const data = allRows.slice(headerIndex);
 
                 if (data.length < 2) {
                     setError('El archivo Excel está vacío o no contiene suficientes filas.');
@@ -60,11 +84,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 }
 
                 const fileHeaders = data[0].map(h => String(h || '').trim());
-                const fileRows = data.slice(1).filter(row => row.some(cell => cell !== null && cell !== ''));
+                const fileRows = data.slice(1).filter(row => row.some(cell => cell !== null && String(cell).trim() !== ''));
 
                 setHeaders(fileHeaders);
-                setRawRows(fileRows);                // Auto-detect column mapping
-                const autoMapping = { name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
+                setRawRows(fileRows);
+
+                // Auto-detect column mapping
+                const autoMapping = { name: '', last_name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
 
                 fileHeaders.forEach((h, index) => {
                     const lower = h.toLowerCase();
@@ -83,6 +109,11 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                     // Before the name rule: "Cantidad de invitados" would otherwise be taken as the name
                     if (!autoMapping.total_people && /(cantidad|total|personas|pases|lugares|cupo)/.test(lower) && !lower.includes('mesa')) {
                         autoMapping.total_people = h;
+                        return;
+                    }
+                    // Separate surname column ("Nombre" + "Apellido"); "Nombre y Apellido" is a single name column
+                    if (!autoMapping.last_name && lower.includes('apellido') && !lower.includes('nombre')) {
+                        autoMapping.last_name = h;
                         return;
                     }
                     if (!autoMapping.name && (lower.includes('nombre') || lower.includes('name') || lower.includes('invitado'))) {
@@ -104,19 +135,33 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 if (!autoMapping.name && fileHeaders.length > 0) autoMapping.name = fileHeaders[0];
                 if (!autoMapping.phone && fileHeaders.length > 1) autoMapping.phone = fileHeaders[1];
 
+                // An amount column under "Acompañantes" that never has 0 is usually the TOTAL of each
+                // invitation (1 = the guest alone), as many planners fill it
+                const autoOptions = { countMode: 'companions', joinOrphans: true };
+                if (!autoMapping.total_people && autoMapping.companion_adults) {
+                    const idx = fileHeaders.indexOf(autoMapping.companion_adults);
+                    const values = fileRows
+                        .map((r) => String(r[idx] ?? '').trim())
+                        .filter((v) => v !== '')
+                        .map((v) => parseInt(v.replace(/[^\d]/g, ''), 10))
+                        .filter((n) => !Number.isNaN(n));
+                    if (values.length > 0 && values.every((n) => n >= 1)) autoOptions.countMode = 'total';
+                }
+                setOptions(autoOptions);
                 setMapping(autoMapping);
-                buildParsedList(fileHeaders, fileRows, autoMapping);
+                buildParsedList(fileHeaders, fileRows, autoMapping, autoOptions);
             } catch (err) {
                 console.error(err);
                 setError('Error al procesar el archivo Excel. Asegúrate de que sea un archivo .xlsx, .xls o .csv válido.');
             }
         };
 
-        reader.readAsBinaryString(uploadedFile);
+        reader.readAsArrayBuffer(uploadedFile);
     };
 
-    const buildParsedList = (currentHeaders, currentRows, currentMap) => {
+    const buildParsedList = (currentHeaders, currentRows, currentMap, currentOptions = options) => {
         const nameIdx = currentHeaders.indexOf(currentMap.name);
+        const lastNameIdx = currentHeaders.indexOf(currentMap.last_name);
         const phoneIdx = currentHeaders.indexOf(currentMap.phone);
         const tableIdx = currentHeaders.indexOf(currentMap.table_number);
         const categoryIdx = currentHeaders.indexOf(currentMap.category);
@@ -128,7 +173,8 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         const notesIdx = currentHeaders.indexOf(currentMap.notes);
 
         const list = currentRows.map((row, index) => {
-            const rawName = nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '';
+            const lastName = lastNameIdx !== -1 ? String(row[lastNameIdx] || '').trim() : '';
+            const rawName = [nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '', lastName].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ');
             let rawPhone = phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '';
             
             // Clean phone number (remove spaces, hyphens)
@@ -150,7 +196,11 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
             let compAdults = toCount(compAdultsIdx);
             const compChildren = toCount(compChildrenIdx);
             // Total of the invitation: the rest (minus the invited person and the children) are adult companions
-            const totalPeople = toCount(totalIdx);
+            // "Total" column, or the companions column read as total (see countMode)
+            let totalPeople = toCount(totalIdx);
+            if (!totalPeople && totalIdx === -1 && currentOptions.countMode === 'total' && compAdults) {
+                totalPeople = compAdults;
+            }
             if (totalPeople) {
                 compAdults = Math.max(0, totalPeople - 1 - (compChildren || 0));
             }
@@ -192,13 +242,73 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 companion_children: compChildren,
                 companions: companionsVal,
                 passes: 1 + (compAdults || 0) + (compChildren || 0),
+                // The amount of people comes from a total: rows below can only fill those places
+                hasTotal: Boolean(totalPeople),
+                members: [],
+                attachedTo: null,
+                warnings: [],
                 dietary_restrictions: dietaryVal,
                 notes: notesVal,
                 isValid
             };
         });
 
+        // Rows without phone right under a guest are companions of that invitation ("Marcos Pereira 6"
+        // followed by "Adriana Ojeda", "Pauli Ojeda"...): they become named companions instead of being dropped
+        let holder = null;
+        list.forEach((row) => {
+            if (row.isValid) {
+                holder = row;
+                return;
+            }
+            if (!row.name) return;
+            if (!row.phone && currentOptions.joinOrphans && holder) {
+                const free = holder.hasTotal ? holder.passes - 1 - holder.members.length : Infinity;
+                if (free > 0) {
+                    const category = row.children ? 'child' : row.youth ? 'youth' : 'adult';
+                    holder.members.push({ name: row.name, category });
+                    if (!holder.hasTotal) {
+                        // No total in the file: each row below adds a person to the invitation
+                        if (category === 'child') holder.companion_children = (holder.companion_children || 0) + 1;
+                        else holder.companion_adults = (holder.companion_adults || 0) + 1;
+                        holder.passes += 1;
+                    }
+                    row.attachedTo = holder.name;
+                    return;
+                }
+                row.warnings.push(`No entra en la invitación de ${holder.name} (${holder.passes} ${holder.passes === 1 ? 'persona' : 'personas'}): revisá si es invitado aparte o si falta sumar un lugar.`);
+                return;
+            }
+            if (!row.phone) row.warnings.push('Sin teléfono: no se puede invitar por WhatsApp.');
+        });
+
+        // Same name with another phone (often the same invitation twice) / same phone twice
+        const byName = {};
+        const byPhone = {};
+        list.filter((r) => r.isValid).forEach((r) => {
+            const nameKey = r.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+            const phoneKey = r.phone.replace(/[^\d]/g, '').slice(-9);
+            (byName[nameKey] = byName[nameKey] || []).push(r);
+            (byPhone[phoneKey] = byPhone[phoneKey] || []).push(r);
+        });
+        Object.values(byName).filter((rows) => rows.length > 1).forEach((rows) => rows.forEach((r) => {
+            r.warnings.push(`Nombre repetido (${rows.length} veces con distinto teléfono): verificá que no sea la misma invitación.`);
+        }));
+        Object.values(byPhone).filter((rows) => rows.length > 1).forEach((rows) => rows.slice(1).forEach((r) => {
+            r.warnings.push('Teléfono repetido: se importa una sola vez.');
+        }));
+
+        list.forEach((r) => {
+            if (r.members.length && !r.companions) r.companions = r.members.map((m) => m.name).join(', ');
+        });
+
         setParsedData(list);
+    };
+
+    const changeOptions = (patch) => {
+        const updated = { ...options, ...patch };
+        setOptions(updated);
+        buildParsedList(headers, rawRows, mapping, updated);
     };
 
     const maxPasses = (a, y, c) => {
@@ -249,6 +359,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         companion_adults: g.companion_adults,
                         companion_children: g.companion_children,
                         companions: g.companions,
+                        members: g.members,
                         dietary_restrictions: g.dietary_restrictions,
                         notes: g.notes
                     }))
@@ -460,6 +571,18 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                     </div>
 
                                     <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Apellido (si viene aparte)</label>
+                                        <select
+                                            value={mapping.last_name}
+                                            onChange={(e) => handleMappingChange('last_name', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
                                         <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Teléfono / WhatsApp *</label>
                                         <select
                                             value={mapping.phone}
@@ -569,16 +692,47 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                 </div>
                             </div>
 
-                            {/* How the amount of people is read: the usual mistake is a total in the companions column */}
-                            {mapping.total_people ? (
-                                <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900/50 text-[11px] text-sky-800 dark:text-sky-200">
-                                    La columna <strong>«{mapping.total_people}»</strong> se toma como el <strong>total de la invitación</strong>: un 5 son 5 personas (el invitado + 4 acompañantes).
-                                </div>
-                            ) : mapping.companion_adults ? (
-                                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-200">
-                                    La columna <strong>«{mapping.companion_adults}»</strong> se toma como acompañantes <strong>además</strong> del invitado: un 4 son 5 personas (el invitado + 4). Si tu columna tiene el total, elegila en <strong>Total de personas</strong>.
-                                </div>
-                            ) : null}
+                            {/* How the list is read: amount column (total vs companions) and rows without phone */}
+                            {(() => {
+                                const valid = parsedData.filter((r) => r.isValid);
+                                const people = valid.reduce((acc, r) => acc + r.passes, 0);
+                                const joined = parsedData.filter((r) => r.attachedTo).length;
+                                const warned = parsedData.filter((r) => r.warnings.length && !r.attachedTo).length;
+                                return (
+                                    <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/40 space-y-3 text-[11px] text-zinc-700 dark:text-zinc-300">
+                                        <div className="flex flex-wrap gap-2 font-bold">
+                                            <span className="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">{valid.length} invitaciones</span>
+                                            <span className="px-2 py-1 rounded-lg bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300">{people} personas</span>
+                                            {joined > 0 && <span className="px-2 py-1 rounded-lg bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300">{joined} acompañantes con nombre unidos a su invitación</span>}
+                                            {warned > 0 && <span className="px-2 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300">{warned} filas para revisar</span>}
+                                        </div>
+
+                                        {mapping.total_people ? (
+                                            <p>La columna <strong>«{mapping.total_people}»</strong> se toma como el <strong>total de la invitación</strong>: un 5 son 5 personas (el invitado + 4 acompañantes).</p>
+                                        ) : mapping.companion_adults ? (
+                                            <div className="space-y-1.5">
+                                                <p>¿Qué significa el número de la columna <strong>«{mapping.companion_adults}»</strong>?</p>
+                                                <div className="flex flex-col sm:flex-row gap-2">
+                                                    {[
+                                                        ['total', 'Es el total de la invitación', 'Un 2 = el invitado + 1 acompañante'],
+                                                        ['companions', 'Son acompañantes además del invitado', 'Un 2 = el invitado + 2 acompañantes'],
+                                                    ].map(([mode, title, hint]) => (
+                                                        <label key={mode} className={`flex-1 flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer ${options.countMode === mode ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'border-zinc-200 dark:border-zinc-700'}`}>
+                                                            <input type="radio" className="mt-0.5" checked={options.countMode === mode} onChange={() => changeOptions({ countMode: mode })} />
+                                                            <span><strong>{title}</strong><br /><span className="text-zinc-500">{hint}</span></span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : null}
+
+                                        <label className="flex items-start gap-2 cursor-pointer">
+                                            <input type="checkbox" className="mt-0.5" checked={options.joinOrphans} onChange={(e) => changeOptions({ joinOrphans: e.target.checked })} />
+                                            <span>Las filas <strong>sin teléfono</strong> debajo de un invitado son <strong>sus acompañantes</strong> (se cargan con su nombre en esa invitación).</span>
+                                        </label>
+                                    </div>
+                                );
+                            })()}
 
                             {/* Data Preview Table */}
                             <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
@@ -603,9 +757,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                         </thead>
                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                             {parsedData.map((row) => (
-                                                <tr key={row.id} className={row.isValid ? 'bg-white dark:bg-zinc-900' : 'bg-rose-50/40 dark:bg-rose-950/20'}>
+                                                <tr key={row.id} className={row.attachedTo ? 'bg-violet-50/40 dark:bg-violet-950/10' : row.isValid ? (row.warnings.length ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'bg-white dark:bg-zinc-900') : 'bg-rose-50/40 dark:bg-rose-950/20'}>
                                                     <td className="p-3 font-semibold">
-                                                        {row.isValid ? (
+                                                        {row.attachedTo ? (
+                                                            <span className="inline-flex items-center gap-1 text-violet-600 dark:text-violet-400">
+                                                                <Users className="w-4 h-4" /> Acompañante
+                                                            </span>
+                                                        ) : row.isValid ? (
                                                             <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                                                                 <Check className="w-4 h-4" /> Listo
                                                             </span>
@@ -615,8 +773,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="p-3 font-medium text-zinc-900 dark:text-white">{row.name || '(Sin nombre)'}</td>
-                                                    <td className="p-3 text-zinc-600 dark:text-zinc-400 font-mono">{row.phone || '(Sin teléfono)'}</td>
+                                                    <td className="p-3 font-medium text-zinc-900 dark:text-white">
+                                                        {row.attachedTo ? <span className="text-zinc-500">↳ {row.name} <span className="text-[10px]">(de {row.attachedTo})</span></span> : (row.name || '(Sin nombre)')}
+                                                        {row.warnings.map((w, i) => (
+                                                            <div key={i} className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 mt-0.5">⚠️ {w}</div>
+                                                        ))}
+                                                    </td>
+                                                    <td className="p-3 text-zinc-600 dark:text-zinc-400 font-mono">{row.attachedTo ? '—' : (row.phone || '(Sin teléfono)')}</td>
                                                     <td className="p-3 text-amber-600 dark:text-amber-400 font-bold">{row.table_number || '-'}</td>
                                                     <td className="p-3">
                                                         <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700">
@@ -624,7 +787,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                         </span>
                                                     </td>
                                                     <td className="p-3 text-zinc-500">
-                                                        {row.passes > 1 ? (
+                                                        {row.attachedTo ? '' : row.passes > 1 ? (
                                                             <span className="font-bold text-teal-700 dark:text-teal-300">
                                                                 {row.passes} <span className="font-normal text-zinc-500">(1 + {row.passes - 1}){row.companions ? ` · ${row.companions}` : ''}</span>
                                                             </span>

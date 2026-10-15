@@ -38,7 +38,7 @@ class ConversationController extends Controller
             ->whereNotNull('last_message_at')
             ->orderByDesc('needs_reply')
             ->orderByDesc('last_message_at')
-            ->get(['id', 'name', 'phone', 'status', 'table_number', 'last_message_at', 'unread_messages', 'needs_reply']);
+            ->get(['id', 'name', 'phone', 'status', 'table_number', 'last_message_at', 'unread_messages', 'needs_reply', 'whatsapp_channel']);
 
         // Last message of each conversation in one query
         $lastIds = GuestMessage::whereIn('guest_id', $guests->pluck('id'))
@@ -57,6 +57,7 @@ class ConversationController extends Controller
                 'last_message_at' => $g->last_message_at,
                 'unread' => $g->unread_messages,
                 'needs_reply' => $g->needs_reply,
+                'channel' => $g->whatsapp_channel,
                 'last_message' => optional($lastMessages->get($g->id), fn ($m) => [
                     'author' => $m->author,
                     'body' => mb_substr($m->body, 0, 140),
@@ -91,7 +92,7 @@ class ConversationController extends Controller
         }
 
         return response()->json([
-            'guest' => $guest->only(['id', 'name', 'phone', 'status', 'table_number', 'needs_reply', 'notes']),
+            'guest' => $guest->only(['id', 'name', 'phone', 'status', 'table_number', 'needs_reply', 'notes', 'whatsapp_channel']),
             'messages' => $messages,
         ]);
     }
@@ -112,6 +113,7 @@ class ConversationController extends Controller
 
         // Official API: more than 24 h after the guest's last message it goes as the approved "notice" template
         $result = \App\Services\WhatsAppGateway::sendText($phone, $validated['message'], null, [
+            'channel' => \App\Services\WhatsAppGateway::channelFor($guest),
             'name' => trim(explode(' ', trim($guest->name))[0]),
             'timeout' => 30,
         ]);

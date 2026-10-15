@@ -65,6 +65,7 @@ class Event extends Model
         'event_date',
         'location',
         'message_template',
+        'whatsapp_channel',
         'status',
         'is_enabled',
         'plan_type', // see Event::PLANS

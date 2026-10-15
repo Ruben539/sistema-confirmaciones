@@ -9,10 +9,12 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Every outgoing WhatsApp message goes through here, by the channel set in WHATSAPP_DRIVER:
- *  - "baileys": our Node bot (POST to WHATSAPP_BOT_URL), as before.
+ * Every outgoing WhatsApp message goes through here. Two numbers can work at the same time:
+ *  - "baileys": our Node bot (POST to WHATSAPP_BOT_URL). Free, but writing first is what gets numbers
+ *               banned, so invitations through it have a small daily quota.
  *  - "cloud":   the official WhatsApp Cloud API. Free text only inside the 24 h after the person last
  *               wrote to us; otherwise an approved template (invitation, reminder, pass or notice).
+ * Each guest talks to one number (guests.whatsapp_channel) and everything else goes through it.
  *
  * Result: ['ok' => bool, 'retry' => bool (safe to try again later), 'uncertain' => bool (may have been
  * sent anyway: don't retry, it would duplicate), 'retry_after' => seconds, 'error' => string].
@@ -22,9 +24,64 @@ class WhatsAppGateway
     // Payload of the "Ver invitación" button of the greeting template
     public const VIEW_INVITATION = 'VER_INVITACION';
 
-    public static function isCloud(): bool
+    // Default channel (planner / admin notices, guests not contacted yet)
+    public static function defaultChannel(): string
     {
-        return config('whatsapp.driver') === 'cloud';
+        return config('whatsapp.driver') === 'cloud' && self::cloudConfigured() ? 'cloud' : 'baileys';
+    }
+
+    public static function cloudConfigured(): bool
+    {
+        return config('whatsapp.cloud.enabled', true)
+            && !empty(config('whatsapp.cloud.phone_number_id'))
+            && !empty(config('whatsapp.cloud.token'));
+    }
+
+    // The number a guest talks to (the one that invited them or that they wrote to last)
+    public static function channelFor(?Guest $guest): string
+    {
+        $channel = $guest?->whatsapp_channel;
+        if ($channel === 'cloud' && !self::cloudConfigured()) {
+            return 'baileys';
+        }
+        return in_array($channel, ['baileys', 'cloud'], true) ? $channel : self::defaultChannel();
+    }
+
+    /**
+     * Channel for writing first to a guest (invitation / reminder). A guest who already talks to a number
+     * keeps it. Otherwise by the event: "baileys", "cloud" or "auto" (the bot up to its safe daily quota,
+     * then the official API).
+     */
+    public static function channelForInvitation(Guest $guest): string
+    {
+        if ($guest->whatsapp_channel && ($guest->whatsapp_channel !== 'cloud' || self::cloudConfigured())) {
+            return $guest->whatsapp_channel;
+        }
+        $mode = $guest->event?->whatsapp_channel ?: 'auto';
+        if ($mode === 'cloud' && self::cloudConfigured()) {
+            return 'cloud';
+        }
+        if ($mode === 'baileys' || !self::cloudConfigured()) {
+            return 'baileys';
+        }
+        return self::baileysQuotaLeft() > 0 ? 'baileys' : 'cloud';
+    }
+
+    // Invitations / reminders the bot can still send today (shared by all events: it is one number)
+    public static function baileysQuotaLeft(): int
+    {
+        return max(0, (int) config('whatsapp.baileys_daily_limit', 30) - (int) Cache::get(self::baileysQuotaKey(), 0));
+    }
+
+    public static function countBaileysColdSend(): void
+    {
+        Cache::add(self::baileysQuotaKey(), 0, now()->addDays(2));
+        Cache::increment(self::baileysQuotaKey());
+    }
+
+    private static function baileysQuotaKey(): string
+    {
+        return 'wa:baileys:cold:' . now()->format('Ymd');
     }
 
     // The person wrote to us in the last 24 h: free text is allowed (set by the Cloud webhook)
@@ -41,12 +98,14 @@ class WhatsAppGateway
     /**
      * Free text (with an optional image: URL or local file). Cloud: outside the 24 h window it goes as the
      * "notice" template ("Hola {{1}} 👋 ... {{2}}"), unless $opts['outside_window'] === 'fail'.
-     * $opts: name (for the notice greeting), session_id (Baileys), timeout.
+     * $opts: channel ("baileys" / "cloud", default: WHATSAPP_DRIVER), name (for the notice greeting),
+     * session_id (Baileys), timeout.
      */
     public static function sendText(string $phone, string $text, ?string $media = null, array $opts = []): array
     {
         $phone = self::digits($phone);
-        if (!self::isCloud()) {
+        $channel = $opts['channel'] ?? self::defaultChannel();
+        if ($channel !== 'cloud') {
             return self::baileys(array_filter([
                 'phone' => $phone,
                 'message' => $text,
@@ -69,10 +128,11 @@ class WhatsAppGateway
      * Invitation or reminder to a guest. Baileys: the text built from the event's message. Cloud: approved
      * templates (invitation = greeting + "Ver invitación"; reminder with "Sí, voy" / "No voy a poder").
      */
-    public static function sendInvitation(Guest $guest, string $mode, string $text, ?string $media, ?string $sessionId = null): array
+    public static function sendInvitation(Guest $guest, string $mode, string $text, ?string $media, ?string $sessionId = null, ?string $channel = null): array
     {
-        if (!self::isCloud()) {
-            return self::sendText($guest->phone, $text, $media, ['session_id' => $sessionId]);
+        $channel = $channel ?: self::channelForInvitation($guest);
+        if ($channel !== 'cloud') {
+            return self::sendText($guest->phone, $text, $media, ['channel' => 'baileys', 'session_id' => $sessionId]);
         }
 
         $event = $guest->event;
@@ -99,8 +159,9 @@ class WhatsAppGateway
     // Entry pass (QR image). Cloud outside the 24 h window: the "pass" template with the QR as header
     public static function sendPass(Guest $guest, string $text, string $qrUrl, ?string $sessionId = null): array
     {
-        if (!self::isCloud() || self::inWindow($guest->phone)) {
-            return self::sendText($guest->phone, $text, $qrUrl, ['session_id' => $sessionId, 'timeout' => 10]);
+        $channel = self::channelFor($guest);
+        if ($channel !== 'cloud' || self::inWindow($guest->phone)) {
+            return self::sendText($guest->phone, $text, $qrUrl, ['channel' => $channel, 'session_id' => $sessionId, 'timeout' => 10]);
         }
 
         $people = $guest->groupSize();
@@ -114,7 +175,7 @@ class WhatsAppGateway
     // Blue ticks on the guest's message (Cloud only)
     public static function markRead(string $messageId): void
     {
-        if (self::isCloud()) {
+        if (self::cloudConfigured()) {
             self::cloudPost(['status' => 'read', 'message_id' => $messageId]);
         }
     }
@@ -123,6 +184,9 @@ class WhatsAppGateway
 
     private static function baileys(array $payload, int $timeout): array
     {
+        // The bot waits like a person ("escribiendo...", pauses, its queue of 15 s between first messages):
+        // a short timeout would take a message that is on its way as failed
+        $timeout = max($timeout, 55);
         try {
             $res = Http::timeout($timeout)->post(config('whatsapp.bot_url'), $payload);
         } catch (ConnectionException $e) {

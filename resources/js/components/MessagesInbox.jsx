@@ -211,6 +211,7 @@ export default function MessagesInbox({ event, user, showToast, onUnreadChange }
                                     <div className="flex items-center gap-1.5 mt-1">
                                         <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${(STATUS[c.status] || STATUS.pending).cls}`}>{(STATUS[c.status] || STATUS.pending).label}</span>
                                         {c.needs_reply && <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-rose-500 text-white">Responder</span>}
+                                        {c.channel && <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-500" title="Número por el que habla">{c.channel === 'cloud' ? 'Oficial' : 'Bot'}</span>}
                                         {c.unread > 0 && <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center">{c.unread}</span>}
                                     </div>
                                     {c.last_message && (
@@ -243,6 +244,7 @@ export default function MessagesInbox({ event, user, showToast, onUnreadChange }
                                         <div className="text-sm font-black text-zinc-900 dark:text-white truncate">{thread.guest.name}</div>
                                         <div className="text-[11px] text-zinc-500">
                                             {thread.guest.phone} · {(STATUS[thread.guest.status] || STATUS.pending).label}
+                                            {thread.guest.whatsapp_channel ? ` · por ${thread.guest.whatsapp_channel === 'cloud' ? 'WhatsApp oficial' : 'el bot'}` : ''}
                                             {thread.guest.table_number ? ` · ${thread.guest.table_number}` : ''}
                                         </div>
                                     </div>

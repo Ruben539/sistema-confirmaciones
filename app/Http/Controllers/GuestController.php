@@ -290,6 +290,9 @@ class GuestController extends Controller
             'guests.*.companion_adults' => 'nullable|integer|min:0|max:20',
             'guests.*.companion_children' => 'nullable|integer|min:0|max:20',
             'guests.*.companions' => 'nullable|string|max:255',
+            'guests.*.members' => 'nullable|array|max:19',
+            'guests.*.members.*.name' => 'required|string|max:120',
+            'guests.*.members.*.category' => 'nullable|in:adult,youth,child',
             'guests.*.dietary_restrictions' => 'nullable|string',
             'guests.*.restricciones' => 'nullable|string',
             'guests.*.dieta' => 'nullable|string',
@@ -381,7 +384,10 @@ class GuestController extends Controller
 
                 if (!empty($updateFields)) {
                     $existingGuest->update($updateFields);
-                    $this->membersFromText($existingGuest);
+                    $this->importMembers($existingGuest, $item['members'] ?? []);
+                    $updated++;
+                } elseif (!empty($item['members']) && !$existingGuest->members()->exists()) {
+                    $this->importMembers($existingGuest, $item['members']);
                     $updated++;
                 } else {
                     $skipped++;
@@ -411,7 +417,7 @@ class GuestController extends Controller
                 'token' => Str::random(32),
             ]);
 
-            $this->membersFromText($newGuest);
+            $this->importMembers($newGuest, $item['members'] ?? []);
 
             $existingMap[$phoneKey] = $newGuest;
             $created++;
@@ -685,10 +691,17 @@ class GuestController extends Controller
         }
 
         $mode = $request->input('mode', 'invitation');
-        $message = WhatsAppMessage::build($guest, $mode);
+        $channel = \App\Services\WhatsAppGateway::channelForInvitation($guest);
+        if ($channel === 'baileys' && \App\Services\WhatsAppGateway::baileysQuotaLeft() === 0) {
+            return response()->json([
+                'message' => 'El bot ya envió hoy todas las invitaciones permitidas para proteger su número (' . config('whatsapp.baileys_daily_limit') . ' por día). Se puede enviar mañana o elegir el WhatsApp oficial en la configuración del evento.',
+                'guest' => $guest
+            ], 429);
+        }
+        $message = WhatsAppMessage::build($guest, $mode, $channel === 'cloud');
 
         // Manual sends count against the same per-number pacing and daily limit as bulk sends
-        $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
+        $throttle = WhatsAppThrottle::forChannel($channel, $event);
         $lock = $throttle->lock();
         $skipThrottle = $request->boolean('skip_throttle', false);
         $wait = $lock ? $throttle->secondsUntilAllowed() : 30;
@@ -712,14 +725,18 @@ class GuestController extends Controller
         }
 
         try {
-            $result = \App\Services\WhatsAppGateway::sendInvitation($guest, $mode, $message, $mediaUrl, WhatsAppThrottle::sessionForEvent($event));
+            $result = \App\Services\WhatsAppGateway::sendInvitation($guest, $mode, $message, $mediaUrl, WhatsAppThrottle::sessionForEvent($event), $channel);
 
             if ($result['ok']) {
                 $throttle->recordSent();
+                if ($channel === 'baileys') {
+                    \App\Services\WhatsAppGateway::countBaileysColdSend();
+                }
                 \App\Models\GuestMessage::logOutgoing($guest, $message);
                 $guest->update([
                     'whatsapp_status' => 'sent',
                     'last_sent_at' => now(),
+                    'whatsapp_channel' => $channel,
                 ]);
 
                 return response()->json([
@@ -860,6 +877,31 @@ class GuestController extends Controller
         }
         foreach ($people as $i => $person) {
             $guest->members()->create(['event_id' => $guest->event_id, 'name' => $person['name'], 'category' => $person['category'], 'position' => $i]);
+        }
+    }
+
+    /**
+     * Companions that came with a name in the import (rows without phone under the guest): only when the
+     * invitation has none loaded yet, and never more than its places. Otherwise, names from the free text.
+     */
+    private function importMembers(Guest $guest, array $members): void
+    {
+        $members = array_values(array_filter($members, fn ($m) => trim($m['name'] ?? '') !== ''));
+        if (empty($members)) {
+            $this->membersFromText($guest);
+            return;
+        }
+        if ($guest->members()->exists()) {
+            return;
+        }
+        $places = max(1, (int) $guest->fresh()->passes) - 1;
+        foreach (array_slice($members, 0, $places) as $i => $m) {
+            $guest->members()->create([
+                'event_id' => $guest->event_id,
+                'name' => mb_substr(trim($m['name']), 0, 120),
+                'category' => $m['category'] ?? 'adult',
+                'position' => $i,
+            ]);
         }
     }
 
@@ -1094,10 +1136,23 @@ class GuestController extends Controller
             return $denied;
         }
 
-        $mode = $request->input('mode', 'invitation');
+        $mode = $request->input('mode', 'invitation') === 'reminder' ? 'reminder' : 'invitation';
         $guestIds = $request->input('guest_ids');
 
-        $query = Guest::where('event_id', $eventId)->where('whatsapp_status', 'not_sent');
+        if ($mode === 'reminder') {
+            $deadline = $event->rsvpDeadline();
+            if ($deadline && now()->greaterThan($deadline)) {
+                return response()->json(['message' => 'El plazo para confirmar ya venció (' . $deadline->format('d/m/Y') . ').'], 422);
+            }
+            // Invited but didn't answer yet (and no reminder in the last 12 h)
+            $query = Guest::where('event_id', $eventId)
+                ->where('status', 'pending')
+                ->where('whatsapp_status', 'sent')
+                ->whereNotNull('phone')
+                ->where(fn ($q) => $q->whereNull('reminder_sent_at')->orWhere('reminder_sent_at', '<', now()->subHours(12)));
+        } else {
+            $query = Guest::where('event_id', $eventId)->where('whatsapp_status', 'not_sent');
+        }
         if (!empty($guestIds) && is_array($guestIds)) {
             $query->whereIn('id', $guestIds);
         }
@@ -1117,20 +1172,34 @@ class GuestController extends Controller
         // daily limit and sending window (see WhatsAppThrottle)
         $delay = 0;
         foreach ($guests as $guest) {
+            if ($mode === 'reminder') {
+                // Marked as queued: the job keeps it on success and clears it if it can't be sent
+                $guest->update(['reminder_sent_at' => now()]);
+            }
             SendWhatsAppMessageJob::dispatch($guest->id, $mode)->delay(now()->addSeconds($delay));
             $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
         }
 
         $count = $guests->count();
-        $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
-        $remainingToday = max(0, config('whatsapp.daily_limit') - $throttle->sentToday());
+        // How many can go out today, by the event's channel (the bot's safe quota and/or the official limit)
+        $channelMode = $event->whatsapp_channel ?: 'auto';
+        $cloudOk = \App\Services\WhatsAppGateway::cloudConfigured();
+        $botLeft = \App\Services\WhatsAppGateway::baileysQuotaLeft();
+        $cloudLeft = $cloudOk ? max(0, config('whatsapp.cloud_daily_limit') - WhatsAppThrottle::forChannel('cloud', $event)->sentToday()) : 0;
+        $remainingToday = match (true) {
+            $channelMode === 'cloud' && $cloudOk => $cloudLeft,
+            $channelMode === 'baileys' || !$cloudOk => $botLeft,
+            default => $botLeft + $cloudLeft,
+        };
         $avgGap = (config('whatsapp.min_delay') + config('whatsapp.max_delay')) / 2;
         $estimatedMins = (int) ceil(min($count, $remainingToday) * $avgGap / 60);
 
-        $message = "⚡ Envío programado para {$count} invitados. Los mensajes salen en segundo plano, de a uno cada "
-            . config('whatsapp.min_delay') . '-' . config('whatsapp.max_delay') . ' segundos, con pausas para proteger tu número. Podés cerrar la página.';
+        $message = ($mode === 'reminder' ? "🔔 Recordatorio programado para {$count} invitados que todavía no respondieron." : "⚡ Envío programado para {$count} invitados.") . " Los mensajes salen en segundo plano, con pausas para proteger el número. Podés cerrar la página.";
+        if ($channelMode === 'auto' && $cloudOk) {
+            $message .= " Hoy salen hasta {$botLeft} por el bot y el resto por el WhatsApp oficial.";
+        }
         if ($count > $remainingToday) {
-            $message .= " Hoy se pueden enviar {$remainingToday} más (límite diario de " . config('whatsapp.daily_limit') . '); el resto sale mañana automáticamente.';
+            $message .= " Hoy se pueden enviar {$remainingToday}; el resto sale mañana automáticamente.";
         }
 
         return response()->json([

@@ -109,7 +109,8 @@ export class BaileysTransporter implements LeadExternal {
         retryRequestDelayMs: 250,
         maxMsgRetryCount: 5,
         msgRetryCounterCache: this.msgRetryCounterCache as any,
-        markOnlineOnConnect: true,
+        // A person isn't "online" 24 h a day: WhatsApp watches it
+        markOnlineOnConnect: false,
         syncFullHistory: false,
         getMessage: async (key) => (key.id ? this.messageCache.get(key.id)?.message : undefined),
         ...socketConfig,
@@ -229,6 +230,9 @@ export class BaileysTransporter implements LeadExternal {
           const mentionedJids: string[] = contextInfo?.mentionedJid ?? [];
           const botPhone = this.connection?.user?.id?.split(":")[0].split("@")[0] ?? "";
           const isMentioned = mentionedJids.some(jid => jid.startsWith(botPhone));
+
+          // Read it like a person: blue ticks 2-4 s after it arrives, not in the same millisecond
+          if (!isGroup) this.markReadLater(msg);
 
           if (this.onMessageCallback) {
             console.log(`[Baileys] Mensaje de ${phone}${groupJid ? ` (grupo: ${groupJid})` : ""}${isMentioned ? " [@mencionado]" : ""}${mediaType ? ` [${mediaType}]` : ""}${mediaPath ? " [imagen guardada]" : ""}: "${text}"`);
@@ -355,6 +359,44 @@ export class BaileysTransporter implements LeadExternal {
     }
   }
 
+  private lastSendByJid = new Map<string, number>();
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private randomBetween(min: number, max: number): number {
+    return Math.floor(min + Math.random() * (max - min));
+  }
+
+  private markReadLater(msg: any): void {
+    setTimeout(() => {
+      this.connection?.readMessages([msg.key]).catch((e: any) => console.warn("[Baileys] No se pudo marcar como leído:", e?.message));
+    }, this.randomBetween(2000, 4000));
+  }
+
+  /**
+   * Before writing to a person: a pause if we just wrote to that same chat (1.5-3 s between consecutive
+   * messages) and "escribiendo..." for as long as a person would take to type it (50-80 ms per
+   * character, between 2 and 12 s).
+   */
+  private async simulateTyping(jid: string, text: string): Promise<void> {
+    const last = this.lastSendByJid.get(jid);
+    if (last) {
+      const gap = this.randomBetween(1500, 3000) - (Date.now() - last);
+      if (gap > 0) await this.sleep(gap);
+    }
+    try {
+      await this.connection?.presenceSubscribe(jid);
+      await this.connection?.sendPresenceUpdate("composing", jid);
+      const typingMs = Math.min(12000, Math.max(2000, (text?.length || 0) * this.randomBetween(50, 80)));
+      await this.sleep(typingMs);
+      await this.connection?.sendPresenceUpdate("paused", jid);
+    } catch (e) {
+      // Presence is cosmetic: never block the message for it
+    }
+  }
+
   private sendQueue: Promise<any> = Promise.resolve();
   private lastSendTimestamp: number = 0;
   private MANDATORY_DELAY_MS: number = 15000;
@@ -419,6 +461,7 @@ export class BaileysTransporter implements LeadExternal {
       }
 
       console.log(`[Baileys] >>> Destino final resolved JID: ${jid}${sendOptions.quoted ? " (con cita / quoted)" : ""}${mediaUrl ? " (con imagen QR)" : ""}`);
+      if (!groupJid) await this.simulateTyping(jid, message);
       let response: any;
       try {
         response = await this.connection.sendMessage(jid, messageContent, sendOptions);
@@ -430,6 +473,11 @@ export class BaileysTransporter implements LeadExternal {
         response = await this.connection.sendMessage(jid, { text: `${message}${qrLink}` }, sendOptions);
       }
       this.lastSendTimestamp = Date.now();
+      this.lastSendByJid.set(jid, Date.now());
+      if (this.lastSendByJid.size > 5000) {
+        const oldest = this.lastSendByJid.keys().next().value;
+        if (oldest) this.lastSendByJid.delete(oldest);
+      }
       this.rememberMessage(response);
       console.log(`[Baileys] <<< Enviado exitosamente a ${jid} -> id=${response?.key?.id ?? "sin id"}`);
       return response;

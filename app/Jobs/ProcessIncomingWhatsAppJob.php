@@ -37,6 +37,7 @@ class ProcessIncomingWhatsAppJob implements ShouldQueue
         $request = Request::create('/api/rsvp/incoming-whatsapp', 'POST', [
             'phone' => $this->phone,
             'message' => $this->text,
+            'channel' => 'cloud',
         ]);
         // Internal call: the bot's shared secret (if any) does not apply here
         $request->headers->set('X-Webhook-Secret', (string) config('whatsapp.webhook_secret'));
@@ -49,7 +50,7 @@ class ProcessIncomingWhatsAppJob implements ShouldQueue
             return;
         }
 
-        $result = WhatsAppGateway::sendText($this->phone, $reply, $data['media_url'] ?? null);
+        $result = WhatsAppGateway::sendText($this->phone, $reply, $data['media_url'] ?? null, ['channel' => 'cloud']);
         if (!$result['ok']) {
             Log::warning("[WhatsApp Cloud] No se pudo responder a {$this->phone}: " . ($result['error'] ?? ''));
         }

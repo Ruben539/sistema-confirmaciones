@@ -129,6 +129,7 @@ class EventController extends Controller
             'location' => 'nullable|string|max:255',
             'user_id' => 'nullable|exists:users,id',
             'message_template' => 'nullable|string',
+            'whatsapp_channel' => 'nullable|in:auto,baileys,cloud',
             'status' => 'nullable|in:active,completed,archived',
             'is_enabled' => 'nullable|boolean',
             'plan_type' => 'nullable|string|in:' . Event::planKeys(),
@@ -163,7 +164,7 @@ class EventController extends Controller
             // "Configurar Evento" (datos, plazo de confirmación y recordatorios) es exclusivo del admin;
             // la planner solo edita la invitación digital (música, vestimenta, regalos, estilos)
             foreach ([
-                'title', 'event_type', 'couple_names', 'event_date', 'location', 'message_template', 'status',
+                'title', 'event_type', 'couple_names', 'event_date', 'location', 'message_template', 'whatsapp_channel', 'status',
                 'rsvp_deadline_days', 'rsvp_deadline_date', 'auto_decline_expired',
                 'reminder_interval_days', 'reminder_max_count',
             ] as $adminOnlyField) {

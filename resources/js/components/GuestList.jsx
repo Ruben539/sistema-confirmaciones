@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, Download } from 'lucide-react';
+import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, Download, QrCode, BellRing } from 'lucide-react';
 
 export default function GuestList({
     guests,
@@ -12,6 +12,9 @@ export default function GuestList({
     onDeleteGuest,
     onClearAll,
     onMarkSent,
+    onResendQr,
+    onSendReminder,
+    onRemindAllPending,
     // Anfitriona: only sees the list (no adding, importing, sending, editing or deleting)
     readOnly = false,
     eventTitle = ''
@@ -233,6 +236,17 @@ export default function GuestList({
                         <Upload className="w-4 h-4 text-emerald-600" />
                         <span>Subir Excel</span>
                     </button>
+
+                    {onRemindAllPending && guests.some((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone) && (
+                        <button
+                            onClick={onRemindAllPending}
+                            title="Recordatorio a quienes recibieron la invitación y no respondieron"
+                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold transition-all border border-amber-200/80 dark:border-amber-800"
+                        >
+                            <BellRing className="w-4 h-4" />
+                            <span>Recordar a pendientes ({guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone).length})</span>
+                        </button>
+                    )}
 
                     <button
                         onClick={onOpenWhatsAppModal}
@@ -543,6 +557,28 @@ export default function GuestList({
                                                     title="Editar invitado"
                                                 >
                                                     <Pencil className="w-4 h-4" />
+                                                </button>
+                                            )}
+
+                                            {/* Reminder: invited but no answer yet */}
+                                            {onSendReminder && guest.status === 'pending' && guest.whatsapp_status === 'sent' && guest.phone && (
+                                                <button
+                                                    onClick={() => onSendReminder(guest)}
+                                                    className="p-2 rounded-xl text-zinc-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+                                                    title="Enviar recordatorio (con la cantidad de lugares actual)"
+                                                >
+                                                    <BellRing className="w-4 h-4" />
+                                                </button>
+                                            )}
+
+                                            {/* Entry pass again by WhatsApp (only for guests who confirmed) */}
+                                            {onResendQr && ['confirmed', 'attended'].includes(guest.status) && guest.phone && (
+                                                <button
+                                                    onClick={() => onResendQr(guest)}
+                                                    className="p-2 rounded-xl text-zinc-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors"
+                                                    title="Reenviar pase QR por WhatsApp"
+                                                >
+                                                    <QrCode className="w-4 h-4" />
                                                 </button>
                                             )}
 

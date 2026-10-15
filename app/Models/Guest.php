@@ -30,6 +30,7 @@ class Guest extends Model
         'dietary_restrictions',
         'notes',
         'whatsapp_status',
+        'whatsapp_channel',
         'last_sent_at',
         'reminder_sent_at',
         'reminder_count',
@@ -67,6 +68,14 @@ class Guest extends Model
         static::updating(function ($guest) {
             if ($guest->isDirty(['adults', 'youth', 'children'])) {
                 $guest->passes = max(1, (int)$guest->adults + (int)$guest->youth + (int)$guest->children);
+                // The invitation was corrected below what was confirmed (e.g. a list re-imported with the right
+                // totals): the confirmation can't be for more people than invited
+                if ((int) $guest->confirmed_passes > $guest->passes) {
+                    $guest->confirmed_adults = (int) $guest->adults;
+                    $guest->confirmed_youth = (int) $guest->youth;
+                    $guest->confirmed_children = (int) $guest->children;
+                    $guest->confirmed_passes = $guest->passes;
+                }
             }
             if ($guest->isDirty(['confirmed_adults', 'confirmed_youth', 'confirmed_children'])) {
                 $guest->confirmed_passes = (int)$guest->confirmed_adults + (int)$guest->confirmed_youth + (int)$guest->confirmed_children;

@@ -19,6 +19,8 @@ return [
     'driver' => env('WHATSAPP_DRIVER', 'baileys'),
 
     'cloud' => [
+        // false = everything goes through the Baileys bot, even with the Cloud credentials loaded
+        'enabled' => (bool) env('WHATSAPP_CLOUD_ENABLED', true),
         'graph_version' => env('WHATSAPP_CLOUD_GRAPH_VERSION', 'v26.0'),
         'phone_number_id' => env('WHATSAPP_CLOUD_PHONE_NUMBER_ID'),
         'business_account_id' => env('WHATSAPP_CLOUD_BUSINESS_ACCOUNT_ID'),
@@ -54,19 +56,26 @@ return [
     |
     */
 
-    // Random pause between two messages, in seconds
-    // (The official Cloud API is not banned for pacing: short gaps there, and Meta's daily limit of
-    // new contacts, 250 for a business not verified yet)
-    'min_delay' => (int) env('WHATSAPP_MIN_DELAY', env('WHATSAPP_DRIVER') === 'cloud' ? 1 : 20),
-    'max_delay' => (int) env('WHATSAPP_MAX_DELAY', env('WHATSAPP_DRIVER') === 'cloud' ? 3 : 45),
+    // Random pause between two messages of the Baileys bot, in seconds
+    'min_delay' => (int) env('WHATSAPP_MIN_DELAY', 20),
+    'max_delay' => (int) env('WHATSAPP_MAX_DELAY', 45),
 
     // After this many messages in a row, take a longer break (seconds)
-    'burst_size' => (int) env('WHATSAPP_BURST_SIZE', env('WHATSAPP_DRIVER') === 'cloud' ? 1000 : 30),
+    'burst_size' => (int) env('WHATSAPP_BURST_SIZE', 30),
     'burst_pause' => (int) env('WHATSAPP_BURST_PAUSE', 300),
 
-    // Max automated messages per number per day. Keep it low for new numbers
-    // and raise it gradually as the number builds history.
-    'daily_limit' => (int) env('WHATSAPP_DAILY_LIMIT', env('WHATSAPP_DRIVER') === 'cloud' ? 250 : 150),
+    // Max automated messages per bot session per day
+    'daily_limit' => (int) env('WHATSAPP_DAILY_LIMIT', 150),
+
+    // Invitations / reminders (writing first, the riskiest for an unofficial number) the bot sends per day
+    // in total. In "auto" events the rest go through the official API.
+    'baileys_daily_limit' => (int) env('WHATSAPP_BAILEYS_DAILY_LIMIT', 30),
+
+    // Official Cloud API: not banned for pacing, short gaps; Meta's daily limit of new contacts
+    // (250 for a business not verified yet)
+    'cloud_min_delay' => (int) env('WHATSAPP_CLOUD_MIN_DELAY', 1),
+    'cloud_max_delay' => (int) env('WHATSAPP_CLOUD_MAX_DELAY', 3),
+    'cloud_daily_limit' => (int) env('WHATSAPP_CLOUD_DAILY_LIMIT', 250),
 
     // Only send between these hours (app timezone). Messages outside the
     // window wait for the next opening.

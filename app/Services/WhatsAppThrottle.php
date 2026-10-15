@@ -22,13 +22,26 @@ class WhatsAppThrottle
         return new self($sessionId);
     }
 
+    // Bot session of an event (the Baileys bot paces each planner separately)
     public static function sessionForEvent($event): string
     {
-        // Cloud API: one official number for everyone, so one shared pace and daily limit
-        if (config('whatsapp.driver') === 'cloud') {
-            return 'cloud';
-        }
         return $event && $event->user_id ? "planner_{$event->user_id}" : 'default';
+    }
+
+    // Official Cloud API: one number for everyone, one shared pace and daily limit
+    public static function forChannel(string $channel, $event): self
+    {
+        return new self($channel === 'cloud' ? 'cloud' : self::sessionForEvent($event));
+    }
+
+    private function isCloud(): bool
+    {
+        return $this->sessionId === 'cloud';
+    }
+
+    private function dailyLimit(): int
+    {
+        return (int) config($this->isCloud() ? 'whatsapp.cloud_daily_limit' : 'whatsapp.daily_limit');
     }
 
     /**
@@ -53,7 +66,7 @@ class WhatsAppThrottle
             return $windowWait;
         }
 
-        if ($this->sentToday() >= config('whatsapp.daily_limit')) {
+        if ($this->sentToday() >= $this->dailyLimit()) {
             $tomorrowOpen = $now->copy()->addDay()->startOfDay()->setHour(config('whatsapp.window_start'));
             return max(60, (int) $now->diffInSeconds($tomorrowOpen, false) + random_int(0, 600));
         }
@@ -70,8 +83,8 @@ class WhatsAppThrottle
         if ($this->secondsUntilWindowOpens(now()) > 0) {
             return sprintf('Fuera del horario de envío (%02d:00 a %02d:00).', config('whatsapp.window_start'), config('whatsapp.window_end'));
         }
-        if ($this->sentToday() >= config('whatsapp.daily_limit')) {
-            return 'Se alcanzó el límite diario de ' . config('whatsapp.daily_limit') . ' mensajes para este número. Se reanuda mañana.';
+        if ($this->sentToday() >= $this->dailyLimit()) {
+            return 'Se alcanzó el límite diario de ' . $this->dailyLimit() . ' mensajes para este número. Se reanuda mañana.';
         }
         return 'Pausa anti-bloqueo entre mensajes.';
     }
@@ -85,7 +98,9 @@ class WhatsAppThrottle
         $burstKey = "wa:{$this->sessionId}:burst";
         $burst = (int) Cache::get($burstKey, 0) + 1;
 
-        if ($burst >= config('whatsapp.burst_size')) {
+        if ($this->isCloud()) {
+            $gap = random_int(config('whatsapp.cloud_min_delay'), config('whatsapp.cloud_max_delay'));
+        } elseif ($burst >= config('whatsapp.burst_size')) {
             $gap = config('whatsapp.burst_pause') + random_int(0, 120);
             $burst = 0;
         } else {

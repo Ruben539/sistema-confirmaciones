@@ -426,6 +426,8 @@ class RsvpController extends Controller
         $isLong = mb_strlen($message) >= self::LONG_MESSAGE_CHARS;
         $guest->refresh();
         $updates = [
+            // The number the guest writes to is the one that answers from now on
+            'whatsapp_channel' => $request->input('channel') === 'cloud' ? 'cloud' : 'baileys',
             'last_message_at' => now(),
             'unread_messages' => (int) $guest->unread_messages + 1,
             'needs_reply' => $guest->needs_reply || $isLong || $this->needsPerson,

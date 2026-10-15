@@ -208,6 +208,32 @@ function Dashboard({ user, onLogout }) {
         }
     };
 
+    // Reminder to a guest who got the invitation but didn't answer (says the corrected number of places)
+    const handleSendReminder = async (guest) => {
+        const places = guest.passes || 1;
+        if (!window.confirm(`¿Enviar un recordatorio a ${guest.name}?\n\nLe pide que confirme e indica: Lugares reservados: ${places} ${places === 1 ? 'persona' : 'personas'}.`)) return;
+        const { json } = await apiFetch(`/api/guests/${guest.id}/reminder`, { method: 'POST' });
+        showToast(json?.message || 'No se pudo programar el recordatorio.');
+        if (activeEvent) loadGuests(activeEvent.id);
+    };
+
+    const handleRemindAllPending = async () => {
+        if (!activeEvent) return;
+        const count = guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone).length;
+        if (!window.confirm(`¿Enviar un recordatorio a los ${count} invitados que recibieron la invitación y todavía no respondieron?\n\nCada uno dice la cantidad de lugares reservados actual. Salen de a uno, con pausas y respetando el cupo diario.`)) return;
+        const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-bulk-queue`, { method: 'POST', body: JSON.stringify({ mode: 'reminder' }) });
+        showToast(json?.message || 'No se pudieron programar los recordatorios.');
+        loadGuests(activeEvent.id);
+    };
+
+    // Sends the entry pass again by WhatsApp (e.g. after correcting how many people it is for)
+    const handleResendQr = async (guest) => {
+        const people = guest.confirmed_passes || guest.passes || 1;
+        if (!window.confirm(`¿Reenviar el pase QR a ${guest.name} por WhatsApp?\n\nEl mensaje dirá que es válido para ${people} ${people === 1 ? 'persona' : 'personas'}.`)) return;
+        const { json } = await apiFetch(`/api/guests/${guest.id}/resend-qr`, { method: 'POST' });
+        showToast(json?.message || 'No se pudo reenviar el QR.');
+    };
+
     const handleMarkSent = async (guestId) => {
         setGuests(prev => prev.map(g => g.id === guestId ? { ...g, whatsapp_status: 'sent' } : g));
         try {
@@ -443,6 +469,9 @@ function Dashboard({ user, onLogout }) {
                                     onDeleteGuest={handleDeleteGuest}
                                     onClearAll={handleClearAll}
                                     onMarkSent={handleMarkSent}
+                                    onResendQr={handleResendQr}
+                                    onSendReminder={handleSendReminder}
+                                    onRemindAllPending={handleRemindAllPending}
                                 />
                             </div>
                         )
@@ -550,6 +579,9 @@ function Dashboard({ user, onLogout }) {
                                         onDeleteGuest={handleDeleteGuest}
                                         onClearAll={handleClearAll}
                                         onMarkSent={handleMarkSent}
+                                        onResendQr={handleResendQr}
+                                        onSendReminder={handleSendReminder}
+                                        onRemindAllPending={handleRemindAllPending}
                                     />
                                 </>
                             )}

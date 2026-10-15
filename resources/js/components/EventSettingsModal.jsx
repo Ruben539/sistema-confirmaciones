@@ -15,6 +15,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
         reminder_max_count: 3,
         location: '',
         message_template: '',
+        whatsapp_channel: 'auto',
         user_id: '',
         digital_invitation_addon: false,
     });
@@ -41,6 +42,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                 reminder_max_count: event.reminder_max_count ?? 3,
                 location: event.location || '',
                 message_template: event.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
+                whatsapp_channel: event.whatsapp_channel || 'auto',
                 user_id: event.user_id || '',
                 digital_invitation_addon: Boolean(event.digital_invitation_addon),
             });
@@ -438,6 +440,23 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                     </div>
                                 </button>
                             )}
+                        </div>
+
+                        {/* Which WhatsApp number sends the invitations of this event */}
+                        <div className="pt-2">
+                            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Canal de WhatsApp para las invitaciones</label>
+                            <select
+                                value={formData.whatsapp_channel}
+                                onChange={(e) => setFormData({ ...formData, whatsapp_channel: e.target.value })}
+                                className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                            >
+                                <option value="auto">Automático: el bot hasta su cupo diario seguro, el resto por el WhatsApp oficial</option>
+                                <option value="baileys">Solo el bot (gratis; pocas invitaciones por día)</option>
+                                <option value="cloud">Solo el WhatsApp oficial (se paga cada invitación y recordatorio)</option>
+                            </select>
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                                Cada invitado sigue hablando siempre con el número que le escribió. Por el WhatsApp oficial llega primero un saludo con el botón «Ver invitación» y, al tocarlo, este mensaje.
+                            </p>
                         </div>
 
                         {/* WhatsApp Template */}

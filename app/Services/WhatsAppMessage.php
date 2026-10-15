@@ -17,9 +17,14 @@ class WhatsAppMessage
         '¡Buenas {nombre}! 👋',
         '¡Hola {nombre}, qué tal! 👋',
         '¡Hola {nombre}! Espero que estés muy bien 👋',
+        '¡Hola {nombre}! ¿Cómo estás? 😊',
+        '¡Qué tal, {nombre}! 👋',
+        '¡Hola, {nombre}! Te escribimos con mucha alegría ✨',
+        '¡Hola {nombre}! Qué gusto saludarte 😊',
     ];
 
-    public static function build(Guest $guest, string $mode = 'invitation'): string
+    // $mapsLink false: only the address, without the automatic Google Maps link (writing first through the bot)
+    public static function build(Guest $guest, string $mode = 'invitation', bool $mapsLink = true): string
     {
         $event = $guest->event;
         $greeting = self::GREETINGS[array_rand(self::GREETINGS)];
@@ -35,7 +40,7 @@ class WhatsAppMessage
         }
 
         $rawLocation = $event->location ?? 'Por confirmar';
-        if ($rawLocation !== 'Por confirmar' && !str_starts_with($rawLocation, 'http')) {
+        if ($mapsLink && $rawLocation !== 'Por confirmar' && !str_starts_with($rawLocation, 'http')) {
             $formattedLocation = $rawLocation . "\n🗺️ Ver en Google Maps: https://maps.google.com/?q=" . urlencode($rawLocation);
         } else {
             $formattedLocation = $rawLocation;
@@ -44,7 +49,8 @@ class WhatsAppMessage
         // Group invitation: say how many places are reserved (custom templates can place it with {lugares})
         $places = max(1, (int) $guest->passes);
         $placesText = $places > 1 ? "{$places} personas" : '1 persona';
-        if ($places > 1 && !str_contains($template, '{lugares}')) {
+        // Reminders always say it: it may come after correcting how many people the invitation is for
+        if (($places > 1 || $mode === 'reminder') && !str_contains($template, '{lugares}')) {
             $line = "🎟️ Lugares reservados: *{lugares}*";
             $template = preg_match('/^.*respond/imu', $template)
                 ? preg_replace('/^(.*respond)/imu', $line . "\n\n$1", $template, 1)

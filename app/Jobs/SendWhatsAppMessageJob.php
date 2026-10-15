@@ -18,7 +18,8 @@ class SendWhatsAppMessageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 30;
+    // Below the queue retry_after (90 s), or a slow send would run twice
+    public $timeout = 85;
 
     // Releases for throttling don't count as failures; only real exceptions do
     public $maxExceptions = 3;
@@ -71,7 +72,15 @@ class SendWhatsAppMessageJob implements ShouldQueue
             return;
         }
 
-        $throttle = WhatsAppThrottle::forSession(WhatsAppThrottle::sessionForEvent($event));
+        // Which number writes: the guest's own, or by the event (auto = the bot up to its daily quota)
+        $channel = WhatsAppGateway::channelForInvitation($guest);
+        if ($channel === 'baileys' && WhatsAppGateway::baileysQuotaLeft() === 0) {
+            // The bot already wrote first to as many people as is safe today
+            $tomorrow = now()->addDay()->startOfDay()->setHour(config('whatsapp.window_start'));
+            $this->release(max(60, (int) now()->diffInSeconds($tomorrow, false) + random_int(0, 900)));
+            return;
+        }
+        $throttle = WhatsAppThrottle::forChannel($channel, $event);
 
         // Only one message at a time per phone number, even with several workers
         $lock = $throttle->lock();
@@ -93,7 +102,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
                 return;
             }
 
-            $this->send($guest, $throttle);
+            $this->send($guest, $throttle, $channel);
         } finally {
             $lock->release();
         }
@@ -127,7 +136,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
         return $guest->whatsapp_status === 'sent';
     }
 
-    private function send(Guest $guest, WhatsAppThrottle $throttle): void
+    private function send(Guest $guest, WhatsAppThrottle $throttle, string $channel, bool $allowFallback = true): void
     {
         $cleanPhone = preg_replace('/[^\d]/', '', $guest->phone);
 
@@ -141,8 +150,19 @@ class SendWhatsAppMessageJob implements ShouldQueue
             }
         }
 
-        $message = WhatsAppMessage::build($guest, $this->messageMode);
-        $result = WhatsAppGateway::sendInvitation($guest, $this->messageMode, $message, $mediaUrl, WhatsAppThrottle::sessionForEvent($guest->event));
+        // Through the bot, no automatic Maps link: links to people who don't have the number saved are what
+        // gets reported as spam
+        $message = WhatsAppMessage::build($guest, $this->messageMode, $channel === 'cloud');
+        $result = WhatsAppGateway::sendInvitation($guest, $this->messageMode, $message, $mediaUrl, WhatsAppThrottle::sessionForEvent($guest->event), $channel);
+
+        // "Auto" event and the bot is down / disconnected: send it through the official API instead of waiting
+        if (!$result['ok'] && !empty($result['retry']) && empty($result['uncertain']) && $allowFallback
+            && $channel === 'baileys' && !$guest->whatsapp_channel
+            && ($guest->event?->whatsapp_channel ?: 'auto') === 'auto' && WhatsAppGateway::cloudConfigured()) {
+            Log::info("WhatsApp Job: bot unavailable, sending {$guest->name} through the official API.");
+            $this->send($guest, WhatsAppThrottle::forChannel('cloud', $guest->event), 'cloud', false);
+            return;
+        }
 
         if (!$result['ok'] && !empty($result['uncertain'])) {
             // Timeout: it may have been sent anyway. Don't retry to avoid a duplicate message.
@@ -154,19 +174,26 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
         if ($result['ok']) {
             $throttle->recordSent();
-            \App\Models\GuestMessage::logOutgoing($guest, $message);
+            if ($channel === 'baileys') {
+                WhatsAppGateway::countBaileysColdSend();
+            }
+            \App\Models\GuestMessage::logOutgoing($guest, $channel === 'cloud' && $this->messageMode !== 'reminder'
+                ? "[Saludo con botón «Ver invitación»]\n\n" . $message
+                : $message);
             if ($this->messageMode === 'reminder') {
                 $guest->update([
                     'reminder_sent_at' => now(),
                     'reminder_count' => (int) $guest->reminder_count + 1,
+                    'whatsapp_channel' => $channel,
                 ]);
             } else {
                 $guest->update([
                     'whatsapp_status' => 'sent',
                     'last_sent_at' => now(),
+                    'whatsapp_channel' => $channel,
                 ]);
             }
-            Log::info("WhatsApp Job: Sent {$this->messageMode} to {$guest->name} ({$cleanPhone})");
+            Log::info("WhatsApp Job: Sent {$this->messageMode} to {$guest->name} ({$cleanPhone}) via {$channel}");
             return;
         }
 
