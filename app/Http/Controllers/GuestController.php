@@ -526,7 +526,11 @@ class GuestController extends Controller
             return $denied;
         }
 
-        $guests = Guest::with('event')->where('event_id', $eventId)->whereNotNull('pending_correction_from')->get()
+        // Only the guests left checked in the review window (all pending ones if none is given)
+        $ids = array_filter((array) $request->input('guest_ids', []), 'is_numeric');
+        $guests = Guest::with('event')->where('event_id', $eventId)->whereNotNull('pending_correction_from')
+            ->when(!empty($ids), fn ($q) => $q->whereIn('id', $ids))
+            ->get()
             ->filter(fn ($g) => $g->correctionAction() !== null);
         if ($guests->isEmpty()) {
             return response()->json(['message' => 'No hay correcciones pendientes de enviar.'], 422);

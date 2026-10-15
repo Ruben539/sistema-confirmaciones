@@ -21,6 +21,7 @@ import EventTypesManagement from './components/EventTypesManagement';
 import HostessesManagement from './components/HostessesManagement';
 import AppReleases from './components/AppReleases';
 import MessagesInbox from './components/MessagesInbox';
+import SendReviewModal from './components/SendReviewModal';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
@@ -217,39 +218,111 @@ function Dashboard({ user, onLogout }) {
         if (activeEvent) loadGuests(activeEvent.id);
     };
 
-    // Guests told a number of people that later changed (corrected list / edited): reminder or new QR
-    const handleSendCorrections = async () => {
+    // Review window before bulk sends: who gets it, what, and how the message looks
+    const [sendReview, setSendReview] = useState(null);
+
+    const firstName = (g) => (g.name || '').trim().split(' ')[0];
+    const peopleText = (n) => `${n} ${n === 1 ? 'persona' : 'personas'}`;
+    const hostsText = () => activeEvent?.couple_names || activeEvent?.title || '';
+
+    // Same texts the server sends (GuestMessages::countCorrection / reminder)
+    const apologyPreview = (g) => {
+        const places = Math.max(1, g.passes || 1);
+        let text = `¡Hola, ${firstName(g)}! 🙏 Te pedimos disculpas por la confusión: revisamos la lista de invitados de la celebración de ${hostsText()} y tu invitación es para *${peopleText(places)}*.`;
+        if (g.confirmed_passes > 0 && g.confirmed_passes !== places) {
+            text += `\n\nTenemos confirmadas *${g.confirmed_passes}*. Si cambia, respondé este mensaje y lo actualizamos.`;
+        }
+        return `${text}\n\nTu pase de ingreso sigue siendo el mismo. ¡Gracias por tu comprensión! 💛`;
+    };
+    const reminderPreview = (g) => {
+        const hosts = hostsText();
+        const plural = /\s(y|e)\s|&|,/i.test(hosts);
+        const deadline = activeEvent?.rsvp_deadline_effective
+            ? new Date(`${activeEvent.rsvp_deadline_effective}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })
+            : '';
+        return `¡Hola ${g.name}! 👋 💌 ${hosts} todavía ${plural ? 'esperan' : 'espera'} tu respuesta para su celebración, ¡y nos encantaría contar con vos!`
+            + (deadline ? `\n\n⏰ Podés confirmar hasta el ${deadline}.` : '')
+            + `\n📍 ${activeEvent?.location || ''}`
+            + `\n\n🎟️ Lugares reservados: *${peopleText(Math.max(1, g.passes || 1))}*`
+            + '\n\nRespondé este mensaje con:\n*1* — ¡Sí, voy!\n*2* — No voy a poder';
+    };
+
+    // Guests told a number of people that later changed (corrected list / edited): reminder or apology
+    const handleSendCorrections = () => {
         if (!activeEvent) return;
-        const count = guests.filter((g) => g.pending_correction_from != null && g.status !== 'declined').length;
-        if (!window.confirm(`¿Enviar la corrección a ${count} invitados?\n\nLos que no respondieron reciben un recordatorio con los lugares corregidos; los confirmados, una disculpa con la cantidad correcta.`)) return;
-        const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-corrections`, { method: 'POST' });
-        showToast(json?.message || 'No se pudieron programar las correcciones.');
-        loadGuests(activeEvent.id);
+        const list = guests.filter((g) => g.pending_correction_from != null && g.status !== 'declined' && g.phone);
+        setSendReview({
+            title: `Enviar correcciones (${list.length})`,
+            description: 'Invitados a los que les cambió la cantidad después de recibir la invitación o confirmar. Los que no respondieron reciben un recordatorio con los lugares corregidos; los confirmados, una disculpa con la cantidad correcta (su QR no cambia).',
+            confirmLabel: 'Enviar correcciones',
+            items: list.map((g) => {
+                const confirmed = ['confirmed', 'attended'].includes(g.status);
+                return {
+                    id: g.id,
+                    name: g.name,
+                    phone: g.phone,
+                    detail: `antes ${g.pending_correction_from} → ahora ${peopleText(Math.max(1, g.passes || 1))}`,
+                    tag: confirmed ? 'Disculpa' : 'Recordatorio',
+                    tagClass: confirmed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+                    preview: confirmed ? apologyPreview(g) : reminderPreview(g),
+                };
+            }),
+            onConfirm: async (ids) => {
+                const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-corrections`, { method: 'POST', body: JSON.stringify({ guest_ids: ids }) });
+                showToast(json?.message || 'No se pudieron programar las correcciones.');
+                setSendReview(null);
+                loadGuests(activeEvent.id);
+            },
+        });
     };
 
     // Apology with the right number of people, only that message (to confirmed guests)
-    const handleSendCountCorrection = async (list) => {
+    const handleSendCountCorrection = (list) => {
         if (!activeEvent || !list.length) return;
-        const hosts = activeEvent.couple_names || activeEvent.title;
-        const first = list[0];
-        const places = first.passes || 1;
-        const preview = `¡Hola, ${first.name.split(' ')[0]}! 🙏 Te pedimos disculpas por la confusión: revisamos la lista de invitados de la celebración de ${hosts} y tu invitación es para ${places} ${places === 1 ? 'persona' : 'personas'}.\n\nTu pase de ingreso sigue siendo el mismo. ¡Gracias por tu comprensión! 💛`;
-        const who = list.length === 1 ? first.name : `${list.length} invitados confirmados`;
-        if (!window.confirm(`¿Enviar la cantidad correcta a ${who}?\n\nEjemplo del mensaje:\n\n${preview}`)) return;
-        const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-count-correction`, {
-            method: 'POST',
-            body: JSON.stringify({ guest_ids: list.map((g) => g.id) }),
+        setSendReview({
+            title: `Enviar cantidad correcta (${list.length})`,
+            description: 'Solo este mensaje de disculpa con la cantidad de invitados correcta. No se reenvía el QR (sigue siendo el mismo).',
+            confirmLabel: 'Enviar',
+            items: list.map((g) => ({
+                id: g.id,
+                name: g.name,
+                phone: g.phone,
+                detail: peopleText(Math.max(1, g.passes || 1)) + (g.confirmed_passes > 0 && g.confirmed_passes !== g.passes ? ` · confirmaron ${g.confirmed_passes}` : ''),
+                tag: 'Disculpa',
+                tagClass: 'bg-emerald-100 text-emerald-700',
+                preview: apologyPreview(g),
+            })),
+            onConfirm: async (ids) => {
+                const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-count-correction`, { method: 'POST', body: JSON.stringify({ guest_ids: ids }) });
+                showToast(json?.message || 'No se pudo programar la corrección.');
+                setSendReview(null);
+            },
         });
-        showToast(json?.message || 'No se pudo programar la corrección.');
     };
 
-    const handleRemindAllPending = async () => {
+    const handleRemindAllPending = () => {
         if (!activeEvent) return;
-        const count = guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone).length;
-        if (!window.confirm(`¿Enviar un recordatorio a los ${count} invitados que recibieron la invitación y todavía no respondieron?\n\nCada uno dice la cantidad de lugares reservados actual. Salen de a uno, con pausas y respetando el cupo diario.`)) return;
-        const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-bulk-queue`, { method: 'POST', body: JSON.stringify({ mode: 'reminder' }) });
-        showToast(json?.message || 'No se pudieron programar los recordatorios.');
-        loadGuests(activeEvent.id);
+        const list = guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone);
+        setSendReview({
+            title: `Recordar a pendientes (${list.length})`,
+            description: 'Recibieron la invitación y todavía no respondieron. Cada recordatorio dice la cantidad de lugares actual. Salen de a uno, con pausas y respetando el cupo diario (los que ya tuvieron un recordatorio en las últimas 12 h se saltean).',
+            confirmLabel: 'Enviar recordatorios',
+            items: list.map((g) => ({
+                id: g.id,
+                name: g.name,
+                phone: g.phone,
+                detail: peopleText(Math.max(1, g.passes || 1)) + (g.reminder_count ? ` · ${g.reminder_count} recordatorio(s) enviados` : ''),
+                tag: 'Recordatorio',
+                tagClass: 'bg-amber-100 text-amber-700',
+                preview: reminderPreview(g),
+            })),
+            onConfirm: async (ids) => {
+                const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-bulk-queue`, { method: 'POST', body: JSON.stringify({ mode: 'reminder', guest_ids: ids }) });
+                showToast(json?.message || 'No se pudieron programar los recordatorios.');
+                setSendReview(null);
+                loadGuests(activeEvent.id);
+            },
+        });
     };
 
     // Sends the entry pass again by WhatsApp (e.g. after correcting how many people it is for)
@@ -671,6 +744,16 @@ function Dashboard({ user, onLogout }) {
                     }}
                 />
             )}
+
+            <SendReviewModal
+                open={Boolean(sendReview)}
+                title={sendReview?.title}
+                description={sendReview?.description}
+                items={sendReview?.items || []}
+                confirmLabel={sendReview?.confirmLabel || 'Enviar'}
+                onConfirm={(ids) => sendReview?.onConfirm(ids)}
+                onClose={() => setSendReview(null)}
+            />
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
