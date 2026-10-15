@@ -221,7 +221,7 @@ function Dashboard({ user, onLogout }) {
     const handleSendCorrections = async () => {
         if (!activeEvent) return;
         const count = guests.filter((g) => g.pending_correction_from != null && g.status !== 'declined').length;
-        if (!window.confirm(`¿Enviar la corrección a ${count} invitados?\n\nLos que no respondieron reciben un recordatorio con los lugares corregidos; los confirmados, el pase QR con la cantidad nueva.`)) return;
+        if (!window.confirm(`¿Enviar la corrección a ${count} invitados?\n\nLos que no respondieron reciben un recordatorio con los lugares corregidos; los confirmados, una disculpa con la cantidad correcta.`)) return;
         const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-corrections`, { method: 'POST' });
         showToast(json?.message || 'No se pudieron programar las correcciones.');
         loadGuests(activeEvent.id);

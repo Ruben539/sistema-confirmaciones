@@ -517,7 +517,7 @@ class GuestController extends Controller
 
     /**
      * Sends the pending corrections of an event: a reminder with the current places to those who didn't
-     * answer, the QR with the new amount to those who confirmed. Queued with the usual pauses.
+     * answer, an apology with the right amount to those who confirmed. Queued with the usual pauses.
      */
     public function sendCorrections(Request $request, $eventId)
     {
@@ -534,20 +534,20 @@ class GuestController extends Controller
 
         Cache::forget(SendWhatsAppMessageJob::cancelKey($eventId));
         $delay = 0;
-        $counts = ['reminder' => 0, 'qr' => 0];
+        $counts = ['reminder' => 0, 'correction' => 0];
         foreach ($guests as $guest) {
             $action = $guest->correctionAction();
             if ($action === 'reminder') {
                 $guest->update(['reminder_sent_at' => now()]);
             }
-            SendWhatsAppMessageJob::dispatch($guest->id, $action === 'qr' ? 'pass' : 'reminder')->delay(now()->addSeconds($delay));
+            SendWhatsAppMessageJob::dispatch($guest->id, $action)->delay(now()->addSeconds($delay));
             $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
             $counts[$action]++;
         }
 
         $parts = [];
         if ($counts['reminder']) $parts[] = "{$counts['reminder']} recordatorios con los lugares corregidos";
-        if ($counts['qr']) $parts[] = "{$counts['qr']} pases QR con la cantidad nueva";
+        if ($counts['correction']) $parts[] = "{$counts['correction']} mensajes de disculpa con la cantidad correcta";
 
         return response()->json([
             'message' => '📨 Correcciones programadas: ' . implode(' y ', $parts) . '. Salen de a uno, con pausas para proteger el número.',

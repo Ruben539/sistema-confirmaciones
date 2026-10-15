@@ -43,7 +43,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
     if (corrections) {
         const reminders = corrections.filter((c) => c.action === 'reminder').length;
-        const passes = corrections.filter((c) => c.action === 'qr').length;
+        const passes = corrections.filter((c) => c.action === 'correction').length;
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-md animate-fade-in">
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
@@ -54,7 +54,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                             Estos invitados ya recibieron la invitación o confirmaron con la cantidad anterior. Conviene avisarles:
                             {reminders > 0 && <> <strong>{reminders}</strong> sin responder reciben un recordatorio con los lugares corregidos;</>}
-                            {passes > 0 && <> <strong>{passes}</strong> confirmados reciben el pase QR con la cantidad nueva.</>}
+                            {passes > 0 && <> <strong>{passes}</strong> confirmados reciben una disculpa con la cantidad correcta (su QR sigue siendo el mismo).</>}
                         </p>
                     </div>
                     <div className="p-4 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800 text-xs">
@@ -63,7 +63,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                 <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate">{c.name}</span>
                                 <span className="shrink-0 text-zinc-500">
                                     {c.from} → <strong className="text-zinc-900 dark:text-white">{c.to}</strong> personas ·{' '}
-                                    <span className={c.action === 'qr' ? 'text-emerald-600' : 'text-amber-600'}>{c.action === 'qr' ? 'nuevo QR' : 'recordatorio'}</span>
+                                    <span className={c.action === 'correction' ? 'text-emerald-600' : 'text-amber-600'}>{c.action === 'correction' ? 'disculpa con la cantidad' : 'recordatorio'}</span>
                                 </span>
                             </div>
                         ))}

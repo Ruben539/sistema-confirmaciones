@@ -165,14 +165,15 @@ class Guest extends Model
         });
     }
 
-    // What has to be sent after a change of the number of people: a reminder (didn't answer yet) or the QR
+    // What has to be sent after a change of the number of people: a reminder (didn't answer yet) or, to
+    // confirmed guests, the apology with the right amount
     public function correctionAction(): ?string
     {
         if ($this->pending_correction_from === null || empty(preg_replace('/[^\d]/', '', (string) $this->phone))) {
             return null;
         }
         if (in_array($this->status, ['confirmed', 'attended'], true)) {
-            return 'qr';
+            return 'correction'; // apology with the right amount (their QR doesn't change)
         }
         return $this->status === 'pending' && $this->whatsapp_status === 'sent' ? 'reminder' : null;
     }

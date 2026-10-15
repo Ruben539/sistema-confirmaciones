@@ -560,7 +560,7 @@ export default function GuestList({
                                         )}
                                         {guest.pending_correction_from != null && guest.status !== 'declined' && (
                                             <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-0.5" title="Recibió la invitación o confirmó con la cantidad anterior">
-                                                ⚠️ Antes {guest.pending_correction_from}: falta avisar ({['confirmed', 'attended'].includes(guest.status) ? 'reenviar QR' : 'recordatorio'})
+                                                ⚠️ Antes {guest.pending_correction_from}: falta avisar ({['confirmed', 'attended'].includes(guest.status) ? 'cantidad correcta' : 'recordatorio'})
                                             </div>
                                         )}
                                         {guest.companions && (
