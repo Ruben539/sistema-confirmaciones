@@ -64,7 +64,8 @@ async function sendToLaravelRsvp(phone: string, message: string, isLid: boolean)
     try {
       console.log(`[Baileys RSVP] Enviando webhook de ${phone} a Laravel (${url})...`);
       // Laravel rejects the webhook without the shared secret (WHATSAPP_WEBHOOK_SECRET on both sides)
-      const headers = process.env.WHATSAPP_WEBHOOK_SECRET ? { 'X-Webhook-Secret': process.env.WHATSAPP_WEBHOOK_SECRET } : {};
+      const headers: Record<string, string> = {};
+      if (process.env.WHATSAPP_WEBHOOK_SECRET) headers['X-Webhook-Secret'] = process.env.WHATSAPP_WEBHOOK_SECRET;
       const res = await axios.post(url, { phone, message, is_lid: isLid }, { timeout: 8000, headers });
       return res;
     } catch (err: any) {
