@@ -19,7 +19,7 @@ return [
     'driver' => env('WHATSAPP_DRIVER', 'baileys'),
 
     'cloud' => [
-        'graph_version' => env('WHATSAPP_CLOUD_GRAPH_VERSION', 'v21.0'),
+        'graph_version' => env('WHATSAPP_CLOUD_GRAPH_VERSION', 'v26.0'),
         'phone_number_id' => env('WHATSAPP_CLOUD_PHONE_NUMBER_ID'),
         'business_account_id' => env('WHATSAPP_CLOUD_BUSINESS_ACCOUNT_ID'),
         'token' => env('WHATSAPP_CLOUD_TOKEN'),
