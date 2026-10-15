@@ -19,6 +19,9 @@ use Illuminate\Support\Facades\Log;
  */
 class WhatsAppGateway
 {
+    // Payload of the "Ver invitación" button of the greeting template
+    public const VIEW_INVITATION = 'VER_INVITACION';
+
     public static function isCloud(): bool
     {
         return config('whatsapp.driver') === 'cloud';
@@ -63,8 +66,8 @@ class WhatsAppGateway
     }
 
     /**
-     * Invitation or reminder to a guest. Baileys: the text built from the event's message. Cloud: the
-     * approved template with the guest's data and the "Sí, voy" / "No voy a poder" buttons (they answer 1 / 2).
+     * Invitation or reminder to a guest. Baileys: the text built from the event's message. Cloud: approved
+     * templates (invitation = greeting + "Ver invitación"; reminder with "Sí, voy" / "No voy a poder").
      */
     public static function sendInvitation(Guest $guest, string $mode, string $text, ?string $media, ?string $sessionId = null): array
     {
@@ -74,8 +77,6 @@ class WhatsAppGateway
 
         $event = $guest->event;
         $hosts = GuestMessages::hosts($event);
-        $places = max(1, (int) $guest->passes);
-        $placesText = $places === 1 ? '1 persona' : "{$places} personas";
         $buttons = ['1', '2'];
 
         if ($mode === 'reminder') {
@@ -87,13 +88,12 @@ class WhatsAppGateway
             ], null, $buttons);
         }
 
-        $withImage = $media && config('whatsapp.cloud.templates.invitation_image');
-        return self::template($guest->phone, config($withImage ? 'whatsapp.cloud.templates.invitation_image' : 'whatsapp.cloud.templates.invitation'), [
+        // Greeting with a "Ver invitación" button: tapping it opens the 24 h window and the bot answers with the
+        // invitation configured in the event (free text, photo...). "No voy a poder" declines right away.
+        return self::template($guest->phone, config('whatsapp.cloud.templates.invitation'), [
             self::firstName($guest),
             $hosts,
-            $event?->location ?: 'el lugar que te van a indicar',
-            $placesText,
-        ], $withImage ? $media : null, $buttons);
+        ], null, [self::VIEW_INVITATION, '2']);
     }
 
     // Entry pass (QR image). Cloud outside the 24 h window: the "pass" template with the QR as header

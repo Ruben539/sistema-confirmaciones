@@ -31,9 +31,8 @@ return [
 
         // Message templates approved by Meta (needed to write first / after 24 h without the guest writing)
         'templates' => [
-            'invitation' => env('WHATSAPP_TPL_INVITATION', 'invitacion_evento'),
-            // Same text with the event photo as header (used when the event has a cover photo); empty = never
-            'invitation_image' => env('WHATSAPP_TPL_INVITATION_IMAGE'),
+            // Greeting + "Ver invitación" button; the event's own message is sent when the guest taps it
+            'invitation' => env('WHATSAPP_TPL_INVITATION', 'saludo_invitacion'),
             'reminder' => env('WHATSAPP_TPL_REMINDER', 'recordatorio_evento'),
             'pass' => env('WHATSAPP_TPL_PASS', 'pase_ingreso'),
             'notice' => env('WHATSAPP_TPL_NOTICE', 'aviso_mensaje'),

@@ -541,6 +541,22 @@ class RsvpController extends Controller
         $coupleNames = $event ? ($event->couple_names ?? $event->title) : 'los novios';
         $locationText = ($event && !empty($event->location)) ? "\n📍 *Lugar:* {$event->location}" : "";
         $msgClean = mb_strtolower(trim($message));
+
+        // "Ver invitación" (button of the official API greeting): the invitation configured in the event,
+        // with its photo, exactly as it is sent through the Baileys bot
+        if (preg_match('/^ver (la |mi )?invitaci[oó]n$/u', $msgClean)) {
+            $media = null;
+            if ($event && !empty($event->cover_photo_path)) {
+                $disk = \Illuminate\Support\Facades\Storage::disk('public');
+                $media = $disk->exists($event->cover_photo_path) ? $disk->path($event->cover_photo_path) : $event->cover_photo_url;
+            }
+            return response()->json(array_filter([
+                'processed' => true,
+                'reason' => 'Invitation requested',
+                'reply' => \App\Services\WhatsAppMessage::build($guest, 'invitation'),
+                'media_url' => $media,
+            ]));
+        }
         $currentState = $guest->conversation_state ?? 'awaiting_attendance';
 
         // 1. Escenario: Si la fecha del evento ya pasó

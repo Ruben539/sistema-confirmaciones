@@ -69,8 +69,10 @@ class WhatsAppCloudWebhookController extends Controller
 
         $text = match ($message['type'] ?? '') {
             'text' => $message['text']['body'] ?? '',
-            // Template quick reply buttons: payload "1" (Sí, voy) / "2" (No voy a poder)
-            'button' => $message['button']['payload'] ?? $message['button']['text'] ?? '',
+            // Template quick reply buttons: "Ver invitación", "1" (Sí, voy) / "2" (No voy a poder)
+            'button' => ($message['button']['payload'] ?? null) === WhatsAppGateway::VIEW_INVITATION
+                ? 'Ver invitación'
+                : ($message['button']['payload'] ?? $message['button']['text'] ?? ''),
             'interactive' => $message['interactive']['button_reply']['id']
                 ?? $message['interactive']['list_reply']['id']
                 ?? $message['interactive']['button_reply']['title'] ?? '',
