@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, Download, QrCode, BellRing, AlertCircle } from 'lucide-react';
+import { Search, Plus, Upload, Send, Trash2, Copy, Check, Pencil, CheckCircle2, XCircle, Clock, Utensils, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Users, User, Download, QrCode, BellRing, AlertCircle } from 'lucide-react';
 
 export default function GuestList({
     guests,
@@ -73,6 +73,15 @@ export default function GuestList({
             if (sortField === 'name') {
                 aVal = a.name.toLowerCase();
                 bVal = b.name.toLowerCase();
+            } else if (sortField === 'companions') {
+                const getCompStr = (g) => {
+                    if (g.members && g.members.length > 0) {
+                        return g.members.map(m => m.name).filter(Boolean).join(' ');
+                    }
+                    return g.companions || '';
+                };
+                aVal = getCompStr(a).toLowerCase();
+                bVal = getCompStr(b).toLowerCase();
             } else if (sortField === 'table_number') {
                 aVal = a.table_number ? a.table_number.toLowerCase() : 'zzzz';
                 bVal = b.table_number ? b.table_number.toLowerCase() : 'zzzz';
@@ -455,6 +464,12 @@ export default function GuestList({
                                         <ArrowUpDown className="w-3 h-3 text-zinc-400" />
                                     </div>
                                 </th>
+                                <th className="p-3.5 cursor-pointer hover:text-zinc-900 dark:hover:text-white" onClick={() => handleSort('companions')}>
+                                    <div className="flex items-center gap-1">
+                                        <span>Acompañantes</span>
+                                        <ArrowUpDown className="w-3 h-3 text-zinc-400" />
+                                    </div>
+                                </th>
                                 <th className="p-3.5 cursor-pointer hover:text-zinc-900 dark:hover:text-white" onClick={() => handleSort('table_number')}>
                                     <div className="flex items-center gap-1">
                                         <span>Nº de Mesa</span>
@@ -508,6 +523,45 @@ export default function GuestList({
                                                 + {guest.alt_phones.split(',').join(', ')}
                                             </div>
                                         )}
+                                    </td>
+
+                                    {/* Acompañantes */}
+                                    <td className="p-3.5">
+                                        {(() => {
+                                            let companionList = [];
+                                            if (guest.members && guest.members.length > 0) {
+                                                companionList = guest.members.map(m => m.name).filter(Boolean);
+                                            }
+                                            if (companionList.length === 0 && guest.companions) {
+                                                companionList = guest.companions
+                                                    .split(/[\n\r,;]+/)
+                                                    .map(s => s.trim())
+                                                    .filter(Boolean);
+                                            }
+
+                                            if (companionList.length === 0) {
+                                                return (
+                                                    <span className="text-zinc-400 dark:text-zinc-500 text-xs italic">
+                                                        Sin acompañantes
+                                                    </span>
+                                                );
+                                            }
+
+                                            return (
+                                                <div className="flex flex-wrap items-center gap-1.5 max-w-[280px]">
+                                                    {companionList.map((comp, idx) => (
+                                                        <span
+                                                            key={idx}
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200/70 dark:border-zinc-700/70 shadow-xs"
+                                                            title={comp}
+                                                        >
+                                                            <User className="w-3 h-3 text-zinc-400 shrink-0" />
+                                                            <span className="truncate max-w-[180px]">{comp}</span>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
 
                                     {/* Table Number */}
@@ -579,11 +633,6 @@ export default function GuestList({
                                         {guest.pending_correction_from != null && guest.status !== 'declined' && (
                                             <div className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-0.5" title="Recibió la invitación o confirmó con la cantidad anterior">
                                                 ⚠️ Antes {guest.pending_correction_from}: falta avisar ({['confirmed', 'attended'].includes(guest.status) ? 'cantidad correcta' : 'recordatorio'})
-                                            </div>
-                                        )}
-                                        {guest.companions && (
-                                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate max-w-[180px]" title={guest.companions}>
-                                                + {guest.companions}
                                             </div>
                                         )}
                                     </td>
