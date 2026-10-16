@@ -514,9 +514,9 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                     </colgroup>
                     <thead className="sticky top-0 z-20">
                         <tr>
-                            <th onMouseDown={selectAll} title="Seleccionar todo" className="sticky left-0 z-30 bg-[#e8eaed] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 cursor-pointer" />
+                            <th onMouseDown={selectAll} title="Seleccionar todo" className="sticky left-0 z-30 bg-[#e8eaed] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 cursor-pointer" style={{ width: 48, minWidth: 48 }} />
                             {beforeColumns && (
-                                <th className="bg-[#e8eaed] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-center font-bold text-zinc-700 dark:text-zinc-200">
+                                <th style={{ left: 48, width: beforeColWidth, minWidth: beforeColWidth }} className="sticky z-30 bg-[#e8eaed] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-center font-bold text-zinc-700 dark:text-zinc-200">
                                     <div className="text-[10px] text-zinc-400 font-mono">&nbsp;</div>
                                     <div className="truncate text-xs font-bold" title={beforeColumns.label || 'Invitación'}>{beforeColumns.label || 'Invitación'}</div>
                                 </th>
@@ -524,12 +524,16 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                             {columns.map((c, ci) => {
                                 const colSelected = nRows > 0 && ci >= left && ci <= right;
                                 const active = filters[c.key] || sort?.key === c.key;
+                                const isNameCol = ci === 0;
+                                const nameLeft = 48 + beforeColWidth;
+                                const thStickyStyle = isNameCol ? { left: nameLeft } : {};
                                 return (
                                     <th
                                         key={c.key}
+                                        style={thStickyStyle}
                                         onMouseDown={(e) => onColHeaderDown(e, ci)}
                                         onMouseEnter={() => onColHeaderEnter(ci)}
-                                        className={`relative border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-left cursor-pointer group ${colSelected ? 'bg-[#d3e3fd] dark:bg-sky-900/60' : 'bg-[#e8eaed] dark:bg-zinc-800'}`}
+                                        className={`border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-left cursor-pointer group ${isNameCol ? 'sticky z-30 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)] border-r-2 border-r-zinc-400 dark:border-r-zinc-600' : 'relative'} ${colSelected ? 'bg-[#d3e3fd] dark:bg-sky-900/60' : 'bg-[#e8eaed] dark:bg-zinc-800'}`}
                                     >
                                         <div className="flex items-center justify-between gap-1 pr-1.5">
                                             <div className="min-w-0">
@@ -570,12 +574,13 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                     <td
                                         onMouseDown={(e) => onRowHeaderDown(e, v)}
                                         onMouseEnter={() => onCellEnter(v, 0)}
+                                        style={{ width: 48, minWidth: 48 }}
                                         className={`sticky left-0 z-10 text-center font-mono text-[10px] border border-zinc-300 dark:border-zinc-700 px-1 cursor-pointer ${hasError ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60' : rowSelected ? 'bg-[#d3e3fd] text-sky-800 dark:bg-sky-900/60 dark:text-sky-200' : 'bg-[#f1f3f4] text-zinc-500 dark:bg-zinc-800'}`}
                                     >
                                         {rowLabels ? rowLabels[rowIndex] : rowIndex + 2}
                                     </td>
                                     {beforeColumns && (
-                                        <td className="px-1.5 py-1 border border-zinc-300 dark:border-zinc-700 text-center bg-white dark:bg-zinc-900 whitespace-nowrap overflow-hidden">
+                                        <td style={{ left: 48, width: beforeColWidth, minWidth: beforeColWidth }} className="sticky z-10 px-1.5 py-1 border border-zinc-300 dark:border-zinc-700 text-center bg-white dark:bg-zinc-900 whitespace-nowrap overflow-hidden">
                                             {beforeColumns.render(row, rowIndex)}
                                         </td>
                                     )}
@@ -586,18 +591,23 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                         const isEditing = editing && editing.v === v && editing.c === ci;
                                         const text = String(row[c.key] ?? '');
                                         const hint = !text && !isEditing && cellHint ? cellHint(rowIndex, c.key) : null;
+                                        const isNameCol = ci === 0;
+                                        const nameLeft = 48 + beforeColWidth;
+                                        const tdStickyStyle = isNameCol ? { left: nameLeft } : {};
                                         const tint = inSel ? 'bg-sky-100 dark:bg-sky-900/40'
                                             : hint ? (hint.tone === 'ok' ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-amber-50 dark:bg-amber-950/30')
                                                 : bad || rowErrors._row ? 'bg-rose-50 dark:bg-rose-950/30' : '';
+                                        const bgSolid = isNameCol ? (tint || 'bg-white dark:bg-zinc-900') : tint;
                                         return (
                                             <td
                                                 key={c.key}
                                                 data-cell={`${v}-${ci}`}
+                                                style={tdStickyStyle}
                                                 onMouseDown={(e) => onCellDown(e, v, ci)}
                                                 onMouseEnter={() => onCellEnter(v, ci)}
                                                 onDoubleClick={() => startEdit(v, ci)}
                                                 title={hint?.text || bad || text}
-                                                className={`relative px-2 py-1.5 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis cursor-cell ${c.type === 'number' ? 'text-right' : ''} ${tint}`}
+                                                className={`px-2 py-1.5 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis cursor-cell ${isNameCol ? 'sticky z-10 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)] border-r-2 border-r-zinc-400 dark:border-r-zinc-600' : 'relative'} ${c.type === 'number' ? 'text-right' : ''} ${bgSolid}`}
                                             >
                                                 {hint ? (
                                                     <span className={`flex items-center gap-1 text-[10px] font-bold ${hint.tone === 'ok' ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>

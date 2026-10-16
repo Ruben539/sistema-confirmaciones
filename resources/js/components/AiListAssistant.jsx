@@ -4,7 +4,7 @@ import { Upload, Download, Users, AlertCircle, CheckCircle2, X, FileSpreadsheet,
 import { apiFetch } from '../api';
 import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint } from '../guestSheet';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint, fillGenericCompanions } from '../guestSheet';
 
 export default function AiListAssistant({ event, showToast, onImported }) {
     const [file, setFile] = useState(null);
@@ -27,6 +27,16 @@ export default function AiListAssistant({ event, showToast, onImported }) {
         setGrid(result.rows);
         setFixReport({ changes: result.changes, pending: result.pending });
         setShowAllSuggestions(false);
+    };
+
+    const applyFillGenericCompanions = () => {
+        const result = fillGenericCompanions(grid);
+        if (result.filledCount > 0) {
+            setGrid(result.rows);
+            showToast && showToast(`Se completaron ${result.filledCount} acompañantes genéricos.`);
+        } else {
+            showToast && showToast('Todas las invitaciones con cupo ya tienen acompañantes.');
+        }
     };
 
     if (!event) {
@@ -204,6 +214,14 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                             className="hidden"
                             onChange={(e) => { if (e.target.files?.[0]) readFile(e.target.files[0]); e.target.value = ''; }}
                         />
+                        <button
+                            type="button"
+                            onClick={applyFillGenericCompanions}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-300 dark:border-sky-800 text-[11px] font-bold shadow-xs transition-colors"
+                            title="Si una invitación tiene total mayor a 1 pero no tiene nombres de acompañantes, genera 'Acompañante 1, 2...'"
+                        >
+                            <Users className="w-3.5 h-3.5" /> Completar acompañantes vacíos
+                        </button>
                         <button onClick={download} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-sm transition-colors">
                             <Download className="w-3.5 h-3.5" /> Descargar en este formato
                         </button>

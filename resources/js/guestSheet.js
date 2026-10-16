@@ -99,6 +99,66 @@ export const downloadSheet = (rows, fileName, normalizePhone = (p) => p, extraSh
 };
 
 /**
+ * Splits compound names like "Juan Pérez y María Gómez", "Carlos Benítez & Sra", "Pedro López + 1"
+ * Returns: { name: cleanTitularName, companions: [companionNames], extraTotal: number }
+ */
+export const extractCompanionsFromName = (rawName) => {
+    const trimmed = String(rawName || '').trim().replace(/\s+/g, ' ');
+    if (!trimmed) return { name: '', companions: [], extraTotal: 0 };
+
+    if (/^familia\s+/i.test(trimmed) && !/\s+(?:y|e|&|\+)\s+/i.test(trimmed)) {
+        return { name: trimmed, companions: [], extraTotal: 0 };
+    }
+
+    const plusNumMatch = trimmed.match(/^(.*?)\s*\+\s*(\d+)(?:\s*(?:personas?|acompañantes?|invitados?))?$/i);
+    if (plusNumMatch) {
+        const baseName = plusNumMatch[1].trim();
+        const count = parseInt(plusNumMatch[2], 10);
+        const compNames = Array.from({ length: count }, (_, i) => (count === 1 ? 'Acompañante' : `Acompañante ${i + 1}`));
+        return { name: baseName, companions: compNames, extraTotal: count };
+    }
+
+    const parts = trimmed.split(/\s+(?:y|e|&|\+)\s+/i).map((s) => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+        const titular = parts[0];
+        const companionList = parts.slice(1).map((part) => {
+            if (/^(sra\.?|esposa|señora)$/i.test(part)) {
+                const titularWords = titular.split(' ');
+                const lastName = titularWords.length > 1 ? titularWords.slice(1).join(' ') : '';
+                return lastName ? `Sra. ${lastName}` : 'Sra.';
+            }
+            if (/^(sr\.?|esposo|señor)$/i.test(part)) return 'Sr.';
+            return part;
+        });
+        return { name: titular, companions: companionList, extraTotal: companionList.length };
+    }
+
+    return { name: trimmed, companions: [], extraTotal: 0 };
+};
+
+export const fillGenericCompanions = (rows) => {
+    let filledCount = 0;
+    const next = (rows || []).map((row) => {
+        if (!isFilledRow(row)) return row;
+        const total = Math.max(1, toInt(row.total, 1));
+        if (total <= 1) return row;
+        const existing = splitList(row.companions);
+        const needed = (total - 1) - existing.length;
+        if (needed <= 0) return row;
+
+        const newComps = [...existing];
+        for (let k = 1; k <= needed; k++) {
+            const num = existing.length + k;
+            const genName = (total === 2 && existing.length === 0) ? 'Acompañante' : `Acompañante ${num}`;
+            newComps.push(genName);
+            filledCount++;
+        }
+        return { ...row, companions: newComps.join(', ') };
+    });
+    return { rows: next, filledCount };
+};
+
+/**
  * An uploaded Excel (any layout) as spreadsheet rows with the system's columns, one row per row of the file,
  * so the planner can fix it by hand. Columns are recognized by their header; anything unknown is left out.
  * A quantity column under "Acompañantes" that never has 0 is taken as the total (as many planners fill it).
@@ -135,15 +195,24 @@ export const sheetRowsFromFile = (headers, rows) => {
         else if (companionAdults !== -1 && cell(r, companionAdults) !== '') people = companionsAreTotal ? toInt(cell(r, companionAdults), 1) : 1 + toInt(cell(r, companionAdults), 0) + kids;
         else people = 1 + kids;
         const cat = cell(r, category).toLowerCase();
+        const rawFullName = [cell(r, name), cell(r, lastName)].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ');
+        const extracted = extractCompanionsFromName(rawFullName);
+        const finalName = extracted.name || rawFullName;
+        const initialCompanions = splitList(cell(r, companionNames));
+        extracted.companions.forEach((c) => {
+            if (!initialCompanions.map(normName).includes(normName(c))) initialCompanions.push(c);
+        });
+        const finalTotal = Math.max(1, people, 1 + initialCompanions.length);
+
         return {
-            name: [cell(r, name), cell(r, lastName)].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '),
+            name: finalName,
             phone: cell(r, phone),
             other_phones: cell(r, phone2),
             table: cell(r, table),
             category: /(jov|jóv|teen|adolesc)/.test(cat) ? 'Joven' : /(niñ|nin|child|kid|infant)/.test(cat) ? 'Niño' : 'Adulto',
-            total: String(Math.max(1, people)),
+            total: String(finalTotal),
             children: String(kids),
-            companions: cell(r, companionNames),
+            companions: initialCompanions.join(', '),
             dietary: cell(r, dietary),
             notes: cell(r, notes),
             _row: r.row,
@@ -158,9 +227,11 @@ const hasPhone = (row) => String(row.phone || '').replace(/[^\d]/g, '').length >
 
 /**
  * The same corrections as the import, applied to the spreadsheet (no AI):
- *  1. rows without phone under an invitation are its companions, while they fit in its total
+ *  1. compound names ("Juan y Maria", "Pedro + 1") -> separate titular and companions
+ *  2. rows without phone under an invitation are its companions, while they fit in its total
  *     ("Marcos Pereira 6" + Adriana, Pauli, Abi, Jimena, Asaf -> one invitation with 5 named companions)
- *  2. the same phone in several rows is one invitation (the other rows are companions; totals add up)
+ *  3. the same phone in several rows is one invitation (the other rows are companions; totals add up)
+ *  4. invitations with total > 1 and empty companions get filled with generic companion names
  * Returns the new rows, what changed and what couldn't be decided.
  */
 export const autoFixSheet = (rows) => {
@@ -172,6 +243,21 @@ export const autoFixSheet = (rows) => {
         const names = splitList(holder.companions);
         if (name && !names.map(normName).includes(normName(name))) holder.companions = [...names, name].join(', ');
     };
+
+    // 0. Compound names ("Juan y Maria", "Carlos + 1")
+    list.forEach((row) => {
+        if (!hasPhone(row)) return;
+        const extracted = extractCompanionsFromName(row.name);
+        if (extracted.companions.length > 0) {
+            row.name = extracted.name;
+            extracted.companions.forEach((c) => addCompanion(row, c));
+            const neededTotal = 1 + splitList(row.companions).length;
+            if (toInt(row.total, 1) < neededTotal) {
+                row.total = String(neededTotal);
+            }
+            changes.push(`${extracted.name}: se separó a ${extracted.companions.join(', ')} como acompañante`);
+        }
+    });
 
     // 1. Rows without phone under an invitation
     let holder = null;
@@ -229,6 +315,24 @@ export const autoFixSheet = (rows) => {
             : `${row.name} (${label(row)}) tiene el mismo teléfono que ${first.name}: es una sola invitación de ${first.total}`);
     });
     kept = kept.filter((r) => !r._remove);
+
+    // 3. Fill generic companion names for multi-person invitations missing companion names
+    kept.forEach((row) => {
+        const total = Math.max(1, toInt(row.total, 1));
+        if (total <= 1) return;
+        const existing = splitList(row.companions);
+        const needed = (total - 1) - existing.length;
+        if (needed <= 0) return;
+
+        const genNames = [];
+        for (let k = 1; k <= needed; k++) {
+            const num = existing.length + k;
+            const gen = (total === 2 && existing.length === 0) ? 'Acompañante' : `Acompañante ${num}`;
+            genNames.push(gen);
+        }
+        row.companions = [...existing, ...genNames].join(', ');
+        changes.push(`${row.name}: se completaron ${needed} acompañante(s) genérico(s)`);
+    });
 
     return { rows: kept, changes, pending };
 };
