@@ -22,6 +22,23 @@ class WhatsAppThrottle
         return new self($sessionId);
     }
 
+    /**
+     * Random pause in seconds between two values of the config, tolerant to a bad .env (only the minimum
+     * set, or both swapped): never fails, the pause just uses the bigger value as the top.
+     */
+    public static function randomGap(string $minKey = 'whatsapp.min_delay', string $maxKey = 'whatsapp.max_delay'): int
+    {
+        $a = max(0, (int) config($minKey));
+        $b = max(0, (int) config($maxKey));
+        return random_int(min($a, $b), max($a, $b));
+    }
+
+    // Average pause (for the estimates shown in the panel)
+    public static function averageGap(): float
+    {
+        return ((int) config('whatsapp.min_delay') + (int) config('whatsapp.max_delay')) / 2;
+    }
+
     // Bot session of an event (the Baileys bot paces each planner separately)
     public static function sessionForEvent($event): string
     {
@@ -99,12 +116,12 @@ class WhatsAppThrottle
         $burst = (int) Cache::get($burstKey, 0) + 1;
 
         if ($this->isCloud()) {
-            $gap = random_int(config('whatsapp.cloud_min_delay'), config('whatsapp.cloud_max_delay'));
+            $gap = self::randomGap('whatsapp.cloud_min_delay', 'whatsapp.cloud_max_delay');
         } elseif ($burst >= config('whatsapp.burst_size')) {
             $gap = config('whatsapp.burst_pause') + random_int(0, 120);
             $burst = 0;
         } else {
-            $gap = random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+            $gap = self::randomGap();
         }
 
         Cache::put($burstKey, $burst, now()->addHours(6));

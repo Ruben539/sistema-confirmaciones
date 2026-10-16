@@ -545,7 +545,7 @@ class GuestController extends Controller
                 $guest->update(['reminder_sent_at' => now()]);
             }
             SendWhatsAppMessageJob::dispatch($guest->id, $action)->delay(now()->addSeconds($delay));
-            $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+            $delay += \App\Services\WhatsAppThrottle::randomGap();
             $counts[$action]++;
         }
 
@@ -585,7 +585,7 @@ class GuestController extends Controller
         $delay = 0;
         foreach ($guests as $guest) {
             SendWhatsAppMessageJob::dispatch($guest->id, 'correction')->delay(now()->addSeconds($delay));
-            $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+            $delay += \App\Services\WhatsAppThrottle::randomGap();
         }
 
         $count = $guests->count();
@@ -1281,7 +1281,7 @@ class GuestController extends Controller
                 $guest->update(['reminder_sent_at' => now()]);
             }
             SendWhatsAppMessageJob::dispatch($guest->id, $mode)->delay(now()->addSeconds($delay));
-            $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+            $delay += \App\Services\WhatsAppThrottle::randomGap();
         }
 
         $count = $guests->count();

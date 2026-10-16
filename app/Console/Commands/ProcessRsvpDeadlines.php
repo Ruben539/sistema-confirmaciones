@@ -58,7 +58,7 @@ class ProcessRsvpDeadlines extends Command
                     // Mark as queued so the next run doesn't queue it again; the job clears it if it fails
                     $guest->update(['reminder_sent_at' => now()]);
                     SendWhatsAppMessageJob::dispatch($guest->id, 'reminder')->delay(now()->addSeconds($delay));
-                    $delay += random_int(config('whatsapp.min_delay'), config('whatsapp.max_delay'));
+                    $delay += \App\Services\WhatsAppThrottle::randomGap();
                     $remindersCount++;
                 }
             }
