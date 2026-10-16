@@ -1285,6 +1285,16 @@ class GuestController extends Controller
         }
 
         $count = $guests->count();
+
+        // Remembered so the panel can show the progress (the send goes on even with the browser closed)
+        $previous = Cache::get("bulk:{$eventId}");
+        $keepPrevious = $previous && ($previous['mode'] ?? null) === $mode && !empty($this->bulkProgress($eventId)['active']);
+        Cache::put("bulk:{$eventId}", [
+            'mode' => $mode,
+            'ids' => $keepPrevious ? array_values(array_unique(array_merge($previous['ids'], $guests->pluck('id')->all()))) : $guests->pluck('id')->all(),
+            'started' => $keepPrevious ? $previous['started'] : now()->timestamp,
+        ], now()->addDays(4));
+
         // How many can go out today, by the event's channel (the bot's safe quota and/or the official limit)
         $channelMode = $event->whatsapp_channel ?: 'auto';
         $cloudOk = \App\Services\WhatsAppGateway::cloudConfigured();
@@ -1323,9 +1333,73 @@ class GuestController extends Controller
 
         // Jobs queued before this moment will skip themselves
         Cache::put(SendWhatsAppMessageJob::cancelKey($eventId), now()->timestamp, now()->addDays(4));
+        Cache::forget("bulk:{$eventId}");
 
         return response()->json([
             'message' => 'Envío masivo detenido. Los mensajes pendientes no se enviarán.'
         ]);
+    }
+
+    /**
+     * Progress of the background bulk send of an event (invitations or reminders): sent / failed / left and
+     * why it is waiting (sending window, the bot's daily quota). It goes on with the browser closed.
+     */
+    public function bulkStatus($eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, false)) {
+            return $denied;
+        }
+
+        return response()->json($this->bulkProgress($eventId));
+    }
+
+    private function bulkProgress($eventId): array
+    {
+        $bulk = Cache::get("bulk:{$eventId}");
+        if (!$bulk || empty($bulk['ids'])) {
+            return ['active' => false];
+        }
+
+        $since = \Carbon\Carbon::createFromTimestamp($bulk['started']);
+        $ids = $bulk['ids'];
+        // Sent = an outgoing message logged for the guest after the start (invitation or reminder)
+        $sent = \App\Models\GuestMessage::whereIn('guest_id', $ids)->where('direction', 'out')->where('author', 'bot')
+            ->where('created_at', '>=', $since)->distinct()->count('guest_id');
+        $failed = \App\Models\GuestActivity::whereIn('guest_id', $ids)
+            ->whereIn('action', ['invitation_failed', 'reminder_failed', 'send_uncertain'])
+            ->where('created_at', '>=', $since)->distinct()->count('guest_id');
+        // Guests that no longer need it (answered meanwhile, removed...) don't wait for anything
+        $skipped = $bulk['mode'] === 'reminder'
+            ? Guest::whereIn('id', $ids)->where('status', '!=', 'pending')->count()
+            : count($ids) - Guest::whereIn('id', $ids)->count();
+
+        $total = count($ids);
+        $left = max(0, $total - $sent - $failed - $skipped);
+        if ($left === 0) {
+            Cache::forget("bulk:{$eventId}");
+        }
+
+        $now = now();
+        $waiting = null;
+        if ($left > 0) {
+            if ($now->hour < config('whatsapp.window_start') || $now->hour >= config('whatsapp.window_end')) {
+                $waiting = sprintf('Fuera del horario de envío: sigue a las %02d:00.', config('whatsapp.window_start'));
+            } elseif (!\App\Services\WhatsAppGateway::cloudConfigured() && \App\Services\WhatsAppGateway::baileysQuotaLeft() === 0) {
+                $waiting = 'Se alcanzó el cupo diario del bot: sigue mañana a las ' . sprintf('%02d:00', config('whatsapp.window_start')) . '.';
+            }
+        }
+
+        return [
+            'active' => $left > 0,
+            'mode' => $bulk['mode'],
+            'total' => $total,
+            'sent' => $sent,
+            'failed' => $failed,
+            'left' => $left,
+            'started_at' => $since->toIso8601String(),
+            'waiting' => $waiting,
+            'gap_minutes' => [round(config('whatsapp.min_delay') / 60, 1), round(config('whatsapp.max_delay') / 60, 1)],
+        ];
     }
 }

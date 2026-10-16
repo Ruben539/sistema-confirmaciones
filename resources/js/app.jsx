@@ -59,6 +59,9 @@ function Dashboard({ user, onLogout }) {
     };
     // Unread WhatsApp messages of the active event (badge in the sidebar)
     const [unreadMessages, setUnreadMessages] = useState(0);
+    // Background bulk send of the active event (runs on the server: shown here even with the modal closed)
+    const [bulkProgress, setBulkProgress] = useState(null);
+    const [bulkTick, setBulkTick] = useState(0);
     useEffect(() => {
         if (isHostess || !activeEvent?.id) {
             setUnreadMessages(0);
@@ -72,6 +75,25 @@ function Dashboard({ user, onLogout }) {
         const timer = setInterval(loadUnread, 60000);
         return () => clearInterval(timer);
     }, [activeEvent?.id, isHostess]);
+    useEffect(() => {
+        if (isHostess || !activeEvent?.id) {
+            setBulkProgress(null);
+            return;
+        }
+        let lastSent = null;
+        const load = async () => {
+            const { ok, json } = await apiFetch(`/api/events/${activeEvent.id}/bulk-status`);
+            if (!ok || !json) return;
+            setBulkProgress(json.active ? json : null);
+            // New messages went out: refresh the list (sent marks, reminders)
+            if (lastSent !== null && json.sent !== lastSent) loadGuests(activeEvent.id);
+            lastSent = json.sent ?? null;
+        };
+        load();
+        const timer = setInterval(load, 20000);
+        return () => clearInterval(timer);
+    }, [activeEvent?.id, isHostess, bulkTick]);
+
     const [toastMessage, setToastMessage] = useState(null);
     const [preselectedPlannerId, setPreselectedPlannerId] = useState(null);
     const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
@@ -320,6 +342,7 @@ function Dashboard({ user, onLogout }) {
                 const { json } = await apiFetch(`/api/events/${activeEvent.id}/send-bulk-queue`, { method: 'POST', body: JSON.stringify({ mode: 'reminder', guest_ids: ids }) });
                 showToast(json?.message || 'No se pudieron programar los recordatorios.');
                 setSendReview(null);
+                setBulkTick((t) => t + 1);
                 loadGuests(activeEvent.id);
             },
         });
@@ -438,6 +461,26 @@ function Dashboard({ user, onLogout }) {
 
                 {/* Main Content */}
                 <main className="p-4 sm:p-8 space-y-8 flex-1">
+                    {/* Background send in progress: visible anywhere in the panel */}
+                    {bulkProgress?.active && !isWhatsAppModalOpen && (
+                        <button
+                            onClick={() => setIsWhatsAppModalOpen(true)}
+                            className="fixed bottom-6 left-6 z-40 flex items-center gap-3 px-4 py-3 rounded-2xl bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-900 shadow-2xl text-left"
+                            title="Ver el envío"
+                        >
+                            <span className="relative flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                            </span>
+                            <span className="text-xs">
+                                <span className="block font-black text-zinc-900 dark:text-white">
+                                    {bulkProgress.mode === 'reminder' ? 'Enviando recordatorios' : 'Enviando invitaciones'}: {bulkProgress.sent} de {bulkProgress.total}
+                                </span>
+                                <span className="block text-[11px] text-zinc-500">{bulkProgress.waiting || 'Sigue aunque cierres el navegador'}</span>
+                            </span>
+                        </button>
+                    )}
+
                     {/* Toast Notification */}
                     {toastMessage && (
                         <div className="fixed bottom-6 right-6 z-50 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-5 py-3 rounded-2xl shadow-2xl font-bold text-xs flex items-center gap-2 animate-bounce">
@@ -731,6 +774,8 @@ function Dashboard({ user, onLogout }) {
                 event={activeEvent}
                 guests={guests}
                 onMarkSent={handleMarkSent}
+                bulkProgress={bulkProgress}
+                onBulkChanged={() => setBulkTick((t) => t + 1)}
             />
 
             {user?.role === 'admin' && (

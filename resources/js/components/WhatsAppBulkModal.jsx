@@ -3,7 +3,7 @@ import { MessageSquare, ExternalLink, Copy, Check, X, Filter, Send, Sparkles, Ch
 import ConfirmModal from './ConfirmModal';
 import { apiFetch } from '../api';
 
-export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMarkSent }) {
+export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMarkSent, bulkProgress, onBulkChanged }) {
     const [copiedId, setCopiedId] = useState(null);
     const [sentStatusFilter, setSentStatusFilter] = useState('not_sent'); // 'not_sent', 'all', 'sent'
     const [sendingAutoId, setSendingAutoId] = useState(null);
@@ -221,7 +221,22 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
         setIsLivePaused(prev => !prev);
     };
 
-    // Prompt to start live bulk
+    // Bulk send in the background on the server: pauses, daily quota and sending window are applied there,
+    // and it goes on with this window or the browser closed (progress: bulkProgress, polled by the panel)
+    const startServerBulk = async () => {
+        setErrorMessage(null);
+        const { ok, json } = await apiFetch(`/api/events/${event.id}/send-bulk-queue`, {
+            method: 'POST',
+            body: JSON.stringify({ mode: 'invitation' }),
+        });
+        if (ok) {
+            setBulkQueued({ message: json?.message });
+            onBulkChanged && onBulkChanged();
+        } else {
+            setErrorMessage(json?.message || 'No se pudo programar el envío.');
+        }
+    };
+
     const handlePromptStartBulk = () => {
         const pendingList = guests.filter(g => g.whatsapp_status === 'not_sent');
         if (pendingList.length === 0) {
@@ -231,24 +246,26 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
 
         setConfirmModal({
             isOpen: true,
-            title: 'Iniciar Envío Masivo en Vivo',
-            message: `¿Deseas iniciar el envío automático a los ${pendingList.length} invitados pendientes? Verás el progreso en vivo en pantalla (enviando 1 por 1 con pausa de ${delaySeconds}s para proteger tu número). Podés pausarlo o detenerlo en cualquier momento.`,
-            confirmText: `Iniciar Envío (${pendingList.length})`,
+            title: 'Iniciar envío masivo',
+            message: `Se van a enviar ${pendingList.length} invitaciones en segundo plano, de a una y con pausas para proteger el número. Podés cerrar esta ventana o el navegador: el envío sigue solo y ves el avance en el panel.`,
+            confirmText: `Iniciar envío (${pendingList.length})`,
             variant: 'info',
             onConfirm: () => {
                 setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                startLiveBulkSending();
+                startServerBulk();
             }
         });
     };
 
     const stopLegacyBulkQueue = async () => {
+        if (!window.confirm('¿Detener el envío? Los mensajes que todavía no salieron no se enviarán.')) return;
         try {
             await apiFetch(`/api/events/${event.id}/cancel-bulk-queue`, { method: 'POST' });
         } catch (e) {
             console.error(e);
         } finally {
             setBulkQueued(null);
+            onBulkChanged && onBulkChanged();
         }
     };
 
@@ -379,59 +396,54 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                             Aceptar
                         </button>
                     </div>
-                ) : bulkQueued ? (
+                ) : (bulkProgress?.active || bulkQueued) ? (
                     <div className="p-4 bg-emerald-500/10 dark:bg-emerald-950/40 border-b border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-                        <div className="space-y-1 text-xs">
+                        <div className="space-y-1 text-xs flex-1">
                             <div className="flex items-center gap-2 font-black text-emerald-700 dark:text-emerald-300">
                                 <Clock className="w-4 h-4 text-emerald-500" />
-                                <span>Envío Masivo Programado en Servidor</span>
+                                <span>
+                                    Envío en curso{bulkProgress?.active ? `: ${bulkProgress.sent} de ${bulkProgress.total} enviados` : ''}
+                                </span>
                             </div>
-                            <p className="text-zinc-600 dark:text-zinc-400">{bulkQueued.message}</p>
-                            <p className="text-zinc-500 dark:text-zinc-500 text-[11px]">¿Preferís enviarlo directamente en vivo para ver cada mensaje salir paso a paso?</p>
+                            {bulkProgress?.active && (
+                                <div className="h-1.5 rounded-full bg-emerald-200/60 dark:bg-emerald-900/50 overflow-hidden max-w-md">
+                                    <div className="h-full bg-emerald-500" style={{ width: `${Math.round((bulkProgress.sent / Math.max(1, bulkProgress.total)) * 100)}%` }} />
+                                </div>
+                            )}
+                            <p className="text-zinc-600 dark:text-zinc-400">
+                                {bulkProgress?.waiting || bulkQueued?.message || 'Los mensajes salen de a uno, con pausas para proteger el número.'}
+                            </p>
+                            <p className="text-zinc-500 text-[11px]">Podés cerrar esta ventana o el navegador: el envío sigue en el servidor.</p>
                         </div>
 
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={handlePromptStartBulk}
+                                onClick={onClose}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md shrink-0"
                             >
-                                <Play className="w-3.5 h-3.5 fill-white" />
-                                <span>Enviar en Vivo</span>
+                                <span>Seguir en segundo plano</span>
                             </button>
                             <button
                                 onClick={stopLegacyBulkQueue}
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-bold hover:bg-rose-100 dark:hover:bg-rose-950/50 hover:text-rose-600 transition-colors"
                             >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Descartar aviso</span>
+                                <Square className="w-3.5 h-3.5" />
+                                <span>Detener envío</span>
                             </button>
                         </div>
                     </div>
                 ) : (
                     <div className="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                <ShieldAlert className="w-4 h-4 text-emerald-500" />
-                                <span>Pausa anti-bloqueo:</span>
-                            </div>
-                            <select
-                                value={delaySeconds}
-                                onChange={(e) => setDelaySeconds(parseInt(e.target.value, 10))}
-                                className="text-xs font-bold rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white px-2.5 py-1 outline-none"
-                            >
-                                <option value={15}>15 seg (Recomendado y Seguro)</option>
-                                <option value={20}>20 seg (Alta protección anti-spam)</option>
-                                <option value={10}>10 seg (Rápido)</option>
-                                <option value={25}>25 seg (Máxima seguridad)</option>
-                            </select>
+                        <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                            <ShieldAlert className="w-4 h-4 text-emerald-500" />
+                            <span>Pausas anti-bloqueo automáticas y horario de envío. El envío sigue aunque cierres el navegador.</span>
                         </div>
 
                         {pendingGuestsCount > 0 ? (
                             <button
                                 onClick={handlePromptStartBulk}
-                                disabled={isLiveSending}
                                 className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-700 hover:to-green-600 text-white text-xs font-black shadow-lg shadow-green-500/20 transition-all active:scale-95"
-                                title={`Enviar automáticamente en vivo a los ${pendingGuestsCount} invitados pendientes`}
+                                title={`Enviar en segundo plano a los ${pendingGuestsCount} invitados pendientes`}
                             >
                                 <Play className="w-4 h-4 fill-white" />
                                 <span>Iniciar Envío Masivo ({pendingGuestsCount})</span>
