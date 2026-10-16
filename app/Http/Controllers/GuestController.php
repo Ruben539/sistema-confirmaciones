@@ -549,6 +549,8 @@ class GuestController extends Controller
             $counts[$action]++;
         }
 
+        $this->trackBulk($eventId, 'corrections', $guests->pluck('id')->all());
+
         $parts = [];
         if ($counts['reminder']) $parts[] = "{$counts['reminder']} recordatorios con los lugares corregidos";
         if ($counts['correction']) $parts[] = "{$counts['correction']} mensajes de disculpa con la cantidad correcta";
@@ -589,6 +591,7 @@ class GuestController extends Controller
         }
 
         $count = $guests->count();
+        $this->trackBulk($eventId, 'corrections', $guests->pluck('id')->all());
         return response()->json([
             'message' => $count === 1
                 ? "Corrección en camino a {$guests->first()->name}."
@@ -1286,14 +1289,7 @@ class GuestController extends Controller
 
         $count = $guests->count();
 
-        // Remembered so the panel can show the progress (the send goes on even with the browser closed)
-        $previous = Cache::get("bulk:{$eventId}");
-        $keepPrevious = $previous && ($previous['mode'] ?? null) === $mode && !empty($this->bulkProgress($eventId)['active']);
-        Cache::put("bulk:{$eventId}", [
-            'mode' => $mode,
-            'ids' => $keepPrevious ? array_values(array_unique(array_merge($previous['ids'], $guests->pluck('id')->all()))) : $guests->pluck('id')->all(),
-            'started' => $keepPrevious ? $previous['started'] : now()->timestamp,
-        ], now()->addDays(4));
+        $this->trackBulk($eventId, $mode, $guests->pluck('id')->all());
 
         // How many can go out today, by the event's channel (the bot's safe quota and/or the official limit)
         $channelMode = $event->whatsapp_channel ?: 'auto';
@@ -1354,6 +1350,19 @@ class GuestController extends Controller
         return response()->json($this->bulkProgress($eventId));
     }
 
+    // Remembers a background send so the panel can show its progress (it goes on with the browser closed).
+    // A new send of the same kind while one is running joins it; another kind starts a new count.
+    private function trackBulk($eventId, string $mode, array $ids): void
+    {
+        $previous = Cache::get("bulk:{$eventId}");
+        $join = $previous && ($previous['mode'] ?? null) === $mode && !empty($this->bulkProgress($eventId)['active']);
+        Cache::put("bulk:{$eventId}", [
+            'mode' => $mode,
+            'ids' => $join ? array_values(array_unique(array_merge($previous['ids'], $ids))) : array_values($ids),
+            'started' => $join ? $previous['started'] : now()->timestamp,
+        ], now()->addDays(4));
+    }
+
     private function bulkProgress($eventId): array
     {
         $bulk = Cache::get("bulk:{$eventId}");
@@ -1390,8 +1399,19 @@ class GuestController extends Controller
             }
         }
 
+        // When the next message may go out (the pause after the previous one, on the event's number)
+        $nextAt = null;
+        if ($left > 0) {
+            $event = Event::find($eventId);
+            $sessions = [WhatsAppThrottle::sessionForEvent($event), 'cloud'];
+            $next = collect($sessions)->map(fn ($sid) => (int) Cache::get("wa:{$sid}:next_at", 0))->filter()->min();
+            $nextAt = $next && $next > $now->timestamp ? \Carbon\Carbon::createFromTimestamp($next)->toIso8601String() : null;
+        }
+
         return [
             'active' => $left > 0,
+            'percent' => $total ? (int) round(($sent + $failed + $skipped) * 100 / $total) : 0,
+            'next_at' => $nextAt,
             'mode' => $bulk['mode'],
             'total' => $total,
             'sent' => $sent,

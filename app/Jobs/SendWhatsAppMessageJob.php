@@ -125,8 +125,10 @@ class SendWhatsAppMessageJob implements ShouldQueue
     private function alreadyHandled(Guest $guest): bool
     {
         if ($this->messageMode === 'correction') {
-            // Apology with the right number of people: only to guests who confirmed
-            return !in_array($guest->status, ['confirmed', 'attended'], true);
+            // Apology with the right number of people: only to guests who confirmed, and once (the same
+            // correction queued twice, e.g. the button pressed again, goes out one time)
+            return !in_array($guest->status, ['confirmed', 'attended'], true)
+                || Cache::has("count_fix_done:{$guest->id}");
         }
         if ($this->messageMode === 'pass') {
             // QR with a corrected amount: only while it is still pending and the guest is still confirmed
@@ -161,6 +163,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
                 $throttle->recordSent();
                 \App\Models\GuestMessage::logOutgoing($guest, $text);
                 \App\Models\GuestActivity::record($guest, 'count_corrected', "Se le envió la cantidad correcta ({$guest->passes} personas) con una disculpa");
+                Cache::put("count_fix_done:{$guest->id}", true, now()->addHours(12));
                 if ($guest->pending_correction_from !== null) {
                     $guest->update(['pending_correction_from' => null]);
                 }

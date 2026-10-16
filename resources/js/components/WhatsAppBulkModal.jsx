@@ -402,7 +402,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                             <div className="flex items-center gap-2 font-black text-emerald-700 dark:text-emerald-300">
                                 <Clock className="w-4 h-4 text-emerald-500" />
                                 <span>
-                                    Envío en curso{bulkProgress?.active ? `: ${bulkProgress.sent} de ${bulkProgress.total} enviados` : ''}
+                                    Envío en curso{bulkProgress?.active ? `: ${bulkProgress.sent} de ${bulkProgress.total} enviados (${bulkProgress.percent}%)` : ''}
                                 </span>
                             </div>
                             {bulkProgress?.active && (
@@ -411,7 +411,10 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                                 </div>
                             )}
                             <p className="text-zinc-600 dark:text-zinc-400">
-                                {bulkProgress?.waiting || bulkQueued?.message || 'Los mensajes salen de a uno, con pausas para proteger el número.'}
+                                {bulkProgress?.waiting
+                                    || (bulkProgress?.next_at ? `Próximo envío a las ${new Date(bulkProgress.next_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} (pausa anti-bloqueo entre mensajes).` : null)
+                                    || bulkQueued?.message
+                                    || 'Los mensajes salen de a uno, con pausas para proteger el número.'}
                             </p>
                             <p className="text-zinc-500 text-[11px]">Podés cerrar esta ventana o el navegador: el envío sigue en el servidor.</p>
                         </div>
