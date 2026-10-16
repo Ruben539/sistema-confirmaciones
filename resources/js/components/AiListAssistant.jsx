@@ -4,7 +4,7 @@ import { Upload, Download, Users, AlertCircle, CheckCircle2, X, FileSpreadsheet,
 import { apiFetch } from '../api';
 import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint, fillGenericCompanions } from '../guestSheet';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint, fillGenericCompanions, filterConditionalTags, adaptSinglePluralPhrases } from '../guestSheet';
 
 export default function AiListAssistant({ event, showToast, onImported }) {
     const [file, setFile] = useState(null);
@@ -125,7 +125,17 @@ export default function AiListAssistant({ event, showToast, onImported }) {
     };
 
     const formatWhatsAppInvitation = (row) => {
-        const rawTemplate = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+        const total = Math.max(1, toInt(row.total, 1));
+        const isSingle = total === 1;
+        let rawTemplate = isSingle && event?.message_template_single
+            ? event.message_template_single
+            : (event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir");
+
+        rawTemplate = filterConditionalTags(rawTemplate, total);
+        if (isSingle && !event?.message_template_single) {
+            rawTemplate = adaptSinglePluralPhrases(rawTemplate, 1);
+        }
+
         const guestName = cleanGuestName(row.name) || 'Invitado';
         const coupleName = event?.couple_names || event?.title || 'nosotros';
 
@@ -139,7 +149,6 @@ export default function AiListAssistant({ event, showToast, onImported }) {
             }
         }
 
-        const total = Math.max(1, toInt(row.total, 1));
         const placesText = total === 1 ? '1 persona' : `${total} personas`;
 
         let text = rawTemplate;

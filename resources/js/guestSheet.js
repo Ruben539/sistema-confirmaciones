@@ -28,6 +28,27 @@ export const emptySheetRow = () => Object.fromEntries(SHEET_COLUMNS.map((c) => [
 
 export const isFilledRow = (row) => SHEET_COLUMNS.some((c) => c.type !== 'select' && String(row[c.key] || '').trim());
 
+export const filterConditionalTags = (text, places) => {
+    let s = String(text || '');
+    if (places === 1) {
+        s = s.replace(/\[(?:grupo|grupal|familia)\][\s\S]*?\[\/(?:grupo|grupal|familia)\]/gi, '');
+        s = s.replace(/\[individual\]([\s\S]*?)\[\/individual\]/gi, '$1');
+    } else {
+        s = s.replace(/\[individual\][\s\S]*?\[\/individual\]/gi, '');
+        s = s.replace(/\[(?:grupo|grupal|familia)\]([\s\S]*?)\[\/(?:grupo|grupal|familia)\]/gi, '$1');
+    }
+    return s.trim();
+};
+
+export const adaptSinglePluralPhrases = (text, places = 1) => {
+    if (places !== 1) return String(text || '');
+    let s = String(text || '');
+    s = s.replace(/\s*e\s+indicarnos\s+cu[aá]ntas\s+(?:de\s+las\s+)?personas\s+(?:incluidas\s+en\s+su\s+invitaci[oó]n\s+)?asistir[aá]n\s*,?\s*/gi, ' ');
+    s = s.replace(/\s*recibirlos\s+de\s+la\s+mejor\s+manera/gi, ' recibirte de la mejor manera');
+    s = s.replace(/compartir\s+con\s+ustedes/gi, 'compartir contigo');
+    return s;
+};
+
 // Problems of each row ({ [index]: { [key]: message } }), checked live while editing
 export const validateSheet = (rows) => {
     const result = {};

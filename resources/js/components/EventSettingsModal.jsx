@@ -4,6 +4,7 @@ import GoogleLocationPicker from './GoogleLocationPicker';
 import DateInput from './DateInput';
 import { getPlan, planIncludesDigitalInvitation } from '../plans';
 import { apiFetch } from '../api';
+import { filterConditionalTags, adaptSinglePluralPhrases } from '../guestSheet';
 
 export default function EventSettingsModal({ isOpen, onClose, event, user, onSave }) {
     const [formData, setFormData] = useState({
@@ -15,10 +16,12 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
         reminder_max_count: 3,
         location: '',
         message_template: '',
+        message_template_single: '',
         whatsapp_channel: 'auto',
         user_id: '',
         digital_invitation_addon: false,
     });
+    const [templateTab, setTemplateTab] = useState('single'); // 'single' | 'group'
     const [planners, setPlanners] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -42,6 +45,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                 reminder_max_count: event.reminder_max_count ?? 3,
                 location: event.location || '',
                 message_template: event.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
+                message_template_single: event.message_template_single || '',
                 whatsapp_channel: event.whatsapp_channel || 'auto',
                 user_id: event.user_id || '',
                 digital_invitation_addon: Boolean(event.digital_invitation_addon),
@@ -161,10 +165,15 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
     };
 
     // Formatted preview message
-    const previewMessageText = (formData.message_template || '')
-        .replace(/\{nombre\}/g, 'Juan Pérez')
+    const isSinglePreview = templateTab === 'single';
+    const previewRaw = isSinglePreview
+        ? (formData.message_template_single || adaptSinglePluralPhrases(formData.message_template, 1))
+        : (formData.message_template || '');
+
+    const previewMessageText = filterConditionalTags(previewRaw, isSinglePreview ? 1 : 3)
+        .replace(/\{nombre\}/g, isSinglePreview ? 'Mirtha Noguera' : 'Familia Gómez')
         .replace(/\{pareja\}/g, formData.couple_names || formData.title || 'nosotros')
-        .replace(/\{lugares\}/g, '3 personas')
+        .replace(/\{lugares\}/g, isSinglePreview ? '1 persona' : '3 personas')
         .replace(/\{lugar\}/g, formData.location || 'Salón de Eventos')
         .replace(/\{link\}/g, `${window.location.origin}/confirmar/ejemplo`);
 
@@ -461,21 +470,78 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
 
                         {/* WhatsApp Template */}
                         <div className="pt-2">
-                            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center justify-between">
-                                <span className="flex items-center gap-1">
-                                    <MessageSquare className="w-3.5 h-3.5 text-green-500" /> Plantilla de Mensaje de WhatsApp
-                                </span>
-                                <span className="text-[11px] text-zinc-400 font-normal">Variables: &#123;nombre&#125;, &#123;pareja&#125;, &#123;lugar&#125;, &#123;lugares&#125;, &#123;link&#125;</span>
-                            </label>
-                            <textarea
-                                rows={5}
-                                value={formData.message_template}
-                                onChange={(e) => setFormData({ ...formData, message_template: e.target.value })}
-                                className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-rose-500 outline-none leading-relaxed"
-                            />
-                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                                En invitaciones de 2 o más personas se agrega solo «🎟️ Lugares reservados: 5 personas» antes de «Respondé…». Usá &#123;lugares&#125; si querés ubicarlo vos.
-                            </p>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                                <label className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                                    <MessageSquare className="w-4 h-4 text-emerald-500" /> Plantillas de Mensaje de WhatsApp
+                                </label>
+                                {/* Segmented Tab Selector */}
+                                <div className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-xs font-bold border border-zinc-200/60 dark:border-zinc-700/60">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTemplateTab('single')}
+                                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${templateTab === 'single' ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}
+                                    >
+                                        <span>👤 1 Persona</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTemplateTab('group')}
+                                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${templateTab === 'group' ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}
+                                    >
+                                        <span>👥 2+ Personas (Grupos)</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {templateTab === 'single' ? (
+                                <div className="space-y-1.5 p-3.5 rounded-2xl bg-emerald-50/40 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                                            Plantilla para Invitación Individual (1 persona)
+                                        </span>
+                                        {!formData.message_template_single && formData.message_template && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const adapted = adaptSinglePluralPhrases(formData.message_template, 1);
+                                                    setFormData({ ...formData, message_template_single: adapted });
+                                                }}
+                                                className="text-[11px] text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-semibold underline"
+                                            >
+                                                Copiar y adaptar desde plantilla grupal
+                                            </button>
+                                        )}
+                                    </div>
+                                    <textarea
+                                        rows={6}
+                                        value={formData.message_template_single}
+                                        placeholder={adaptSinglePluralPhrases(formData.message_template, 1) || "Escribí aquí el mensaje personalizado para 1 persona..."}
+                                        onChange={(e) => setFormData({ ...formData, message_template_single: e.target.value })}
+                                        className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-emerald-500 outline-none leading-relaxed"
+                                    />
+                                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                        💡 Se envía automáticamente cuando la invitación es para <strong>1 persona</strong>. Si lo dejás en blanco, el sistema adaptará de forma inteligente la plantilla grupal a singular.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">
+                                            Plantilla para Invitaciones Grupales o Familias (2 o más personas)
+                                        </span>
+                                        <span className="text-[11px] text-zinc-400 font-normal">Variables: &#123;nombre&#125;, &#123;pareja&#125;, &#123;lugares&#125;, &#123;lugar&#125;</span>
+                                    </div>
+                                    <textarea
+                                        rows={6}
+                                        value={formData.message_template}
+                                        onChange={(e) => setFormData({ ...formData, message_template: e.target.value })}
+                                        className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-emerald-500 outline-none leading-relaxed"
+                                    />
+                                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                        💡 Se envía a invitaciones de <strong>2 o más personas</strong>. Agrega automáticamente «🎟️ Lugares reservados: 5 personas» antes de «Respondé…» si no usaste &#123;lugares&#125;.
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Interactive WhatsApp Live Preview */}

@@ -29,13 +29,27 @@ class WhatsAppMessage
         $event = $guest->event;
         $greeting = self::GREETINGS[array_rand(self::GREETINGS)];
 
+        $places = max(1, (int) $guest->passes);
+        $placesText = $places > 1 ? "{$places} personas" : '1 persona';
+
         if ($mode === 'reminder') {
             $deadline = $event->rsvpDeadline();
             $template = GuestMessages::reminder($event, $greeting, $deadline ? $deadline->locale('es')->isoFormat('D [de] MMMM') : '');
         } else {
-            $template = $event->message_template ?? "{$greeting} Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+            if ($places === 1 && !empty($event->message_template_single)) {
+                $template = $event->message_template_single;
+            } else {
+                $template = $event->message_template;
+            }
+            if (!$template) {
+                $template = "{$greeting} Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+            }
             if (!str_contains($template, '{nombre}')) {
                 $template = "{$greeting}\n" . $template;
+            }
+            $template = self::filterConditionalTags($template, $places);
+            if ($places === 1 && empty($event->message_template_single)) {
+                $template = self::adaptSinglePluralPhrases($template, 1);
             }
         }
 
@@ -47,8 +61,6 @@ class WhatsAppMessage
         }
 
         // Group invitation: say how many places are reserved (custom templates can place it with {lugares})
-        $places = max(1, (int) $guest->passes);
-        $placesText = $places > 1 ? "{$places} personas" : '1 persona';
         // Reminders always say it: it may come after correcting how many people the invitation is for
         if (($places > 1 || $mode === 'reminder') && !str_contains($template, '{lugares}')) {
             $line = "🎟️ Lugares reservados: *{lugares}*";
@@ -62,6 +74,28 @@ class WhatsAppMessage
             [$guest->name, $event->couple_names ?? $event->title, $formattedLocation, url('/confirmar/' . $guest->token), $placesText],
             $template
         );
+    }
+
+    public static function filterConditionalTags(string $text, int $places): string
+    {
+        if ($places === 1) {
+            $text = preg_replace('/\[(?:grupo|grupal|familia)\][\s\S]*?\[\/(?:grupo|grupal|familia)\]/iu', '', $text);
+            $text = preg_replace('/\[individual\]([\s\S]*?)\[\/individual\]/iu', '$1', $text);
+        } else {
+            $text = preg_replace('/\[individual\][\s\S]*?\[\/individual\]/iu', '', $text);
+            $text = preg_replace('/\[(?:grupo|grupal|familia)\]([\s\S]*?)\[\/(?:grupo|grupal|familia)\]/iu', '$1', $text);
+        }
+        return trim($text);
+    }
+
+    public static function adaptSinglePluralPhrases(string $text, int $places): string
+    {
+        if ($places === 1) {
+            $text = preg_replace('/\s*e\s+indicarnos\s+cu[aá]ntas\s+(?:de\s+las\s+)?personas\s+(?:incluidas\s+en\s+su\s+invitaci[oó]n\s+)?asistir[aá]n\s*,?\s*/iu', ' ', $text);
+            $text = preg_replace('/\s*recibirlos\s+de\s+la\s+mejor\s+manera/iu', ' recibirte de la mejor manera', $text);
+            $text = preg_replace('/compartir\s+con\s+ustedes/iu', 'compartir contigo', $text);
+        }
+        return $text;
     }
 
     private static function deadlineText($event): string

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, ExternalLink, Copy, Check, X, Filter, Send, Sparkles, CheckCircle2, Play, Square, ShieldAlert, Clock, Pause, AlertCircle, RefreshCw } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 import { apiFetch } from '../api';
+import { filterConditionalTags, adaptSinglePluralPhrases } from '../guestSheet';
 
 export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMarkSent, bulkProgress, onBulkChanged }) {
     const [copiedId, setCopiedId] = useState(null);
@@ -54,12 +55,20 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
     };
 
     const formatMessage = (guest) => {
-        const template = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+        const places = Math.max(1, guest.passes || 1);
+        const isSingle = places === 1;
+        let template = isSingle && event?.message_template_single
+            ? event.message_template_single
+            : (event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir");
+
+        template = filterConditionalTags(template, places);
+        if (isSingle && !event?.message_template_single) {
+            template = adaptSinglePluralPhrases(template, 1);
+        }
+
         const rsvpUrl = `${window.location.origin}/confirmar/${guest.token}`;
         const formattedLocation = formatLocation(event?.location);
 
-        // Same rule as the server: groups get "Lugares reservados" before "Respondé..." (or where {lugares} is)
-        const places = Math.max(1, guest.passes || 1);
         const placesText = places === 1 ? '1 persona' : `${places} personas`;
         let text = template;
         if (places > 1 && !text.includes('{lugares}')) {

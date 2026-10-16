@@ -64,6 +64,7 @@ class EventController extends Controller
             'location' => 'nullable|string|max:255',
             'user_id' => 'required|exists:users,id', // Assigned Wedding Planner
             'message_template' => 'nullable|string',
+            'message_template_single' => 'nullable|string',
             'is_enabled' => 'nullable|boolean',
             'plan_type' => 'nullable|string|in:' . Event::planKeys(),
             'max_guests' => 'nullable|integer|min:1|required_if:plan_type,custom',
@@ -90,6 +91,7 @@ class EventController extends Controller
             'location' => $validated['location'] ?? null,
             'user_id' => $validated['user_id'],
             'message_template' => $validated['message_template'] ?? "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir",
+            'message_template_single' => $validated['message_template_single'] ?? null,
             'status' => 'active',
             'is_enabled' => $validated['is_enabled'] ?? true,
             'plan_type' => $planType,
@@ -129,6 +131,7 @@ class EventController extends Controller
             'location' => 'nullable|string|max:255',
             'user_id' => 'nullable|exists:users,id',
             'message_template' => 'nullable|string',
+            'message_template_single' => 'nullable|string',
             'whatsapp_channel' => 'nullable|in:auto,baileys,cloud',
             'status' => 'nullable|in:active,completed,archived',
             'is_enabled' => 'nullable|boolean',
@@ -164,7 +167,7 @@ class EventController extends Controller
             // "Configurar Evento" (datos, plazo de confirmación y recordatorios) es exclusivo del admin;
             // la planner solo edita la invitación digital (música, vestimenta, regalos, estilos)
             foreach ([
-                'title', 'event_type', 'couple_names', 'event_date', 'location', 'message_template', 'whatsapp_channel', 'status',
+                'title', 'event_type', 'couple_names', 'event_date', 'location', 'message_template', 'message_template_single', 'whatsapp_channel', 'status',
                 'rsvp_deadline_days', 'rsvp_deadline_date', 'auto_decline_expired',
                 'reminder_interval_days', 'reminder_max_count',
             ] as $adminOnlyField) {
