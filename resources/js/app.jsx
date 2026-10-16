@@ -324,6 +324,31 @@ function Dashboard({ user, onLogout }) {
         });
     };
 
+    // The same people loaded once per phone: ONE invitation (messages once; any of the numbers is recognized)
+    const handleMergeGuests = async (list, onDone) => {
+        if (!activeEvent || list.length < 2) return;
+        const totals = list.map((g) => Math.max(1, g.passes || 1));
+        const suggested = totals.every((n) => n === totals[0]) && totals[0] > 1 ? totals[0] : totals.reduce((a, b) => a + b, 0);
+        const holder = list.find((g) => ['confirmed', 'attended'].includes(g.status)) || list[0];
+        const answer = window.prompt(
+            `Unir en una sola invitación:\n${list.map((g) => `• ${g.name} (${g.phone}) — ${g.passes || 1}`).join('\n')}\n\nQueda a nombre de "${holder.name}" y los mensajes van solo a ${holder.phone}; los otros números se reconocen como la misma invitación.\n\n¿Para cuántas personas es en total?`,
+            String(suggested)
+        );
+        if (answer === null) return;
+        const total = parseInt(answer, 10);
+        if (!total || total < 1) {
+            showToast('Indicá una cantidad válida de personas.');
+            return;
+        }
+        const { json } = await apiFetch(`/api/events/${activeEvent.id}/guests/merge`, {
+            method: 'POST',
+            body: JSON.stringify({ guest_ids: [holder.id, ...list.filter((g) => g.id !== holder.id).map((g) => g.id)], total }),
+        });
+        showToast(json?.message || 'No se pudieron unir las invitaciones.');
+        onDone && onDone();
+        loadGuests(activeEvent.id);
+    };
+
     const handleRemindAllPending = () => {
         if (!activeEvent) return;
         const list = guests.filter((g) => g.status === 'pending' && g.whatsapp_status === 'sent' && g.phone);
@@ -633,6 +658,7 @@ function Dashboard({ user, onLogout }) {
                                     onRemindAllPending={handleRemindAllPending}
                                     onSendCorrections={handleSendCorrections}
                                     onSendCountCorrection={handleSendCountCorrection}
+                                    onMergeGuests={handleMergeGuests}
                                 />
                             </div>
                         )
@@ -745,6 +771,7 @@ function Dashboard({ user, onLogout }) {
                                         onRemindAllPending={handleRemindAllPending}
                                         onSendCorrections={handleSendCorrections}
                                         onSendCountCorrection={handleSendCountCorrection}
+                                        onMergeGuests={handleMergeGuests}
                                     />
                                 </>
                             )}

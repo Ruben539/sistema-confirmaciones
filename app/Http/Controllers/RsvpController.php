@@ -532,6 +532,13 @@ class RsvpController extends Controller
     {
         $event = $guest->event;
 
+        // Already answered (confirmed with menu, or declined): the automatic conversation is over. The bot
+        // doesn't answer anymore — people think a person is writing — and a person replies from "Mensajes"
+        if (($guest->conversation_state ?? null) === 'completed') {
+            $this->needsPerson = true;
+            return response()->json(['processed' => false, 'reason' => 'Conversation finished: a person answers from the panel']);
+        }
+
         if ($event && !$event->is_enabled) {
             return response()->json([
                 'processed' => false,
@@ -597,7 +604,7 @@ class RsvpController extends Controller
                 if ($people !== null) {
                     if ($people > (int) $guest->passes) {
                         $this->needsPerson = true;
-                        return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountTooMany($guest, $event)]);
+                        return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountReview($guest, $event)]);
                     }
                     if ($canChange) {
                         $this->applyHeadcount($guest, $people);
@@ -785,7 +792,7 @@ class RsvpController extends Controller
             if ($people !== null) {
                 if ($people > (int) $guest->passes) {
                     $this->needsPerson = true;
-                    return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountTooMany($guest, $event)]);
+                    return response()->json(['processed' => true, 'reason' => 'Headcount over invitation', 'reply' => GuestMessages::headcountReview($guest, $event)]);
                 }
                 $this->applyHeadcount($guest, $people);
                 return response()->json(['processed' => true, 'reason' => 'Headcount updated in menu step', 'reply' => GuestMessages::headcountSaved($guest, $people)]);
@@ -860,7 +867,9 @@ class RsvpController extends Controller
                 $q->where('phone', 'LIKE', "%{$cleanPhone}%")
                   ->orWhere('phone', 'LIKE', "%{$last8}%")
                   ->orWhere('phone', 'LIKE', "%{$rawDigits}%")
-                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$cleanPhone}%"]);
+                  ->orWhereRaw("REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', '') LIKE ?", ["%{$cleanPhone}%"])
+                  // Another number of a shared invitation (couple / family): the same invitation
+                  ->orWhere('alt_phones', 'LIKE', "%{$cleanPhone}%");
             })
             ->orderBy('created_at', 'desc')
             ->first();

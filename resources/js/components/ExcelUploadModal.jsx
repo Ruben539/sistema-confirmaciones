@@ -32,13 +32,15 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const [parsedData, setParsedData] = useState([]);
     const [rawRows, setRawRows] = useState([]);
     const [headers, setHeaders] = useState([]);
-    const [mapping, setMapping] = useState({ name: '', last_name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
+    const [mapping, setMapping] = useState({ name: '', last_name: '', phone: '', phone2: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' });
     // How to read each list: the amount column as total or as companions, and rows without phone under a guest
-    const [options, setOptions] = useState({ countMode: 'companions', joinOrphans: true });
+    const [options, setOptions] = useState({ countMode: 'companions', joinOrphans: true, mergeSamePeople: true });
     // After importing a corrected list: guests already contacted whose number of people changed
     const [corrections, setCorrections] = useState(null);
     // Merged cells of the sheet (e.g. one phone cell merged over the rows of a whole family)
     const [merges, setMerges] = useState([]);
+    // Preview: how the list ends up / what has to be fixed / the rows as they came
+    const [previewTab, setPreviewTab] = useState('result');
     const [sendingCorrections, setSendingCorrections] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -65,6 +67,13 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         onImportSuccess(json?.message || 'No se pudieron programar las correcciones.');
         closeCorrections();
     };
+
+    // Everything that doesn't add up in the file: it can't be imported until the Excel is fixed
+    const excelRow = (r) => (r.sheetRow !== undefined ? r.sheetRow + 1 : r.id + 2);
+    const issues = parsedData.filter((r) => r.warnings.length > 0 && !r.attachedTo);
+    const invitations = parsedData.filter((r) => r.isValid);
+    const templateHeaders = ['nombre completo', 'teléfono (whatsapp)', 'número de mesa', 'tipo de invitado', 'total personas', 'acompañantes niños', 'nombres acompañantes', 'restricción alimentaria', 'familia / notas'];
+    const isTemplateFormat = headers.length > 0 && templateHeaders.every((h) => headers.map((x) => x.toLowerCase()).includes(h));
 
     if (corrections) {
         const reminders = corrections.filter((c) => c.action === 'reminder').length;
@@ -178,7 +187,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 setRawRows(fileRows);
 
                 // Auto-detect column mapping
-                const autoMapping = { name: '', last_name: '', phone: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
+                const autoMapping = { name: '', last_name: '', phone: '', phone2: '', table_number: '', category: '', total_people: '', companion_adults: '', companion_children: '', companions: '', dietary: '', notes: '' };
 
                 fileHeaders.forEach((h, index) => {
                     const lower = h.toLowerCase();
@@ -197,6 +206,11 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                     // Before the name rule: "Cantidad de invitados" would otherwise be taken as the name
                     if (!autoMapping.total_people && /(cantidad|total|personas|pases|lugares|cupo)/.test(lower) && !lower.includes('mesa')) {
                         autoMapping.total_people = h;
+                        return;
+                    }
+                    // A second phone column ("Teléfono 2", "Otros teléfonos"): other numbers of the same invitation
+                    if (autoMapping.phone && !autoMapping.phone2 && /(tel[eé]f|celular|whatsapp|m[oó]vil)/.test(lower)) {
+                        autoMapping.phone2 = h;
                         return;
                     }
                     // Separate surname column ("Nombre" + "Apellido"); "Nombre y Apellido" is a single name column
@@ -225,7 +239,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
                 // An amount column under "Acompañantes" that never has 0 is usually the TOTAL of each
                 // invitation (1 = the guest alone), as many planners fill it
-                const autoOptions = { countMode: 'companions', joinOrphans: true };
+                const autoOptions = { countMode: 'companions', joinOrphans: true, mergeSamePeople: true };
                 if (!autoMapping.total_people && autoMapping.companion_adults) {
                     const idx = fileHeaders.indexOf(autoMapping.companion_adults);
                     const values = fileRows
@@ -250,6 +264,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const buildParsedList = (currentHeaders, currentRows, currentMap, currentOptions = options, currentMerges = merges) => {
         const nameIdx = currentHeaders.indexOf(currentMap.name);
         const lastNameIdx = currentHeaders.indexOf(currentMap.last_name);
+        const phone2Idx = currentHeaders.indexOf(currentMap.phone2);
         const phoneIdx = currentHeaders.indexOf(currentMap.phone);
         const tableIdx = currentHeaders.indexOf(currentMap.table_number);
         const categoryIdx = currentHeaders.indexOf(currentMap.category);
@@ -334,6 +349,9 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                 // The amount of people comes from a total: rows below can only fill those places
                 hasTotal: Boolean(totalPeople),
                 ownCount: totalPeople || null,
+                altPhones: phone2Idx !== -1
+                    ? String(row[phone2Idx] || '').split(/[,;/]/).map((p) => p.replace(/[\s\-()]/g, '')).filter((p) => p.length >= 6)
+                    : [],
                 members: [],
                 attachedTo: null,
                 warnings: [],
@@ -397,21 +415,91 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
             }
             if (!row.phone) row.warnings.push('Sin teléfono: no se puede invitar por WhatsApp.');
         });
+        list.forEach((row) => {
+            if (row.isValid || row.attachedTo || row.warnings.length) return;
+            if (!row.name && row.phone) row.warnings.push('Falta el nombre del invitado.');
+            else if (row.name && row.phone && row.phone.replace(/[^\d]/g, '').length < 6) row.warnings.push('Teléfono incompleto.');
+            else row.warnings.push('Fila incompleta: falta el nombre o el teléfono.');
+        });
 
-        // Same name with another phone (often the same invitation twice) / same phone twice
+        // The same phone in several rows (a family member per row with the holder's number): ONE invitation
+        // for that number, the other rows are its companions. Never several invitations for one number.
+        {
+            const phoneKeyOf = (p) => String(p || '').replace(/[^\d]/g, '').slice(-9);
+            const byPhone = {};
+            list.filter((r) => r.isValid).forEach((row) => {
+                const key = phoneKeyOf(row.phone);
+                const holder = byPhone[key];
+                if (!holder) {
+                    byPhone[key] = row;
+                    return;
+                }
+                holder.phoneGroups = holder.phoneGroups || [holder.passes];
+                holder.phoneGroups.push(row.passes);
+                const normName = (n) => String(n || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                const sameName = normName(row.name) === normName(holder.name);
+                // The exact same row twice: nothing to add. Otherwise each row counts its own people
+                const total = sameName && row.passes === holder.passes
+                    ? holder.passes
+                    : holder.phoneGroups.reduce((x, y) => x + y, 0);
+                holder.passes = total;
+                holder.companion_adults = Math.max(0, total - 1 - (holder.companion_children || 0));
+                holder.hasTotal = true;
+                if (!sameName && holder.members.length < total - 1) {
+                    holder.members.push({ name: row.name, category: row.children ? 'child' : row.youth ? 'youth' : 'adult' });
+                }
+                holder.members.push(...row.members.slice(0, Math.max(0, total - 1 - holder.members.length)));
+                row.isValid = false;
+                row.attachedTo = holder.name;
+                row.samePhone = true;
+            });
+        }
+
+        // The same people loaded in several rows, each with its own phone ("Nadia Mereles y Enrique Egusquiza"
+        // twice, or "Hector Servian y Karen Bobadilla" + "Karen Bobadilla"): ONE invitation. The row with the
+        // whole group's name keeps it, the other rows become its companions and their phones its other numbers.
+        if (currentOptions.mergeSamePeople) {
+            const norm = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+            const people = (n) => norm(n).split(/\s+(?:y|e)\s+|\s*[,/&+]\s*/).map((p) => p.trim()).filter(Boolean);
+            const samePeople = (a, b) => norm(a.name) === norm(b.name) || people(a.name).includes(norm(b.name)) || people(b.name).includes(norm(a.name));
+            const phoneKey = (p) => String(p || '').replace(/[^\d]/g, '').slice(-9);
+            const valid = list.filter((r) => r.isValid);
+            for (let i = 0; i < valid.length; i++) {
+                for (let j = i + 1; j < valid.length; j++) {
+                    const a = valid[i];
+                    const b = valid[j];
+                    if (a.attachedTo || b.attachedTo || phoneKey(a.phone) === phoneKey(b.phone) || !samePeople(a, b)) continue;
+                    // The one named after the whole group keeps the invitation
+                    const [holder, other] = people(b.name).length > people(a.name).length ? [b, a] : [a, b];
+                    holder.groups = holder.groups || [holder.passes];
+                    holder.groups.push(other.passes);
+                    // Same amount in every row (e.g. 2 and 2): the same invitation repeated. Otherwise each row
+                    // counts its own people (1 + 1 = 2)
+                    const allEqual = holder.groups.every((n) => n === holder.groups[0]);
+                    const total = allEqual && holder.groups[0] > 1 ? holder.groups[0] : holder.groups.reduce((x, y) => x + y, 0);
+                    holder.passes = total;
+                    holder.companion_adults = Math.max(0, total - 1 - (holder.companion_children || 0));
+                    holder.hasTotal = true;
+                    holder.altPhones = [...(holder.altPhones || []), other.phone, ...(other.altPhones || [])];
+                    if (norm(other.name) !== norm(holder.name) && holder.members.length < total - 1) {
+                        holder.members.push({ name: other.name, category: other.children ? 'child' : other.youth ? 'youth' : 'adult' });
+                    }
+                    holder.members.push(...other.members.slice(0, Math.max(0, total - 1 - holder.members.length)));
+                    other.isValid = false;
+                    other.attachedTo = holder.name;
+                    other.otherPhone = true;
+                }
+            }
+        }
+
+        // Same name with another phone that wasn't joined (option off): warn, it may be the same invitation
         const byName = {};
-        const byPhone = {};
         list.filter((r) => r.isValid).forEach((r) => {
             const nameKey = r.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
-            const phoneKey = r.phone.replace(/[^\d]/g, '').slice(-9);
             (byName[nameKey] = byName[nameKey] || []).push(r);
-            (byPhone[phoneKey] = byPhone[phoneKey] || []).push(r);
         });
         Object.values(byName).filter((rows) => rows.length > 1).forEach((rows) => rows.forEach((r) => {
             r.warnings.push(`Nombre repetido (${rows.length} veces con distinto teléfono): verificá que no sea la misma invitación.`);
-        }));
-        Object.values(byPhone).filter((rows) => rows.length > 1).forEach((rows) => rows.slice(1).forEach((r) => {
-            r.warnings.push('Teléfono repetido: se importa una sola vez.');
         }));
 
         list.forEach((r) => {
@@ -446,6 +534,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         const rows = valid.map((r) => ({
             'Nombre Completo': r.name,
             'Teléfono (WhatsApp)': normalizePhone(r.phone),
+            'Otros Teléfonos': (r.altPhones || []).map(normalizePhone).join(', '),
             'Número de Mesa': r.table_number || '',
             'Tipo de Invitado': r.categoryLabel,
             'Total Personas': r.passes,
@@ -465,7 +554,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
         const workbook = XLSX.utils.book_new();
         const sheet = XLSX.utils.json_to_sheet(rows);
-        sheet['!cols'] = [30, 18, 16, 16, 14, 18, 40, 24, 24].map((wch) => ({ wch }));
+        sheet['!cols'] = [30, 18, 18, 16, 16, 14, 18, 40, 24, 24].map((wch) => ({ wch }));
         XLSX.utils.book_append_sheet(workbook, sheet, 'Invitados');
         if (review.length) {
             const reviewSheet = XLSX.utils.json_to_sheet(review);
@@ -492,6 +581,10 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     };
 
     const handleSubmitImport = async () => {
+        if (parsedData.some((r) => r.warnings.length > 0 && !r.attachedTo)) {
+            setError('El Excel tiene observaciones sin resolver. Corregilas (podés descargar el Excel corregido y ver la hoja «Para revisar») y volvé a subirlo.');
+            return;
+        }
         const validGuests = parsedData.filter(g => g.isValid);
         if (validGuests.length === 0) {
             setError('No hay invitados válidos para importar. Revisa el mapeo de columnas.');
@@ -514,6 +607,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                         companion_children: g.companion_children,
                         companions: g.companions,
                         members: g.members,
+                        alt_phones: g.altPhones && g.altPhones.length ? g.altPhones : undefined,
                         dietary_restrictions: g.dietary_restrictions,
                         notes: g.notes
                     }))
@@ -753,6 +847,18 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                     </div>
 
                                     <div>
+                                        <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Otro teléfono (misma invitación)</label>
+                                        <select
+                                            value={mapping.phone2}
+                                            onChange={(e) => handleMappingChange('phone2', e.target.value)}
+                                            className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 font-medium"
+                                        >
+                                            <option value="">Ninguna</option>
+                                            {headers.map((h, i) => <option key={i} value={h}>{h}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div>
                                         <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">Nº de Mesa (Recepción)</label>
                                         <select
                                             value={mapping.table_number}
@@ -885,6 +991,10 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                         ) : null}
 
                                         <label className="flex items-start gap-2 cursor-pointer">
+                                            <input type="checkbox" className="mt-0.5" checked={options.mergeSamePeople} onChange={(e) => changeOptions({ mergeSamePeople: e.target.checked })} />
+                                            <span>Las <strong>mismas personas en varias filas</strong> con distinto teléfono (ej. «Nadia y Enrique» dos veces, o «Hector y Karen» + «Karen») son <strong>una sola invitación</strong>: se envía una vez y cualquiera de sus números se reconoce.</span>
+                                        </label>
+                                        <label className="flex items-start gap-2 cursor-pointer">
                                             <input type="checkbox" className="mt-0.5" checked={options.joinOrphans} onChange={(e) => changeOptions({ joinOrphans: e.target.checked })} />
                                             <span>Las filas <strong>sin teléfono</strong> debajo de un invitado son <strong>sus acompañantes</strong> (se cargan con su nombre en esa invitación).</span>
                                         </label>
@@ -892,25 +1002,104 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                 );
                             })()}
 
-                            {/* Data Preview Table */}
+                            {/* How the list ends up: invitations, what to fix, and the rows as they came */}
+                            {!isTemplateFormat && (
+                                <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900/50 text-[11px] text-sky-800 dark:text-sky-200">
+                                    Este archivo <strong>no tiene el formato de la plantilla</strong>. Revisá en <strong>Cómo queda</strong> que cada invitación sea correcta, o descargá el <strong>Excel corregido</strong>, revisalo y subí ese.
+                                </div>
+                            )}
+
                             <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
-                                <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 font-bold text-xs text-zinc-700 dark:text-zinc-300 flex justify-between items-center">
-                                    <span>Vista previa de datos ({parsedData.length} filas)</span>
-                                    <div className="flex items-center gap-3">
-                                        <span className="hidden md:inline text-[11px] text-zinc-500 font-normal">Verificá que el nombre, teléfono, mesa y tipo de invitado estén correctos</span>
-                                        <button
-                                            type="button"
-                                            onClick={handleDownloadCorrected}
-                                            disabled={!parsedData.some((r) => r.isValid)}
-                                            title="La lista en el formato de la plantilla: columnas en orden, totales, teléfonos 595…, acompañantes juntos y nombres limpios"
-                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold disabled:opacity-50"
-                                        >
-                                            <Download className="w-3.5 h-3.5" /> Descargar Excel corregido
-                                        </button>
+                                <div className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/80 flex flex-wrap justify-between items-center gap-2">
+                                    <div className="flex gap-1 text-xs font-bold">
+                                        {[
+                                            ['result', `Cómo queda (${invitations.length})`],
+                                            ['issues', `Observaciones (${issues.length})`],
+                                            ['rows', `Filas del Excel (${parsedData.length})`],
+                                        ].map(([id, label]) => (
+                                            <button
+                                                key={id}
+                                                type="button"
+                                                onClick={() => setPreviewTab(id)}
+                                                className={`px-3 py-1.5 rounded-xl ${previewTab === id
+                                                    ? (id === 'issues' && issues.length ? 'bg-rose-600 text-white' : 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900')
+                                                    : (id === 'issues' && issues.length ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/30' : 'text-zinc-600 dark:text-zinc-300')}`}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadCorrected}
+                                        disabled={!parsedData.some((r) => r.isValid)}
+                                        title="La lista en el formato de la plantilla, con una hoja «Para revisar» con las observaciones"
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold disabled:opacity-50"
+                                    >
+                                        <Download className="w-3.5 h-3.5" /> Descargar Excel corregido
+                                    </button>
                                 </div>
 
-                                <div className="max-h-60 overflow-y-auto">
+                                <div className="max-h-[50vh] overflow-y-auto">
+                                    {previewTab === 'result' && (
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="bg-zinc-100/70 dark:bg-zinc-800 text-zinc-500 uppercase tracking-wider sticky top-0">
+                                                <tr>
+                                                    <th className="p-3">#</th>
+                                                    <th className="p-3">Invitación</th>
+                                                    <th className="p-3">Teléfono</th>
+                                                    <th className="p-3 text-center">Personas</th>
+                                                    <th className="p-3">Acompañantes</th>
+                                                    <th className="p-3">Mesa</th>
+                                                    <th className="p-3">Dieta / Notas</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                                {invitations.map((g, i) => (
+                                                    <tr key={g.id} className={g.warnings.length ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'bg-white dark:bg-zinc-900'}>
+                                                        <td className="p-3 text-zinc-400">{i + 1}</td>
+                                                        <td className="p-3">
+                                                            <div className="font-bold text-zinc-900 dark:text-white">{g.name}</div>
+                                                            <div className="text-[10px] text-zinc-500">{g.categoryLabel} · fila {excelRow(g)}</div>
+                                                            {g.warnings.map((w, k) => (
+                                                                <div key={k} className="text-[10px] font-semibold text-amber-700 dark:text-amber-400">⚠️ {w}</div>
+                                                            ))}
+                                                        </td>
+                                                        <td className="p-3 font-mono text-zinc-600 dark:text-zinc-400">
+                                                            {normalizePhone(g.phone)}
+                                                            {(g.altPhones || []).map((p) => <div key={p} className="text-[10px] text-zinc-400">+ {normalizePhone(p)}</div>)}
+                                                        </td>
+                                                        <td className="p-3 text-center text-base font-black text-zinc-900 dark:text-white">{g.passes}</td>
+                                                        <td className="p-3 text-zinc-600 dark:text-zinc-300">
+                                                            {g.members.length ? g.members.map((m) => m.name).join(', ') : (g.companions || (g.passes > 1 ? <span className="text-zinc-400 italic">{g.passes - 1} sin nombre</span> : '—'))}
+                                                        </td>
+                                                        <td className="p-3 text-amber-600 dark:text-amber-400 font-bold">{g.table_number || '—'}</td>
+                                                        <td className="p-3 text-zinc-500">{[g.dietary_restrictions, g.notes].filter(Boolean).join(' · ') || '—'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    )}
+
+                                    {previewTab === 'issues' && (
+                                        issues.length === 0 ? (
+                                            <div className="p-8 text-center text-xs text-emerald-700 dark:text-emerald-400 font-bold">✅ Sin observaciones: la lista cuadra.</div>
+                                        ) : (
+                                            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                                {issues.map((r) => (
+                                                    <div key={r.id} className="p-3 text-xs flex gap-3">
+                                                        <span className="shrink-0 font-mono text-zinc-400">Fila {excelRow(r)}</span>
+                                                        <div>
+                                                            <div className="font-bold text-zinc-900 dark:text-white">{r.name || '(sin nombre)'} <span className="font-mono font-normal text-zinc-500">{r.phone}</span></div>
+                                                            {r.warnings.map((w, k) => <div key={k} className="text-rose-600 dark:text-rose-400">{w}</div>)}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )
+                                    )}
+
+                                    {previewTab === 'rows' && (
                                     <table className="w-full text-left text-xs">
                                         <thead className="bg-zinc-100/70 dark:bg-zinc-800 text-zinc-500 uppercase tracking-wider sticky top-0">
                                             <tr>
@@ -943,7 +1132,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                                         )}
                                                     </td>
                                                     <td className="p-3 font-medium text-zinc-900 dark:text-white">
-                                                        {row.attachedTo ? <span className="text-zinc-500">↳ {row.name} <span className="text-[10px]">(de {row.attachedTo}{row.sharedPhone ? ' · teléfono combinado' : ''})</span></span> : (row.name || '(Sin nombre)')}
+                                                        {row.attachedTo ? <span className="text-zinc-500">↳ {row.name} <span className="text-[10px]">({row.otherPhone ? `misma invitación que ${row.attachedTo} · su número queda asociado` : `de ${row.attachedTo}`}{row.sharedPhone ? ' · teléfono combinado' : ''}{row.samePhone ? ' · mismo teléfono' : ''})</span></span> : (row.name || '(Sin nombre)')}
                                                         {row.warnings.map((w, i) => (
                                                             <div key={i} className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 mt-0.5">⚠️ {w}</div>
                                                         ))}
@@ -968,6 +1157,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                             ))}
                                         </tbody>
                                     </table>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -987,7 +1177,8 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                     {file && (
                         <button
                             type="button"
-                            disabled={loading || parsedData.filter(g => g.isValid).length === 0}
+                            disabled={loading || invitations.length === 0 || issues.length > 0}
+                            title={issues.length ? 'Corregí las observaciones en el Excel y volvé a subirlo' : ''}
                             onClick={handleSubmitImport}
                             className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md disabled:opacity-50 active:scale-95"
                         >
@@ -996,7 +1187,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                             ) : (
                                 <>
                                     <Users className="w-4 h-4" />
-                                    <span>Importar {parsedData.filter(g => g.isValid).length} Invitados</span>
+                                    <span>{issues.length ? `Hay ${issues.length} observaciones: corregí el Excel` : `Importar ${invitations.length} invitaciones`}</span>
                                 </>
                             )}
                         </button>

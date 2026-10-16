@@ -208,13 +208,15 @@ class GuestController extends Controller
         $existing = Guest::where('event_id', $eventId)
             ->where(function ($q) use ($formattedPhone, $phoneKey) {
                 $q->where('phone', $formattedPhone)
-                  ->orWhere('phone', 'LIKE', "%{$phoneKey}%");
+                  ->orWhere('phone', 'LIKE', "%{$phoneKey}%")
+                  ->orWhere('alt_phones', 'LIKE', "%{$phoneKey}%");
             })
             ->first();
 
         if ($existing) {
             return response()->json([
                 'message' => "Ya existe un invitado registrado con el teléfono {$validated['phone']} ({$existing->name})."
+                    . ($existing->altPhoneList() ? ' Es uno de los números de esa invitación compartida.' : ''),
             ], 422);
         }
 
@@ -290,6 +292,8 @@ class GuestController extends Controller
             'guests.*.companion_adults' => 'nullable|integer|min:0|max:20',
             'guests.*.companion_children' => 'nullable|integer|min:0|max:20',
             'guests.*.companions' => 'nullable|string|max:255',
+            'guests.*.alt_phones' => 'nullable|array|max:5',
+            'guests.*.alt_phones.*' => 'string|max:50',
             'guests.*.members' => 'nullable|array|max:19',
             'guests.*.members.*.name' => 'required|string|max:120',
             'guests.*.members.*.category' => 'nullable|in:adult,youth,child',
@@ -304,16 +308,20 @@ class GuestController extends Controller
         $corrections = [];
         $existingMap = [];
         foreach ($existingGuests as $eg) {
-            $digits = preg_replace('/[^\d]/', '', $eg->phone);
-            if (!empty($digits)) {
-                $key = strlen($digits) >= 9 ? substr($digits, -9) : $digits;
-                $existingMap[$key] = $eg;
+            // The main phone and the other numbers of a shared invitation lead to the same guest
+            foreach (array_merge([$eg->phone], $eg->altPhoneList()) as $number) {
+                $digits = preg_replace('/[^\d]/', '', (string) $number);
+                if (!empty($digits)) {
+                    $key = strlen($digits) >= 9 ? substr($digits, -9) : $digits;
+                    $existingMap[$key] = $existingMap[$key] ?? $eg;
+                }
             }
         }
 
         $created = 0;
         $updated = 0;
         $skipped = 0;
+        $merged = 0;
         $limitReached = false;
         $unimportedDueToLimit = 0;
         $seenInBatch = [];
@@ -333,6 +341,17 @@ class GuestController extends Controller
                 continue;
             }
             $seenInBatch[$phoneKey] = true;
+
+            // Other numbers of the same invitation (couple / family with one phone each)
+            $altPhones = [];
+            foreach ((array) ($item['alt_phones'] ?? []) as $alt) {
+                $altFormatted = preg_replace('/[^\d]/', '', $this->formatParaguayPhone($alt));
+                $altKey = strlen($altFormatted) >= 9 ? substr($altFormatted, -9) : $altFormatted;
+                if ($altFormatted !== '' && $altKey !== $phoneKey) {
+                    $altPhones[$altKey] = $altFormatted;
+                    $seenInBatch[$altKey] = true;
+                }
+            }
 
             // Only overwrite the category of existing guests when the file actually provides one
             $hasCategory = trim($item['category'] ?? '') !== '';
@@ -360,9 +379,34 @@ class GuestController extends Controller
             $dietaryRestrictions = $dietary && trim($dietary) !== '' ? trim($dietary) : null;
             $notes = $item['notes'] ?? null;
 
+            // The invitation may already exist under one of its other numbers
+            if (!isset($existingMap[$phoneKey])) {
+                foreach (array_keys($altPhones) as $altKey) {
+                    if (isset($existingMap[$altKey])) {
+                        $existingMap[$phoneKey] = $existingMap[$altKey];
+                        break;
+                    }
+                }
+            }
+
             // Anti-duplicate: Guest already exists in this event
             if (isset($existingMap[$phoneKey])) {
                 $existingGuest = $existingMap[$phoneKey];
+                // Its other numbers: records that were separate invitations of the same people are joined
+                $joinedHere = false;
+                if ($altPhones) {
+                    foreach ($altPhones as $altKey => $altDigits) {
+                        $other = $existingMap[$altKey] ?? null;
+                        if ($other && $other->id !== $existingGuest->id) {
+                            $this->mergeInto($existingGuest, $other);
+                            $merged++;
+                            $joinedHere = true;
+                        }
+                        $existingMap[$altKey] = $existingGuest;
+                    }
+                    $existingGuest->addAltPhones(array_values($altPhones));
+                    $existingGuest->save();
+                }
                 $updateFields = [];
 
                 if ($tableNumber !== null && Table::nameKey($existingGuest->table_number) !== Table::nameKey($tableNumber)) {
@@ -406,8 +450,20 @@ class GuestController extends Controller
                 } elseif (!empty($item['members']) && !$existingGuest->members()->exists()) {
                     $this->importMembers($existingGuest, $item['members']);
                     $updated++;
-                } else {
+                } elseif (!$joinedHere) {
                     $skipped++;
+                }
+
+                // Joined invitations that had answered: the confirmation covers everyone of the invitation
+                if ($joinedHere && in_array($existingGuest->status, ['confirmed', 'attended'], true)) {
+                    $existingGuest->refresh();
+                    $existingGuest->update([
+                        'confirmed_adults' => (int) $existingGuest->adults,
+                        'confirmed_youth' => (int) $existingGuest->youth,
+                        'confirmed_children' => (int) $existingGuest->children,
+                        'confirmed_passes' => (int) $existingGuest->passes,
+                        'pending_correction_from' => null,
+                    ]);
                 }
                 continue;
             }
@@ -435,6 +491,13 @@ class GuestController extends Controller
             ]);
 
             $this->importMembers($newGuest, $item['members'] ?? []);
+            if ($altPhones) {
+                $newGuest->addAltPhones(array_values($altPhones));
+                $newGuest->save();
+                foreach (array_keys($altPhones) as $altKey) {
+                    $existingMap[$altKey] = $newGuest;
+                }
+            }
 
             $existingMap[$phoneKey] = $newGuest;
             $created++;
@@ -449,6 +512,9 @@ class GuestController extends Controller
         }
         if ($skipped > 0) {
             $summaryParts[] = "{$skipped} duplicados omitidos";
+        }
+        if ($merged > 0) {
+            $summaryParts[] = "{$merged} invitaciones separadas unidas en una sola (mismas personas con otro número)";
         }
 
         // Create missing tables for the imported table numbers (same naming rule as the seating plan),
@@ -562,6 +628,99 @@ class GuestController extends Controller
     }
 
     /**
+     * Joins several invitations of the same people (a couple / family loaded once per phone) into ONE: the
+     * first confirmed one (or the first given) stays, the others' numbers become its other phones. Messages
+     * then go once, and the bot recognizes any of the numbers as this invitation.
+     */
+    public function mergeGuests(Request $request, $eventId)
+    {
+        $event = Event::findOrFail($eventId);
+        if ($denied = $this->validateEventAccess($event, false)) {
+            return $denied;
+        }
+        $validated = $request->validate([
+            'guest_ids' => 'required|array|min:2|max:10',
+            'guest_ids.*' => 'integer',
+            'total' => 'required|integer|min:1|max:40',
+        ]);
+
+        $guests = Guest::where('event_id', $eventId)->whereIn('id', $validated['guest_ids'])->get()
+            ->sortBy(fn ($g) => array_search($g->id, $validated['guest_ids']));
+        if ($guests->count() < 2) {
+            return response()->json(['message' => 'Elegí al menos dos invitaciones del evento.'], 422);
+        }
+        $holder = $guests->first(fn ($g) => in_array($g->status, ['confirmed', 'attended'], true)) ?? $guests->first();
+
+        foreach ($guests as $other) {
+            if ($other->id !== $holder->id) {
+                $this->mergeInto($holder, $other);
+            }
+        }
+
+        // The joined invitation is for the people it really has; if they had confirmed, for all of them
+        $total = (int) $validated['total'];
+        $holder->refresh();
+        $fields = ['adults' => max(0, $total - (int) $holder->youth - (int) $holder->children)];
+        if ($fields['adults'] + (int) $holder->youth + (int) $holder->children < 1) {
+            $fields['adults'] = 1;
+        }
+        $holder->update($fields);
+        if (in_array($holder->status, ['confirmed', 'attended'], true)) {
+            $holder->update([
+                'confirmed_adults' => (int) $holder->adults,
+                'confirmed_youth' => (int) $holder->youth,
+                'confirmed_children' => (int) $holder->children,
+                'confirmed_passes' => (int) $holder->passes,
+            ]);
+        }
+        $holder->update(['pending_correction_from' => null]);
+
+        return response()->json([
+            'message' => "Listo: ahora es una sola invitación, {$holder->name} para {$holder->passes} personas, con " . (count($holder->altPhoneList()) + 1) . ' números.',
+            'guest' => $holder->fresh('members'),
+        ]);
+    }
+
+    /**
+     * $other is the same people as $holder (another phone): its number, conversation, history, companions and
+     * answer move to $holder, and $other is removed.
+     */
+    private function mergeInto(Guest $holder, Guest $other): void
+    {
+        $holder->addAltPhones(array_merge([$other->phone], $other->altPhoneList()));
+
+        // The most advanced answer wins: attended > confirmed > declined > pending
+        $rank = ['pending' => 0, 'declined' => 1, 'confirmed' => 2, 'attended' => 3];
+        if (($rank[$other->status] ?? 0) > ($rank[$holder->status] ?? 0)) {
+            foreach (['status', 'conversation_state', 'confirmed_adults', 'confirmed_youth', 'confirmed_children', 'confirmed_passes', 'attended_at', 'attended_people', 'holder_attended_at'] as $field) {
+                $holder->{$field} = $other->{$field};
+            }
+        }
+        foreach (['dietary_restrictions', 'table_number', 'whatsapp_channel'] as $field) {
+            if (empty($holder->{$field}) && !empty($other->{$field})) {
+                $holder->{$field} = $other->{$field};
+            }
+        }
+        if ($other->whatsapp_status === 'sent') {
+            $holder->whatsapp_status = 'sent';
+            $holder->last_sent_at = $holder->last_sent_at ?? $other->last_sent_at;
+        }
+        $holder->unread_messages = (int) $holder->unread_messages + (int) $other->unread_messages;
+        $holder->needs_reply = $holder->needs_reply || $other->needs_reply;
+        if ($other->last_message_at && (!$holder->last_message_at || $other->last_message_at->gt($holder->last_message_at))) {
+            $holder->last_message_at = $other->last_message_at;
+        }
+        $holder->save();
+
+        \App\Models\GuestMessage::where('guest_id', $other->id)->update(['guest_id' => $holder->id]);
+        \App\Models\GuestActivity::where('guest_id', $other->id)->update(['guest_id' => $holder->id]);
+        GuestMember::where('guest_id', $other->id)->update(['guest_id' => $holder->id]);
+        \App\Models\GuestActivity::record($holder, 'merged', "Unificada con la invitación de {$other->name} ({$other->phone}): es la misma, con otro número");
+
+        $other->delete();
+    }
+
+    /**
      * Apology with the right number of people, to confirmed guests (one or a selection). Only that text:
      * no QR. Queued with the usual pauses; the same guest is not sent it twice within 12 h.
      */
@@ -610,6 +769,8 @@ class GuestController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'phone' => 'sometimes|string|max:50',
+            'alt_phones' => 'sometimes|nullable|array|max:5',
+            'alt_phones.*' => 'nullable|string|max:50',
             'passes' => 'sometimes|integer|min:1',
             'confirmed_passes' => 'sometimes|integer|min:0',
             'adults' => 'sometimes|integer|min:0',
@@ -670,6 +831,16 @@ class GuestController extends Controller
         if (array_key_exists('table_number', $validated)) {
             [$table] = Table::ensureExists($guest->event_id, $validated['table_number'], (int) $guest->passes);
             $validated['table_number'] = $table?->name;
+        }
+
+        // Other numbers of the same invitation (couple / family), replaced as a whole from the form
+        if (array_key_exists('alt_phones', $validated)) {
+            $guest->alt_phones = null;
+            if (isset($validated['phone'])) {
+                $guest->phone = $validated['phone'];
+            }
+            $guest->addAltPhones(array_map(fn ($p) => $this->formatParaguayPhone((string) $p), array_filter((array) $validated['alt_phones'])));
+            unset($validated['alt_phones']);
         }
 
         $previousStatus = $guest->status;

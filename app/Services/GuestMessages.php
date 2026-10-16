@@ -121,6 +121,14 @@ class GuestMessages
             . "\nSi necesitás sumar a alguien más, se lo consultamos a {$hosts} y te respondemos por acá.";
     }
 
+    // They say more people are coming than the invitation has (often a confusion: another number of the same
+    // family, a list that was corrected...): no contradicting them, a person checks it and answers
+    public static function headcountReview(Guest $guest, Event $event): string
+    {
+        return "¡Gracias por avisar, " . self::firstName($guest) . "! 💛 Lo revisamos con " . self::hosts($event)
+            . " y te confirmamos por acá en breve.";
+    }
+
     public static function declined(Guest $guest, Event $event, ?\Carbon\Carbon $changeUntil = null): string
     {
         $hosts = self::hosts($event);
@@ -135,7 +143,7 @@ class GuestMessages
         ]);
 
         if ($changeUntil) {
-            $text .= "\n\nSi al final podés ir, escribinos *1* antes del {$changeUntil->format('d/m')} y lo actualizamos con mucho gusto.";
+            $text .= "\n\nSi al final podés ir, avisanos por acá antes del {$changeUntil->format('d/m')} y lo actualizamos con mucho gusto.";
         }
 
         return $text;

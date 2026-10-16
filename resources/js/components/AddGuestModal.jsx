@@ -5,6 +5,8 @@ import { apiFetch } from '../api';
 export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, onGuestAdded, onGuestUpdated }) {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
+    // Other numbers of the same invitation (couple / family): recognized by the bot, messages go to the main one
+    const [altPhones, setAltPhones] = useState('');
     const [tableNumber, setTableNumber] = useState('');
     // People covered by this invitation: the invited person plus companions (e.g. a mother and her daughter)
     const [counts, setCounts] = useState({ adults: 1, youth: 0, children: 0 });
@@ -21,6 +23,7 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
         if (guestToEdit) {
             setName(guestToEdit.name || '');
             setPhone(guestToEdit.phone || '');
+            setAltPhones((guestToEdit.alt_phones || '').split(',').filter(Boolean).join(', '));
             setTableNumber(guestToEdit.table_number || '');
             setNotes(guestToEdit.notes || '');
 
@@ -37,6 +40,7 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
         } else {
             setName('');
             setPhone('');
+            setAltPhones('');
             setTableNumber('');
             setCounts({ adults: 1, youth: 0, children: 0 });
             setCompanions('');
@@ -93,6 +97,7 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                 body: JSON.stringify({
                     name,
                     phone,
+                    ...(isEditing ? { alt_phones: altPhones.split(/[,;/]/).map((p) => p.trim()).filter(Boolean) } : {}),
                     table_number: tableNumber,
                     adults,
                     youth,
@@ -206,6 +211,20 @@ export default function AddGuestModal({ isOpen, onClose, eventId, guestToEdit, o
                                 placeholder="0981630070"
                             />
                         </div>
+
+                        {guestToEdit && (
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Otros teléfonos de esta invitación (opcional)</label>
+                                <input
+                                    type="text"
+                                    value={altPhones}
+                                    onChange={(e) => setAltPhones(e.target.value)}
+                                    className="w-full text-xs rounded-xl border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-3 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="ej: 0991711071 (la pareja con su propio número)"
+                                />
+                                <p className="text-[11px] text-zinc-500 mt-1">Si escriben desde estos números, el sistema sabe que es esta misma invitación. Los mensajes se envían solo al celular principal.</p>
+                            </div>
+                        )}
 
                         <div>
                             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">

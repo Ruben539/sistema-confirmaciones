@@ -17,6 +17,7 @@ export default function GuestList({
     onRemindAllPending,
     onSendCorrections,
     onSendCountCorrection,
+    onMergeGuests,
     // Anfitriona: only sees the list (no adding, importing, sending, editing or deleting)
     readOnly = false,
     eventTitle = ''
@@ -371,6 +372,16 @@ export default function GuestList({
                         {selectedGuestIds.length} invitados seleccionados
                     </span>
                     <div className="flex items-center gap-2">
+                        {onMergeGuests && selectedGuestIds.length >= 2 && (
+                            <button
+                                onClick={() => onMergeGuests(guests.filter((g) => selectedGuestIds.includes(g.id)), () => setSelectedGuestIds([]))}
+                                title="Las mismas personas cargadas por separado (una fila por teléfono): una sola invitación"
+                                className="px-3 py-1.5 rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 transition-colors flex items-center gap-1"
+                            >
+                                <Users className="w-3.5 h-3.5" />
+                                <span>Unir en una invitación ({selectedGuestIds.length})</span>
+                            </button>
+                        )}
                         {onSendCountCorrection && (() => {
                             const confirmedSelected = guests.filter((g) => selectedGuestIds.includes(g.id) && ['confirmed', 'attended'].includes(g.status) && g.phone);
                             return confirmedSelected.length > 0 && (
@@ -490,6 +501,11 @@ export default function GuestList({
                                         <div className="text-xs text-zinc-500 font-mono flex items-center gap-1.5 mt-0.5">
                                             <span>{guest.phone}</span>
                                         </div>
+                                        {guest.alt_phones && (
+                                            <div className="text-[11px] text-zinc-400 font-mono mt-0.5" title="Otros números de la misma invitación: se reconocen, pero los mensajes van solo al principal">
+                                                + {guest.alt_phones.split(',').join(', ')}
+                                            </div>
+                                        )}
                                     </td>
 
                                     {/* Table Number */}

@@ -14,6 +14,7 @@ class Guest extends Model
         'event_id',
         'name',
         'phone',
+        'alt_phones',
         'whatsapp_lid',
         'passes',
         'confirmed_passes',
@@ -182,6 +183,29 @@ class Guest extends Model
     public function groupSize(): int
     {
         return max(1, ((int) $this->confirmed_passes > 0) ? (int) $this->confirmed_passes : (int) $this->passes);
+    }
+
+    // Other WhatsApp numbers of the same invitation (couple / family): digits, without the main phone
+    public function altPhoneList(): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) $this->alt_phones))));
+    }
+
+    public function addAltPhones(array $phones): void
+    {
+        $main = substr(preg_replace('/[^\d]/', '', (string) $this->phone), -9);
+        $list = $this->altPhoneList();
+        foreach ($phones as $p) {
+            $digits = preg_replace('/[^\d]/', '', (string) $p);
+            if (strlen($digits) < 6 || substr($digits, -9) === $main) {
+                continue;
+            }
+            $known = array_map(fn ($x) => substr($x, -9), $list);
+            if (!in_array(substr($digits, -9), $known, true)) {
+                $list[] = $digits;
+            }
+        }
+        $this->alt_phones = $list ? mb_substr(implode(',', $list), 0, 255) : null;
     }
 
     // Named companions (each with its own table / check-in). Not "companions": that is the free-text column
