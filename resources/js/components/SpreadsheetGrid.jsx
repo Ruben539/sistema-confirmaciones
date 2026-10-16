@@ -76,6 +76,43 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
     const [filters, setFilters] = useState({}); // { [key]: Set of allowed values }
     const [sort, setSort] = useState(null); // { key, dir: 'asc' | 'desc' }
     const [menu, setMenu] = useState(null); // filter menu: { c, x, y }
+    const [colWidths, setColWidths] = useState({});
+    const getColWidth = (c) => colWidths[c.key] ?? c.width ?? 140;
+
+    const startColResize = (e, colKey) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const col = columns.find((k) => k.key === colKey);
+        const startWidth = colWidths[colKey] ?? col?.width ?? 140;
+
+        const onMouseMove = (ev) => {
+            const delta = ev.clientX - startX;
+            const newWidth = Math.max(70, Math.round(startWidth + delta));
+            setColWidths((prev) => ({ ...prev, [colKey]: newWidth }));
+        };
+
+        const onMouseUp = () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+    };
+
+    const resetColWidth = (e, colKey) => {
+        e.stopPropagation();
+        setColWidths((prev) => {
+            const next = { ...prev };
+            delete next[colKey];
+            return next;
+        });
+    };
 
     const setEditing = (value) => { editRef.current = value; setEditingState(value); };
 
@@ -419,7 +456,7 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
         return { cells, sum: numbers ? sum : null };
     }, [top, bottom, left, right, rows, view, nRows, columns]);
 
-    const totalWidth = columns.reduce((a, c) => a + (c.width || 140), 48 + (readOnly ? 0 : 32));
+    const totalWidth = columns.reduce((a, c) => a + getColWidth(c), 48 + (readOnly ? 0 : 32));
     const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
     const modKey = isMac ? '⌘' : 'Ctrl';
     const btn = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent';
@@ -470,7 +507,7 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                 <table className="border-collapse text-xs" style={{ tableLayout: 'fixed', width: totalWidth }}>
                     <colgroup>
                         <col style={{ width: 48 }} />
-                        {columns.map((c) => <col key={c.key} style={{ width: c.width || 140 }} />)}
+                        {columns.map((c) => <col key={c.key} style={{ width: getColWidth(c) }} />)}
                         {!readOnly && <col style={{ width: 32 }} />}
                     </colgroup>
                     <thead className="sticky top-0 z-20">
@@ -484,9 +521,9 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                         key={c.key}
                                         onMouseDown={(e) => onColHeaderDown(e, ci)}
                                         onMouseEnter={() => onColHeaderEnter(ci)}
-                                        className={`border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-left cursor-pointer ${colSelected ? 'bg-[#d3e3fd] dark:bg-sky-900/60' : 'bg-[#e8eaed] dark:bg-zinc-800'}`}
+                                        className={`relative border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-left cursor-pointer group ${colSelected ? 'bg-[#d3e3fd] dark:bg-sky-900/60' : 'bg-[#e8eaed] dark:bg-zinc-800'}`}
                                     >
-                                        <div className="flex items-center justify-between gap-1">
+                                        <div className="flex items-center justify-between gap-1 pr-1.5">
                                             <div className="min-w-0">
                                                 <div className="text-[10px] text-zinc-400 font-mono">{String.fromCharCode(65 + ci)}</div>
                                                 <div className="font-bold text-zinc-700 dark:text-zinc-200 truncate" title={c.label}>{c.label}</div>
@@ -501,6 +538,13 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                                 {sort?.key === c.key && !filters[c.key] ? <ArrowUpDown className="w-3 h-3" /> : <Filter className="w-3 h-3" />}
                                             </button>
                                         </div>
+                                        {/* Borde interactivo para redimensionar la columna arrastrando (doble clic para restablecer) */}
+                                        <div
+                                            onMouseDown={(e) => startColResize(e, c.key)}
+                                            onDoubleClick={(e) => resetColWidth(e, c.key)}
+                                            title="Arrastrá para cambiar el ancho (doble clic para restablecer)"
+                                            className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-sky-500/70 active:bg-sky-600 group-hover:bg-zinc-400/50 dark:group-hover:bg-zinc-500/50 transition-colors z-10"
+                                        />
                                     </th>
                                 );
                             })}

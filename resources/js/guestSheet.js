@@ -6,8 +6,8 @@ import * as XLSX from 'xlsx';
  */
 export const SHEET_COLUMNS = [
     { key: 'name', label: 'Nombre Completo', width: 230 },
-    { key: 'phone', label: 'Teléfono (WhatsApp)', width: 150 },
-    { key: 'other_phones', label: 'Otros Teléfonos', width: 150 },
+    { key: 'phone', label: 'Teléfono (WhatsApp)', width: 270 },
+    { key: 'other_phones', label: 'Otros Teléfonos', width: 170 },
     { key: 'table', label: 'Número de Mesa', width: 120 },
     { key: 'category', label: 'Tipo de Invitado', width: 110, type: 'select', options: ['Adulto', 'Joven', 'Niño'] },
     { key: 'total', label: 'Total Personas', width: 100, type: 'number' },
@@ -195,7 +195,15 @@ export const autoFixSheet = (rows) => {
             row._remove = true;
             changes.push(`${row.name.trim()} → acompañante de ${holder.name}`);
         } else {
-            pending.push(`${row.name} (${label(row)}): no entra en la invitación de ${holder.name} (${total} ${total === 1 ? 'persona' : 'personas'}). Subile el total a ${holder.name} o cargale un teléfono si es invitación aparte.`);
+            addCompanion(holder, row.name.trim());
+            const compCount = splitList(holder.companions).length;
+            const newTotal = Math.max(total, 1 + compCount);
+            holder.total = String(newTotal);
+            if (row.category === 'Niño') {
+                holder.children = String(toInt(holder.children, 0) + 1);
+            }
+            row._remove = true;
+            changes.push(`${row.name.trim()} → acompañante de ${holder.name} (el total pasa a ${newTotal})`);
         }
     });
     let kept = list.filter((r) => !r._remove);
@@ -248,12 +256,15 @@ export const autoFixSheet = (rows) => {
 
 /**
  * Whose companion each row without phone is (the closest row with phone above it), and whether it fits in
- * that invitation's total: { [rowIndex]: { holder, holderName, fits, total } }. Shown in the phone cell.
+ * that invitation's total: { [rowIndex]: { holder, holderName, fits, total, neededTotal, countUnderHolder } }.
+ * Shown in the phone cell.
  */
 export const companionHints = (rows) => {
     const hints = {};
     let holder = null;
     let used = 0;
+    const underHolderCount = {};
+
     (rows || []).forEach((row, i) => {
         if (!isFilledRow(row)) return;
         if (hasPhone(row)) {
@@ -265,38 +276,63 @@ export const companionHints = (rows) => {
         const total = Math.max(1, toInt(rows[holder].total, 1));
         const fits = used < total - 1;
         if (fits) used++;
-        hints[i] = { holder, holderName: String(rows[holder].name || '').trim() || 'la fila de arriba', fits, total };
+        underHolderCount[holder] = (underHolderCount[holder] || 0) + 1;
+        hints[i] = {
+            holder,
+            holderName: String(rows[holder].name || '').trim() || 'la fila de arriba',
+            fits,
+            total,
+        };
     });
+
+    Object.keys(hints).forEach((idx) => {
+        const h = hints[idx];
+        const holderRow = rows[h.holder];
+        const existingCount = splitList(holderRow?.companions).length;
+        const totalRowsToJoin = underHolderCount[h.holder] || 1;
+        h.neededTotal = Math.max(h.total, 1 + existingCount + totalRowsToJoin);
+        h.countUnderHolder = totalRowsToJoin;
+    });
+
     return hints;
 };
 
 /**
- * Moves the rows without phone under the invitation at holderIndex into its companions (as many as fit in
- * its total; the rest stay as they are). Returns the new rows and the names moved.
+ * Moves the rows without phone under the invitation at holderIndex into its companions.
+ * If expandTotal is true, expands holder.total so all companions fit.
+ * Returns the new rows and the names moved.
  */
-export const joinCompanions = (rows, holderIndex) => {
+export const joinCompanions = (rows, holderIndex, expandTotal = true) => {
     const hints = companionHints(rows);
     const holder = { ...rows[holderIndex] };
-    const total = Math.max(1, toInt(holder.total, 1));
     const moved = [];
     const drop = new Set();
     Object.entries(hints).forEach(([i, h]) => {
-        if (h.holder !== holderIndex || !h.fits) return;
+        if (h.holder !== holderIndex) return;
+        if (!expandTotal && !h.fits) return;
         const row = rows[i];
-        const name = String(row.name).trim();
+        const name = String(row.name || '').trim();
         const names = splitList(holder.companions);
-        if (!names.map(normName).includes(normName(name))) holder.companions = [...names, name].join(', ');
-        if (row.category === 'Niño' && toInt(holder.children, 0) < total - 1) holder.children = String(toInt(holder.children, 0) + 1);
+        if (!names.map(normName).includes(normName(name))) {
+            holder.companions = [...names, name].join(', ');
+        }
+        if (row.category === 'Niño') {
+            holder.children = String(toInt(holder.children, 0) + 1);
+        }
         drop.add(Number(i));
         moved.push(name);
     });
+    const finalCompanionsCount = splitList(holder.companions).length;
+    if (expandTotal) {
+        holder.total = String(Math.max(toInt(holder.total, 1), 1 + finalCompanionsCount));
+    }
     const next = rows.map((r, i) => (i === holderIndex ? holder : r)).filter((_, i) => !drop.has(i));
     return { rows: next, moved };
 };
 
 /**
  * cellHint for SpreadsheetGrid: in the phone cell of a row without phone, whose companion it is with a
- * button to join them all into that invitation, or (if it doesn't fit) a button to add one to its total.
+ * button to join them directly into that invitation (expanding the total if needed).
  * apply(newRows) receives the corrected list.
  */
 export const companionCellHint = (rows, apply) => {
@@ -307,19 +343,20 @@ export const companionCellHint = (rows, apply) => {
         const h = key === 'phone' ? hints[i] : null;
         if (!h) return null;
         if (h.fits) {
-            const n = fitting[h.holder];
+            const n = fitting[h.holder] || 1;
             return {
                 tone: 'ok',
                 text: `Acompañante de ${h.holderName} (${h.total})`,
                 actionLabel: n > 1 ? `Unir los ${n}` : 'Unir',
-                onAction: () => apply(joinCompanions(rows, h.holder).rows),
+                onAction: () => apply(joinCompanions(rows, h.holder, false).rows),
             };
         }
+        const n = h.countUnderHolder || 1;
         return {
             tone: 'warn',
-            text: `No entra en los ${h.total} de ${h.holderName}`,
-            actionLabel: `Pasar a ${h.total + 1}`,
-            onAction: () => apply(rows.map((r, j) => (j === h.holder ? { ...r, total: String(h.total + 1) } : r))),
+            text: `Acompañante de ${h.holderName} (total actual: ${h.total})`,
+            actionLabel: n > 1 ? `Unir los ${n} (pasa a ${h.neededTotal})` : `Unir (pasa a ${h.neededTotal})`,
+            onAction: () => apply(joinCompanions(rows, h.holder, true).rows),
         };
     };
 };
