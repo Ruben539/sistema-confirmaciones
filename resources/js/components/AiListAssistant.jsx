@@ -4,7 +4,7 @@ import { Sparkles, Upload, Send, Download, Users, AlertCircle, CheckCircle2, X, 
 import { apiFetch } from '../api';
 import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet } from '../guestSheet';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint } from '../guestSheet';
 
 // AI proposal <-> spreadsheet rows
 const fromInvitation = (g) => ({
@@ -345,6 +345,7 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                             onChange={setGrid}
                             errors={rowErrors}
                             rowLabels={grid.map((r, i) => r._row ?? (sheet ? `+${i + 1}` : i + 2))}
+                            cellHint={companionCellHint(grid, setGrid)}
                         />
 
                         <p className="text-[11px] text-zinc-500">

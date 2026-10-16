@@ -4,7 +4,7 @@ import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Use
 import { apiFetch } from '../api';
 import { getPlanLabel } from '../plans';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet } from '../guestSheet';
+import { SHEET_COLUMNS, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, companionCellHint } from '../guestSheet';
 
 // "Larisa Rojas y " -> "Larisa Rojas", "Gerardo  SANCHEZ Hermosa" -> "Gerardo Sanchez Hermosa":
 // extra spaces, a loose connector at the end and words in CAPITALS (initials like "M." stay as they are)
@@ -1077,6 +1077,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                                             rows={sheetRows}
                                             onChange={(rows) => { setSheetRows(rows); setSheetEdited(true); }}
                                             rowLabels={sheetRows.map((r, i) => r._row ?? `+${i + 1}`)}
+                                            cellHint={companionCellHint(sheetRows, (rows) => { setSheetRows(rows); setSheetEdited(true); })}
                                             errors={Object.fromEntries(sheetRows.map((r, i) => [i,
                                                 sheetErrors[i] || (!sheetEdited && r._warnings?.length ? { _row: r._warnings.join(' ') } : null),
                                             ]).filter(([, e]) => e))}

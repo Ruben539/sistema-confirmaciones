@@ -245,3 +245,81 @@ export const autoFixSheet = (rows) => {
 
     return { rows: kept, changes, pending };
 };
+
+/**
+ * Whose companion each row without phone is (the closest row with phone above it), and whether it fits in
+ * that invitation's total: { [rowIndex]: { holder, holderName, fits, total } }. Shown in the phone cell.
+ */
+export const companionHints = (rows) => {
+    const hints = {};
+    let holder = null;
+    let used = 0;
+    (rows || []).forEach((row, i) => {
+        if (!isFilledRow(row)) return;
+        if (hasPhone(row)) {
+            holder = i;
+            used = splitList(row.companions).length;
+            return;
+        }
+        if (!String(row.name || '').trim() || holder === null) return;
+        const total = Math.max(1, toInt(rows[holder].total, 1));
+        const fits = used < total - 1;
+        if (fits) used++;
+        hints[i] = { holder, holderName: String(rows[holder].name || '').trim() || 'la fila de arriba', fits, total };
+    });
+    return hints;
+};
+
+/**
+ * Moves the rows without phone under the invitation at holderIndex into its companions (as many as fit in
+ * its total; the rest stay as they are). Returns the new rows and the names moved.
+ */
+export const joinCompanions = (rows, holderIndex) => {
+    const hints = companionHints(rows);
+    const holder = { ...rows[holderIndex] };
+    const total = Math.max(1, toInt(holder.total, 1));
+    const moved = [];
+    const drop = new Set();
+    Object.entries(hints).forEach(([i, h]) => {
+        if (h.holder !== holderIndex || !h.fits) return;
+        const row = rows[i];
+        const name = String(row.name).trim();
+        const names = splitList(holder.companions);
+        if (!names.map(normName).includes(normName(name))) holder.companions = [...names, name].join(', ');
+        if (row.category === 'Niño' && toInt(holder.children, 0) < total - 1) holder.children = String(toInt(holder.children, 0) + 1);
+        drop.add(Number(i));
+        moved.push(name);
+    });
+    const next = rows.map((r, i) => (i === holderIndex ? holder : r)).filter((_, i) => !drop.has(i));
+    return { rows: next, moved };
+};
+
+/**
+ * cellHint for SpreadsheetGrid: in the phone cell of a row without phone, whose companion it is with a
+ * button to join them all into that invitation, or (if it doesn't fit) a button to add one to its total.
+ * apply(newRows) receives the corrected list.
+ */
+export const companionCellHint = (rows, apply) => {
+    const hints = companionHints(rows);
+    const fitting = {};
+    Object.values(hints).forEach((h) => { if (h.fits) fitting[h.holder] = (fitting[h.holder] || 0) + 1; });
+    return (i, key) => {
+        const h = key === 'phone' ? hints[i] : null;
+        if (!h) return null;
+        if (h.fits) {
+            const n = fitting[h.holder];
+            return {
+                tone: 'ok',
+                text: `Acompañante de ${h.holderName} (${h.total})`,
+                actionLabel: n > 1 ? `Unir los ${n}` : 'Unir',
+                onAction: () => apply(joinCompanions(rows, h.holder).rows),
+            };
+        }
+        return {
+            tone: 'warn',
+            text: `No entra en los ${h.total} de ${h.holderName}`,
+            actionLabel: `Pasar a ${h.total + 1}`,
+            onAction: () => apply(rows.map((r, j) => (j === h.holder ? { ...r, total: String(h.total + 1) } : r))),
+        };
+    };
+};

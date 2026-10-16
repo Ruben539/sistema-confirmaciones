@@ -13,6 +13,8 @@ import { Plus, Trash2, Filter, RotateCcw, RotateCw, ArrowUpDown, Search } from '
  * errors:  { [rowIndex]: { [key]: message } }  (a '_row' key marks the whole row)
  * readOnly: select, copy and filter only (a preview of what will be saved)
  * rowLabels: optional label per row instead of the row number (e.g. the Excel rows it comes from)
+ * cellHint: optional (rowIndex, key) => { text, tone: 'ok'|'warn', actionLabel?, onAction? } shown inside an
+ *           empty cell (e.g. "Acompañante de Marcos Pereira · Unir" in the phone of a row without phone)
  */
 
 const EMPTY = '(Vacías)';
@@ -54,7 +56,7 @@ const toNumber = (v) => {
     return Number.isNaN(n) ? null : n;
 };
 
-export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, readOnly = false, rowLabels = null }) {
+export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, readOnly = false, rowLabels = null, cellHint = null }) {
     const scrollRef = useRef(null);
     const keysRef = useRef(null); // hidden textarea that keeps the keyboard focus, so copy / paste work in every browser
     const history = useRef({ past: [], future: [] });
@@ -526,6 +528,10 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                         const isActive = v === sel.r2 && ci === sel.c2;
                                         const isEditing = editing && editing.v === v && editing.c === ci;
                                         const text = String(row[c.key] ?? '');
+                                        const hint = !text && !isEditing && cellHint ? cellHint(rowIndex, c.key) : null;
+                                        const tint = inSel ? 'bg-sky-100 dark:bg-sky-900/40'
+                                            : hint ? (hint.tone === 'ok' ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-amber-50 dark:bg-amber-950/30')
+                                                : bad || rowErrors._row ? 'bg-rose-50 dark:bg-rose-950/30' : '';
                                         return (
                                             <td
                                                 key={c.key}
@@ -533,10 +539,24 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                                 onMouseDown={(e) => onCellDown(e, v, ci)}
                                                 onMouseEnter={() => onCellEnter(v, ci)}
                                                 onDoubleClick={() => startEdit(v, ci)}
-                                                title={bad || text}
-                                                className={`relative px-2 py-1.5 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis cursor-cell ${c.type === 'number' ? 'text-right' : ''} ${inSel ? 'bg-sky-100 dark:bg-sky-900/40' : bad || rowErrors._row ? 'bg-rose-50 dark:bg-rose-950/30' : ''}`}
+                                                title={hint?.text || bad || text}
+                                                className={`relative px-2 py-1.5 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis cursor-cell ${c.type === 'number' ? 'text-right' : ''} ${tint}`}
                                             >
-                                                {text || ' '}
+                                                {hint ? (
+                                                    <span className={`flex items-center gap-1 text-[10px] font-bold ${hint.tone === 'ok' ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                                                        <span className="truncate">↳ {hint.text}</span>
+                                                        {hint.onAction && !readOnly && (
+                                                            <button
+                                                                type="button"
+                                                                onMouseDown={(e) => e.stopPropagation()}
+                                                                onClick={(e) => { e.stopPropagation(); hint.onAction(); }}
+                                                                className={`shrink-0 px-1.5 py-0.5 rounded text-white ${hint.tone === 'ok' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+                                                            >
+                                                                {hint.actionLabel || 'Aplicar'}
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                ) : (text || '\u00a0')}
                                                 {isActive && !isEditing && <div className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-sky-600" />}
                                                 {isEditing && (c.type === 'select' ? (
                                                     <select
