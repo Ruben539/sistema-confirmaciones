@@ -60,6 +60,13 @@ class SendWhatsAppMessageJob implements ShouldQueue
 
         $event = $guest->event;
 
+        // Automatic WhatsApp turned off: queued sends are dropped (nothing goes out by itself)
+        if (!WhatsAppGateway::automationEnabled()) {
+            Log::info("WhatsApp Job: automation disabled, not sending {$this->messageMode} to {$guest->name}.");
+            $this->clearReminderMark($guest);
+            return;
+        }
+
         if ($event && !$event->isActive()) {
             Log::info("WhatsApp Job: Event ID {$event->id} is inactive, disabled, or past date. Skipping guest {$guest->name}.");
             return;

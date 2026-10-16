@@ -24,6 +24,16 @@ class WhatsAppGateway
     // Payload of the "Ver invitación" button of the greeting template
     public const VIEW_INVITATION = 'VER_INVITACION';
 
+    public static function automationEnabled(): bool
+    {
+        return (bool) config('whatsapp.automation', true);
+    }
+
+    private static function automationOff(): array
+    {
+        return ['ok' => false, 'retry' => false, 'disabled' => true, 'error' => 'Los envíos automáticos de WhatsApp están desactivados (solo el módulo WhatsApp del panel).'];
+    }
+
     // Default channel (planner / admin notices, guests not contacted yet)
     public static function defaultChannel(): string
     {
@@ -103,6 +113,10 @@ class WhatsAppGateway
      */
     public static function sendText(string $phone, string $text, ?string $media = null, array $opts = []): array
     {
+        // Only a message written by hand ($opts['manual']) goes out while the automation is off
+        if (!self::automationEnabled() && empty($opts['manual'])) {
+            return self::automationOff();
+        }
         $phone = self::digits($phone);
         $channel = $opts['channel'] ?? self::defaultChannel();
         if ($channel !== 'cloud') {
@@ -130,6 +144,9 @@ class WhatsAppGateway
      */
     public static function sendInvitation(Guest $guest, string $mode, string $text, ?string $media, ?string $sessionId = null, ?string $channel = null): array
     {
+        if (!self::automationEnabled()) {
+            return self::automationOff();
+        }
         $channel = $channel ?: self::channelForInvitation($guest);
         if ($channel !== 'cloud') {
             return self::sendText($guest->phone, $text, $media, ['channel' => 'baileys', 'session_id' => $sessionId]);
@@ -159,6 +176,9 @@ class WhatsAppGateway
     // Entry pass (QR image). Cloud outside the 24 h window: the "pass" template with the QR as header
     public static function sendPass(Guest $guest, string $text, string $qrUrl, ?string $sessionId = null): array
     {
+        if (!self::automationEnabled()) {
+            return self::automationOff();
+        }
         $channel = self::channelFor($guest);
         if ($channel !== 'cloud' || self::inWindow($guest->phone)) {
             return self::sendText($guest->phone, $text, $qrUrl, ['channel' => $channel, 'session_id' => $sessionId, 'timeout' => 10]);

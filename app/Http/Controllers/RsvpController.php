@@ -147,6 +147,10 @@ class RsvpController extends Controller
 
     private function sendWhatsAppQrPass(Guest $guest)
     {
+        // Automatic WhatsApp off: the pass isn't sent by itself (it can be sent by hand from the panel)
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return ;
+        }
         try {
             $event = $guest->event;
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
@@ -336,7 +340,7 @@ class RsvpController extends Controller
 
         // 0. Administrator Chatbot Commands (e.g. "APROBAR 1" or "RECHAZAR 1")
         // Only from an administrator's phone: otherwise any guest could approve requests by texting the bot
-        if (preg_match('/^(aprobar|autorizar|rechazar)\s+(\d+)$/i', $message, $matches) && $this->isAdminPhone($rawDigits)) {
+        if (\App\Services\WhatsAppGateway::automationEnabled() && preg_match('/^(aprobar|autorizar|rechazar)\s+(\d+)$/i', $message, $matches) && $this->isAdminPhone($rawDigits)) {
             $action = strtolower($matches[1]);
             $reqId = (int)$matches[2];
             $planReq = \App\Models\PlanRequest::with(['event', 'planner'])->find($reqId);
@@ -387,12 +391,18 @@ class RsvpController extends Controller
             if (!$guest) {
                 $resolved = $this->linkGuestByWhatsappLid($rawDigits, $message);
                 if ($resolved instanceof \Illuminate\Http\JsonResponse) {
-                    return $resolved;
+                    // Automation off: nobody answers automatically (not even to ask for the number)
+                    return \App\Services\WhatsAppGateway::automationEnabled()
+                        ? $resolved
+                        : response()->json(['processed' => false, 'reason' => 'WhatsApp automation disabled']);
                 }
                 $guest = $resolved;
 
                 // Retomar el mensaje original que llegó antes de identificar al invitado (ej: "1")
                 $pending = \Illuminate\Support\Facades\Cache::pull("wa_lid_pending:{$rawDigits}");
+                if (empty($pending) && !\App\Services\WhatsAppGateway::automationEnabled()) {
+                    $pending = $message; // just save it (below), without the automatic greeting
+                }
                 if (empty($pending)) {
                     $menu = ($guest->conversation_state ?? 'awaiting_attendance') === 'awaiting_attendance'
                         ? "\n\n¿Vas a poder acompañarnos? Respondé con:\n*1* — ¡Sí, voy!\n*2* — No voy a poder"
@@ -419,7 +429,13 @@ class RsvpController extends Controller
         // The conversation is kept per guest (guest_messages) and shown to the planner in "Mensajes" of
         // the panel: everything goes through one WhatsApp number, so that is where a person reads and answers
         $this->needsPerson = false;
-        $response = $this->replyToGuest($guest, $message);
+        // Automation off: nothing answers automatically; the message is saved for the panel's "WhatsApp" module
+        $response = \App\Services\WhatsAppGateway::automationEnabled()
+            ? $this->replyToGuest($guest, $message)
+            : response()->json(['processed' => false, 'reason' => 'WhatsApp automation disabled']);
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            $this->needsPerson = true;
+        }
         $botReply = $response->getData(true)['reply'] ?? null;
 
         // Long messages are personal notes (excuses, questions, gifts...): also kept in the guest's notes
@@ -532,11 +548,27 @@ class RsvpController extends Controller
     {
         $event = $guest->event;
 
-        // Already answered (confirmed with menu, or declined): the automatic conversation is over. The bot
-        // doesn't answer anymore — people think a person is writing — and a person replies from "Mensajes"
-        if (($guest->conversation_state ?? null) === 'completed') {
+        // Already answered (confirmed with menu, or declined): the automatic conversation is over. People
+        // thought a person was writing, so the bot says clearly it's an automatic chat that ended
+        // A person of the organization is chatting with this guest (wrote from the panel in the last 24 h):
+        // the bot doesn't interrupt that conversation with automatic notices
+        $humanChat = \App\Models\GuestMessage::where('guest_id', $guest->id)->where('author', 'planner')
+            ->where('created_at', '>=', now()->subDay())->exists();
+        if ($humanChat && ($guest->conversation_state ?? null) === 'completed') {
             $this->needsPerson = true;
-            return response()->json(['processed' => false, 'reason' => 'Conversation finished: a person answers from the panel']);
+            return response()->json(['processed' => false, 'reason' => 'Chat with a person from the panel']);
+        }
+
+        if (($guest->conversation_state ?? null) === 'completed') {
+            // Once (per day): it's an automatic chat and it's over, with who to contact. Then nothing more.
+            if (\Illuminate\Support\Facades\Cache::add("chat_closed:{$guest->id}", true, now()->addDay())) {
+                return response()->json([
+                    'processed' => true,
+                    'reason' => 'Conversation finished: automatic notice',
+                    'reply' => GuestMessages::chatFinished($guest, $event),
+                ]);
+            }
+            return response()->json(['processed' => false, 'reason' => 'Conversation finished: no answer']);
         }
 
         if ($event && !$event->is_enabled) {

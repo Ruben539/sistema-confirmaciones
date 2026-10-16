@@ -92,7 +92,7 @@ class ConversationController extends Controller
         }
 
         return response()->json([
-            'guest' => $guest->only(['id', 'name', 'phone', 'status', 'table_number', 'needs_reply', 'notes', 'whatsapp_channel']),
+            'guest' => $guest->only(['id', 'name', 'phone', 'alt_phones', 'status', 'table_number', 'needs_reply', 'notes', 'whatsapp_channel', 'passes', 'confirmed_passes', 'whatsapp_status']),
             'messages' => $messages,
         ]);
     }
@@ -111,9 +111,20 @@ class ConversationController extends Controller
             return response()->json(['message' => 'Este invitado no tiene un teléfono registrado.'], 422);
         }
 
+        // Writing first to someone the number never talked to is what gets the bot's number banned: it uses
+        // the same daily quota as invitations
+        $channel = \App\Services\WhatsAppGateway::channelFor($guest);
+        $firstContact = $guest->whatsapp_status !== 'sent' && !GuestMessage::where('guest_id', $guest->id)->exists();
+        if ($firstContact && $channel === 'baileys' && \App\Services\WhatsAppGateway::baileysQuotaLeft() === 0) {
+            return response()->json([
+                'message' => 'Hoy ya se usó el cupo de primeros mensajes del bot (para proteger el número). A este invitado nunca se le escribió: probá mañana o enviale primero la invitación.',
+            ], 429);
+        }
+
         // Official API: more than 24 h after the guest's last message it goes as the approved "notice" template
         $result = \App\Services\WhatsAppGateway::sendText($phone, $validated['message'], null, [
-            'channel' => \App\Services\WhatsAppGateway::channelFor($guest),
+            'channel' => $channel,
+            'manual' => true,
             'name' => trim(explode(' ', trim($guest->name))[0]),
             'timeout' => 30,
         ]);
@@ -123,6 +134,10 @@ class ConversationController extends Controller
                     ? 'No se pudo contactar al WhatsApp del sistema. Intentá de nuevo en unos minutos.'
                     : 'El WhatsApp del sistema no pudo enviar el mensaje' . (!empty($result['error']) ? ' (' . $result['error'] . ')' : '') . '.',
             ], 502);
+        }
+
+        if ($firstContact && $channel === 'baileys') {
+            \App\Services\WhatsAppGateway::countBaileysColdSend();
         }
 
         $message = GuestMessage::create([

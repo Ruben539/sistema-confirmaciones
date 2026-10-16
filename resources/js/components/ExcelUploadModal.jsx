@@ -27,7 +27,7 @@ export const normalizePhone = (phone) => {
     return digits;
 };
 
-export default function ExcelUploadModal({ isOpen, onClose, event, eventId, currentGuestsCount = 0, onImportSuccess, onOpenUpgradeBot }) {
+export default function ExcelUploadModal({ isOpen, onClose, event, eventId, currentGuestsCount = 0, onImportSuccess, onOpenUpgradeBot, allowAutoSend = true }) {
     const [file, setFile] = useState(null);
     const [parsedData, setParsedData] = useState([]);
     const [rawRows, setRawRows] = useState([]);
@@ -616,7 +616,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
             if (ok) {
                 onImportSuccess(json?.message || 'Invitados importados con éxito');
-                if (json?.corrections?.length) {
+                if (json?.corrections?.length && allowAutoSend) {
                     setCorrections(json.corrections);
                 } else {
                     onClose();

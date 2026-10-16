@@ -34,6 +34,30 @@ class GuestMessages
         return trim(explode(' ', trim($guest->name))[0]) ?: $guest->name;
     }
 
+    // Who to talk to once the automatic chat is over: the event's planner, if she has a phone loaded
+    private static function contactLine(?Event $event): string
+    {
+        $planner = $event?->planner;
+        $digits = preg_replace('/[^\d]/', '', (string) ($planner->phone ?? ''));
+        if ($planner && strlen($digits) >= 8) {
+            $local = str_starts_with($digits, '595') ? '0' . substr($digits, 3) : $digits;
+            return "Para cualquier consulta, comunicate con {$planner->name} al {$local}.";
+        }
+        return 'Para cualquier consulta, comunicate directamente con los organizadores del evento.';
+    }
+
+    private static function automaticChatNote(?Event $event): string
+    {
+        return "\n\n🤖 _Este es un chat automático de confirmación y finaliza acá._ " . self::contactLine($event);
+    }
+
+    // The guest writes again after answering: one clear notice that nobody answers this chat
+    public static function chatFinished(Guest $guest, ?Event $event): string
+    {
+        return "¡Hola, " . self::firstName($guest) . "! 🤖 Este es un *chat automático* de confirmación y ya finalizó: tu respuesta quedó registrada ✅"
+            . "\n\nPor este chat no podemos responder mensajes. " . self::contactLine($event);
+    }
+
     // ───────── Attendance ─────────
 
     public static function confirmed(Guest $guest, Event $event, bool $askHeadcount = false): string
@@ -143,10 +167,10 @@ class GuestMessages
         ]);
 
         if ($changeUntil) {
-            $text .= "\n\nSi al final podés ir, avisanos por acá antes del {$changeUntil->format('d/m')} y lo actualizamos con mucho gusto.";
+            $text .= "\n\nSi al final podés ir, avisá a los organizadores antes del {$changeUntil->format('d/m')} y lo actualizan con mucho gusto.";
         }
 
-        return $text;
+        return $text . self::automaticChatNote($event);
     }
 
     // Unknown answer before responding: a friendly question, not "send only the number of your option"
@@ -197,7 +221,8 @@ class GuestMessages
             : "Perfecto, menú estándar para vos 🍽️";
 
         return "¡Gracias, {$name}! {$menu}"
-            . "\n\nTe dejamos de nuevo tu pase 🎟️ por las dudas. ¡Nos vemos en la fiesta! 🥂";
+            . "\n\nTe dejamos de nuevo tu pase 🎟️ por las dudas. ¡Nos vemos en la fiesta! 🥂"
+            . self::automaticChatNote($event);
     }
 
     // ───────── After answering ─────────

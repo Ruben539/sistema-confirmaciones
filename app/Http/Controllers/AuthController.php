@@ -20,7 +20,8 @@ class AuthController extends Controller
         if ($user) {
             return response()->json([
                 'authenticated' => true,
-                'user' => $user
+                // The panel hides the confirmation chatbot's buttons while it is off (only the WhatsApp module)
+                'user' => $user->setAttribute('whatsapp_automation', \App\Services\WhatsAppGateway::automationEnabled()),
             ]);
         }
 
@@ -87,6 +88,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role ?? 'user',
                 'planner_id' => $user->planner_id,
+                'whatsapp_automation' => \App\Services\WhatsAppGateway::automationEnabled(),
             ]
         ], 200);
     }

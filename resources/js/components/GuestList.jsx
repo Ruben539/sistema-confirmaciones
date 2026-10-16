@@ -265,6 +265,7 @@ export default function GuestList({
                         </button>
                     )}
 
+{onOpenWhatsAppModal && (
                     <button
                         onClick={onOpenWhatsAppModal}
                         className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-all shadow-md active:scale-95"
@@ -272,6 +273,7 @@ export default function GuestList({
                         <Send className="w-4 h-4" />
                         <span>Enviar WhatsApp</span>
                     </button>
+                    )}
 
                     {guests.length > 0 && (
                         <button

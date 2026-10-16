@@ -22,6 +22,7 @@ import HostessesManagement from './components/HostessesManagement';
 import AppReleases from './components/AppReleases';
 import MessagesInbox from './components/MessagesInbox';
 import SendReviewModal from './components/SendReviewModal';
+import WhatsAppWeb from './components/WhatsAppWeb';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
@@ -37,6 +38,8 @@ function Dashboard({ user, onLogout }) {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const isHostess = user?.role === 'hostess';
+    // Confirmation chatbot on? While it's off only the "WhatsApp" module sends (manual messages)
+    const botOn = user?.whatsapp_automation === true;
     // Anfitriona: her only screen is the guest list of her assigned events
     const [activeTab, setActiveTab] = useState(isHostess ? 'guests' : 'dashboard');
 
@@ -552,6 +555,8 @@ function Dashboard({ user, onLogout }) {
                     {/* Active View based on activeTab */}
                     {activeTab === 'app' ? (
                         <AppReleases user={user} showToast={showToast} onReleasesChanged={loadAppUpdate} />
+                    ) : activeTab === 'whatsapp' && !isHostess ? (
+                        <WhatsAppWeb event={activeEvent} guests={guests} user={user} showToast={showToast} />
                     ) : activeTab === 'messages' && !isHostess ? (
                         <MessagesInbox event={activeEvent} user={user} showToast={showToast} onUnreadChange={setUnreadMessages} />
                     ) : activeTab === 'hostesses' && (user?.role === 'admin' || user?.role === 'planner') ? (
@@ -647,17 +652,17 @@ function Dashboard({ user, onLogout }) {
                                     eventTitle={activeEvent?.couple_names || activeEvent?.title}
                                     onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
                                     onOpenExcelModal={() => setIsExcelModalOpen(true)}
-                                    onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
+                                    onOpenWhatsAppModal={botOn ? () => setIsWhatsAppModalOpen(true) : undefined}
                                     onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
                                     onUpdateGuest={handleUpdateGuest}
                                     onDeleteGuest={handleDeleteGuest}
                                     onClearAll={handleClearAll}
                                     onMarkSent={handleMarkSent}
-                                    onResendQr={handleResendQr}
-                                    onSendReminder={handleSendReminder}
-                                    onRemindAllPending={handleRemindAllPending}
-                                    onSendCorrections={handleSendCorrections}
-                                    onSendCountCorrection={handleSendCountCorrection}
+                                    onResendQr={botOn ? handleResendQr : undefined}
+                                    onSendReminder={botOn ? handleSendReminder : undefined}
+                                    onRemindAllPending={botOn ? handleRemindAllPending : undefined}
+                                    onSendCorrections={botOn ? handleSendCorrections : undefined}
+                                    onSendCountCorrection={botOn ? handleSendCountCorrection : undefined}
                                     onMergeGuests={handleMergeGuests}
                                 />
                             </div>
@@ -760,17 +765,17 @@ function Dashboard({ user, onLogout }) {
                                         guests={guests}
                                         onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
                                         onOpenExcelModal={() => setIsExcelModalOpen(true)}
-                                        onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
+                                        onOpenWhatsAppModal={botOn ? () => setIsWhatsAppModalOpen(true) : undefined}
                                         onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
                                         onUpdateGuest={handleUpdateGuest}
                                         onDeleteGuest={handleDeleteGuest}
                                         onClearAll={handleClearAll}
                                         onMarkSent={handleMarkSent}
-                                        onResendQr={handleResendQr}
-                                        onSendReminder={handleSendReminder}
-                                        onRemindAllPending={handleRemindAllPending}
-                                        onSendCorrections={handleSendCorrections}
-                                        onSendCountCorrection={handleSendCountCorrection}
+                                        onResendQr={botOn ? handleResendQr : undefined}
+                                        onSendReminder={botOn ? handleSendReminder : undefined}
+                                        onRemindAllPending={botOn ? handleRemindAllPending : undefined}
+                                        onSendCorrections={botOn ? handleSendCorrections : undefined}
+                                        onSendCountCorrection={botOn ? handleSendCountCorrection : undefined}
                                         onMergeGuests={handleMergeGuests}
                                     />
                                 </>
@@ -787,6 +792,7 @@ function Dashboard({ user, onLogout }) {
                 event={activeEvent}
                 currentGuestsCount={guests.length}
                 onImportSuccess={(msg) => { showToast(msg); activeEvent && loadGuests(activeEvent.id); }}
+                allowAutoSend={botOn}
                 onOpenUpgradeBot={() => { setIsExcelModalOpen(false); setIsChatbotUpgradeOpen(true); }}
             />
 

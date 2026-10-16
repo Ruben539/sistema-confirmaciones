@@ -587,6 +587,9 @@ class GuestController extends Controller
      */
     public function sendCorrections(Request $request, $eventId)
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return response()->json(['message' => 'Los envíos automáticos de WhatsApp están desactivados. Podés escribirle a cada invitado desde el módulo WhatsApp.'], 423);
+        }
         $event = Event::findOrFail($eventId);
         if ($denied = $this->validateEventAccess($event, true)) {
             return $denied;
@@ -726,6 +729,9 @@ class GuestController extends Controller
      */
     public function sendCountCorrection(Request $request, $eventId)
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return response()->json(['message' => 'Los envíos automáticos de WhatsApp están desactivados. Podés escribirle a cada invitado desde el módulo WhatsApp.'], 423);
+        }
         $event = Event::findOrFail($eventId);
         if ($denied = $this->validateEventAccess($event, true)) {
             return $denied;
@@ -868,6 +874,9 @@ class GuestController extends Controller
      */
     public function resendQrPass($id)
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return response()->json(['message' => 'Los envíos automáticos de WhatsApp están desactivados. Podés escribirle a cada invitado desde el módulo WhatsApp.'], 423);
+        }
         $guest = Guest::with('event')->findOrFail($id);
         if ($guest->event && ($denied = $this->validateEventAccess($guest->event, true))) {
             return $denied;
@@ -906,6 +915,10 @@ class GuestController extends Controller
 
     public function sendWhatsAppQrPass(Guest $guest, bool $isResend = false): bool
     {
+        // Automatic WhatsApp off: the pass isn't sent by itself (it can be sent by hand from the panel)
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return false;
+        }
         try {
             $event = $guest->event;
             $qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" . urlencode($guest->token);
@@ -953,6 +966,9 @@ class GuestController extends Controller
 
     public function sendWhatsAppApi(Request $request, $id)
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return response()->json(['message' => 'Los envíos automáticos de WhatsApp están desactivados. Podés escribirle a cada invitado desde el módulo WhatsApp.'], 423);
+        }
         $guest = Guest::with('event')->findOrFail($id);
         $event = $guest->event;
 
@@ -1046,6 +1062,9 @@ class GuestController extends Controller
      */
     public function sendReminder($id)
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return response()->json(['message' => 'Los envíos automáticos de WhatsApp están desactivados. Podés escribirle a cada invitado desde el módulo WhatsApp.'], 423);
+        }
         $guest = Guest::with('event')->findOrFail($id);
         $event = $guest->event;
 
@@ -1409,6 +1428,9 @@ class GuestController extends Controller
 
     public function sendBulkQueue(Request $request, $eventId)
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return response()->json(['message' => 'Los envíos automáticos de WhatsApp están desactivados. Podés escribirle a cada invitado desde el módulo WhatsApp.'], 423);
+        }
         $event = Event::findOrFail($eventId);
         if ($denied = $this->validateEventAccess($event, true)) {
             return $denied;
@@ -1536,6 +1558,9 @@ class GuestController extends Controller
 
     private function bulkProgress($eventId): array
     {
+        if (!\App\Services\WhatsAppGateway::automationEnabled()) {
+            return ['active' => false, 'automation' => false];
+        }
         $bulk = Cache::get("bulk:{$eventId}");
         if (!$bulk || empty($bulk['ids'])) {
             return ['active' => false];

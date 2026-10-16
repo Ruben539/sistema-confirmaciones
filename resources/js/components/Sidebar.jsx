@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone } from 'lucide-react';
 
 export default function Sidebar({
     user,
@@ -126,6 +126,15 @@ export default function Sidebar({
                                 ? <span className="w-2 h-2 rounded-full bg-emerald-500" />
                                 : <span className="min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black bg-emerald-500 text-white flex items-center justify-center">{unreadMessages > 99 ? '99+' : unreadMessages}</span>
                         )}
+                    </button>
+
+                    {/* Write to any guest, like WhatsApp Web */}
+                    <button
+                        onClick={() => setActiveTab('whatsapp')}
+                        className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'whatsapp' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                    >
+                        <Phone className="w-4 h-4 shrink-0" />
+                        {!collapsed && <span>WhatsApp</span>}
                     </button>
 
                     <button
