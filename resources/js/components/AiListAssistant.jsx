@@ -49,6 +49,8 @@ export default function AiListAssistant({ event, showToast, onImported }) {
     const [importing, setImporting] = useState(false);
     const [error, setError] = useState(null);
     const inputRef = useRef(null);
+    // "Subir Excel" from the spreadsheet itself: the file goes straight into it
+    const gridInputRef = useRef(null);
 
     // Problems of each row, checked live while editing
     const rowErrors = useMemo(() => (grid ? validateSheet(grid) : {}), [grid]);
@@ -64,10 +66,10 @@ export default function AiListAssistant({ event, showToast, onImported }) {
     const canImport = filledRows.length > 0 && errorCount === 0 && pendingObservations === 0;
 
     // Read the Excel as it came (Windows / UTF-8 CSV, title rows above the headers)
-    const readFile = (uploaded) => {
+    const readFile = (uploaded, intoGrid = false) => {
         setError(null);
         setFile(uploaded);
-        setGrid(null);
+        if (!intoGrid) setGrid(null);
         setObservations([]);
         setChat([]);
         const reader = new FileReader();
@@ -97,6 +99,13 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                     return;
                 }
                 setSheet({ headers, rows });
+                if (intoGrid) {
+                    const fromFile = sheetRowsFromFile(headers, rows);
+                    const kept = (grid || []).filter(isFilledRow);
+                    // Something already typed: replace it, or add the file's rows after it
+                    const replace = !kept.length || window.confirm(`¿Reemplazar las ${kept.length} filas de la planilla por las del Excel?\n\nAceptar = reemplazar · Cancelar = agregar las filas del Excel al final`);
+                    setGrid(replace ? fromFile : [...kept, ...fromFile]);
+                }
             } catch (err) {
                 console.error(err);
                 setError('No se pudo leer el archivo. Subí un .xlsx, .xls o .csv.');
@@ -263,6 +272,20 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                                 {errorCount > 0 && <span className="px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300">{errorCount} filas con errores (en rojo)</span>}
                             </div>
                             <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => gridInputRef.current?.click()}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold"
+                                    title="Cargar un Excel en esta planilla (cualquier formato)"
+                                >
+                                    <Upload className="w-3.5 h-3.5" /> Subir Excel
+                                </button>
+                                <input
+                                    ref={gridInputRef}
+                                    type="file"
+                                    accept=".xlsx,.xls,.csv"
+                                    className="hidden"
+                                    onChange={(e) => { if (e.target.files?.[0]) readFile(e.target.files[0], true); e.target.value = ''; }}
+                                />
                                 {sheet && (
                                     <button
                                         onClick={() => ask('Revisá esta planilla: uní acompañantes, parejas con dos teléfonos y teléfonos repetidos, y marcá lo que no cuadra.')}
