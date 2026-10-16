@@ -172,7 +172,7 @@ export default function WhatsAppWeb({ event, guests = [], user, showToast }) {
                         <input
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            placeholder={newChat ? 'Buscar invitado para escribirle...' : 'Buscar un chat o invitado'}
+                            placeholder={newChat ? 'Buscar invitado para escribirle...' : 'Buscar invitado por nombre o teléfono'}
                             className="w-full text-sm rounded-lg bg-[#f0f2f5] dark:bg-[#202c33] text-zinc-900 dark:text-[#e9edef] placeholder:text-zinc-500 pl-10 pr-3 py-2 outline-none"
                         />
                     </div>
@@ -206,12 +206,13 @@ export default function WhatsAppWeb({ event, guests = [], user, showToast }) {
                     ))}
 
                     {/* Guests without a chat yet (or all of them in "Nuevo chat") */}
-                    {(newChat || q) && visibleContacts.length > 0 && (
+                    {/* The whole guest list of the event: the ones without a chat yet go below the chats */}
+                    {visibleContacts.length > 0 && (
                         <div className="px-4 pt-4 pb-2 text-[13px] font-medium text-[#008069] dark:text-[#00a884]">
-                            {newChat ? 'Invitados del evento' : 'Otros invitados'}
+                            {newChat ? `Invitados del evento (${visibleContacts.length})` : `Invitados sin chat (${visibleContacts.length})`}
                         </div>
                     )}
-                    {(newChat || q) && visibleContacts.slice(0, 200).map((g) => (
+                    {visibleContacts.map((g) => (
                         <button
                             key={`g${g.id}`}
                             onClick={() => openChat(g.id)}
@@ -225,9 +226,9 @@ export default function WhatsAppWeb({ event, guests = [], user, showToast }) {
                         </button>
                     ))}
 
-                    {!newChat && !q && visibleChats.length === 0 && (
+                    {visibleChats.length === 0 && visibleContacts.length === 0 && (
                         <div className="p-8 text-center text-xs text-zinc-500 dark:text-[#8696a0]">
-                            Todavía no hay chats. Tocá <strong>+</strong> para escribirle a un invitado.
+                            {q ? 'No hay invitados con ese nombre o teléfono.' : 'Este evento todavía no tiene invitados con teléfono.'}
                         </div>
                     )}
                 </div>
