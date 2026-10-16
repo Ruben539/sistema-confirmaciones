@@ -318,7 +318,7 @@ export default function EventSettingsModal({ isOpen, onClose, event, user, onSav
                                     : formData.reminder_interval_days === 0
                                         ? 'No se enviarán recordatorios automáticos para este evento.'
                                         : 'Se envía un único recordatorio a los pendientes el día anterior a la fecha límite.'}
-                                {' '}Siempre se respetan las pausas entre mensajes, el límite diario y el horario de envío (9 a 21 h).
+                                {' '}Siempre se respetan las pausas entre mensajes y el límite diario.
                             </p>
                         </div>
 

@@ -917,7 +917,7 @@ class GuestController extends Controller
         \App\Jobs\SendWhatsAppMessageJob::dispatch($guest->id, 'reminder');
 
         return response()->json([
-            'message' => "Recordatorio en camino a {$guest->name}. Se envía por el WhatsApp del sistema respetando las pausas entre mensajes y el horario de envío (" . config('whatsapp.window_start') . ' a ' . config('whatsapp.window_end') . ' h).',
+            'message' => "Recordatorio en camino a {$guest->name}. Se envía por el WhatsApp del sistema respetando las pausas entre mensajes.",
             'guest' => $guest->fresh(),
         ], 202);
     }
@@ -1392,10 +1392,9 @@ class GuestController extends Controller
         $now = now();
         $waiting = null;
         if ($left > 0) {
-            if ($now->hour < config('whatsapp.window_start') || $now->hour >= config('whatsapp.window_end')) {
-                $waiting = sprintf('Fuera del horario de envío: sigue a las %02d:00.', config('whatsapp.window_start'));
-            } elseif (!\App\Services\WhatsAppGateway::cloudConfigured() && \App\Services\WhatsAppGateway::baileysQuotaLeft() === 0) {
-                $waiting = 'Se alcanzó el cupo diario del bot: sigue mañana a las ' . sprintf('%02d:00', config('whatsapp.window_start')) . '.';
+            // Corrections / passes go to guests who already talk to us: the first-message quota doesn't apply
+            if ($bulk['mode'] !== 'corrections' && !\App\Services\WhatsAppGateway::cloudConfigured() && \App\Services\WhatsAppGateway::baileysQuotaLeft() === 0) {
+                $waiting = 'Se alcanzó el cupo diario del bot: sigue mañana.';
             }
         }
 

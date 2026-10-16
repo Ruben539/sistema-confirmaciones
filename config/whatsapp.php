@@ -77,9 +77,4 @@ return [
     'cloud_max_delay' => (int) env('WHATSAPP_CLOUD_MAX_DELAY', 3),
     'cloud_daily_limit' => (int) env('WHATSAPP_CLOUD_DAILY_LIMIT', 250),
 
-    // Only send between these hours (app timezone). Messages outside the
-    // window wait for the next opening.
-    'window_start' => (int) env('WHATSAPP_WINDOW_START', 9),
-    'window_end' => (int) env('WHATSAPP_WINDOW_END', 21),
-
 ];

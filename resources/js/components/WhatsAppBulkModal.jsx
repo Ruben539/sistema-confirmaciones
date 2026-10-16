@@ -439,7 +439,7 @@ export default function WhatsAppBulkModal({ isOpen, onClose, event, guests, onMa
                     <div className="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-wrap gap-3">
                         <div className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300">
                             <ShieldAlert className="w-4 h-4 text-emerald-500" />
-                            <span>Pausas anti-bloqueo automáticas y horario de envío. El envío sigue aunque cierres el navegador.</span>
+                            <span>Pausas anti-bloqueo automáticas entre mensajes. El envío sigue aunque cierres el navegador.</span>
                         </div>
 
                         {pendingGuestsCount > 0 ? (

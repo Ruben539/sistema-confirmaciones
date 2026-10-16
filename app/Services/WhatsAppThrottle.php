@@ -2,14 +2,13 @@
 
 namespace App\Services;
 
-use Carbon\Carbon;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
 
 /**
  * Paces automated WhatsApp messages per session (one session = one phone number)
  * to reduce the risk of the number being banned: random gaps between messages,
- * longer breaks after bursts, a daily cap and a sending window.
+ * longer breaks after bursts and a daily cap (at any hour of the day).
  */
 class WhatsAppThrottle
 {
@@ -78,14 +77,10 @@ class WhatsAppThrottle
     {
         $now = now();
 
-        $windowWait = $this->secondsUntilWindowOpens($now);
-        if ($windowWait > 0) {
-            return $windowWait;
-        }
-
+        // No time-of-day restriction: messages go out at any hour, only paced and within the daily limit
         if ($this->sentToday() >= $this->dailyLimit()) {
-            $tomorrowOpen = $now->copy()->addDay()->startOfDay()->setHour(config('whatsapp.window_start'));
-            return max(60, (int) $now->diffInSeconds($tomorrowOpen, false) + random_int(0, 600));
+            $tomorrow = $now->copy()->addDay()->startOfDay();
+            return max(60, (int) $now->diffInSeconds($tomorrow, false) + random_int(0, 600));
         }
 
         $nextAt = Cache::get("wa:{$this->sessionId}:next_at");
@@ -97,9 +92,6 @@ class WhatsAppThrottle
      */
     public function waitReason(): string
     {
-        if ($this->secondsUntilWindowOpens(now()) > 0) {
-            return sprintf('Fuera del horario de envío (%02d:00 a %02d:00).', config('whatsapp.window_start'), config('whatsapp.window_end'));
-        }
         if ($this->sentToday() >= $this->dailyLimit()) {
             return 'Se alcanzó el límite diario de ' . $this->dailyLimit() . ' mensajes para este número. Se reanuda mañana.';
         }
@@ -136,23 +128,5 @@ class WhatsAppThrottle
     private function dayKey(): string
     {
         return "wa:{$this->sessionId}:day:" . now()->format('Ymd');
-    }
-
-    private function secondsUntilWindowOpens(Carbon $now): int
-    {
-        $start = config('whatsapp.window_start');
-        $end = config('whatsapp.window_end');
-
-        if ($now->hour >= $start && $now->hour < $end) {
-            return 0;
-        }
-
-        $open = $now->copy()->startOfDay()->setHour($start);
-        if ($now->hour >= $end) {
-            $open->addDay();
-        }
-
-        // Spread the restart so queued messages don't all fire at opening time
-        return (int) $now->diffInSeconds($open, false) + random_int(0, 900);
     }
 }

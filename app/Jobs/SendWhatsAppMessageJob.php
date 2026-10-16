@@ -80,7 +80,7 @@ class SendWhatsAppMessageJob implements ShouldQueue
             : WhatsAppGateway::channelForInvitation($guest);
         if (!$toKnownGuest && $channel === 'baileys' && WhatsAppGateway::baileysQuotaLeft() === 0) {
             // The bot already wrote first to as many people as is safe today
-            $tomorrow = now()->addDay()->startOfDay()->setHour(config('whatsapp.window_start'));
+            $tomorrow = now()->addDay()->startOfDay();
             $this->release(max(60, (int) now()->diffInSeconds($tomorrow, false) + random_int(0, 900)));
             return;
         }
