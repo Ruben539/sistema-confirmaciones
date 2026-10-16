@@ -56,7 +56,7 @@ const toNumber = (v) => {
     return Number.isNaN(n) ? null : n;
 };
 
-export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, readOnly = false, rowLabels = null, cellHint = null }) {
+export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, readOnly = false, rowLabels = null, cellHint = null, beforeColumns = null }) {
     const scrollRef = useRef(null);
     const keysRef = useRef(null); // hidden textarea that keeps the keyboard focus, so copy / paste work in every browser
     const history = useRef({ past: [], future: [] });
@@ -456,7 +456,8 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
         return { cells, sum: numbers ? sum : null };
     }, [top, bottom, left, right, rows, view, nRows, columns]);
 
-    const totalWidth = columns.reduce((a, c) => a + getColWidth(c), 48 + (readOnly ? 0 : 32));
+    const beforeColWidth = beforeColumns ? (beforeColumns.width || 130) : 0;
+    const totalWidth = columns.reduce((a, c) => a + getColWidth(c), 48 + (readOnly ? 0 : 32) + beforeColWidth);
     const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
     const modKey = isMac ? '⌘' : 'Ctrl';
     const btn = 'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40 disabled:hover:bg-transparent';
@@ -507,12 +508,19 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                 <table className="border-collapse text-xs" style={{ tableLayout: 'fixed', width: totalWidth }}>
                     <colgroup>
                         <col style={{ width: 48 }} />
+                        {beforeColumns && <col style={{ width: beforeColWidth }} />}
                         {columns.map((c) => <col key={c.key} style={{ width: getColWidth(c) }} />)}
                         {!readOnly && <col style={{ width: 32 }} />}
                     </colgroup>
                     <thead className="sticky top-0 z-20">
                         <tr>
                             <th onMouseDown={selectAll} title="Seleccionar todo" className="sticky left-0 z-30 bg-[#e8eaed] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 cursor-pointer" />
+                            {beforeColumns && (
+                                <th className="bg-[#e8eaed] dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 px-2 py-1 text-center font-bold text-zinc-700 dark:text-zinc-200">
+                                    <div className="text-[10px] text-zinc-400 font-mono">&nbsp;</div>
+                                    <div className="truncate text-xs font-bold" title={beforeColumns.label || 'Invitación'}>{beforeColumns.label || 'Invitación'}</div>
+                                </th>
+                            )}
                             {columns.map((c, ci) => {
                                 const colSelected = nRows > 0 && ci >= left && ci <= right;
                                 const active = filters[c.key] || sort?.key === c.key;
@@ -566,6 +574,11 @@ export default function SpreadsheetGrid({ columns, rows, onChange, errors = {}, 
                                     >
                                         {rowLabels ? rowLabels[rowIndex] : rowIndex + 2}
                                     </td>
+                                    {beforeColumns && (
+                                        <td className="px-1.5 py-1 border border-zinc-300 dark:border-zinc-700 text-center bg-white dark:bg-zinc-900 whitespace-nowrap overflow-hidden">
+                                            {beforeColumns.render(row, rowIndex)}
+                                        </td>
+                                    )}
                                     {columns.map((c, ci) => {
                                         const bad = rowErrors[c.key];
                                         const inSel = v >= top && v <= bottom && ci >= left && ci <= right;

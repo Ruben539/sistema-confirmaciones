@@ -1,10 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Download, Users, AlertCircle, CheckCircle2, X, FileSpreadsheet, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { Upload, Download, Users, AlertCircle, CheckCircle2, X, FileSpreadsheet, ChevronDown, ChevronUp, RotateCcw, MessageSquare, Copy, Check, ExternalLink, Smartphone } from 'lucide-react';
 import { apiFetch } from '../api';
 import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS as COLUMNS, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint } from '../guestSheet';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet, companionCellHint } from '../guestSheet';
 
 export default function AiListAssistant({ event, showToast, onImported }) {
     const [file, setFile] = useState(null);
@@ -13,6 +13,8 @@ export default function AiListAssistant({ event, showToast, onImported }) {
     const [error, setError] = useState(null);
     const [fixReport, setFixReport] = useState(null);
     const [showAllSuggestions, setShowAllSuggestions] = useState(false);
+    const [previewGuestRow, setPreviewGuestRow] = useState(null);
+    const [copiedMessage, setCopiedMessage] = useState(false);
     const gridInputRef = useRef(null);
 
     // Problems of each row, checked live while editing
@@ -109,6 +111,49 @@ export default function AiListAssistant({ event, showToast, onImported }) {
         setError(null);
         setFixReport(null);
         setShowAllSuggestions(false);
+        setPreviewGuestRow(null);
+    };
+
+    const formatWhatsAppInvitation = (row) => {
+        const rawTemplate = event?.message_template || "¡Hola {nombre}! Te invitamos al evento de {pareja} ✨\n📍 Lugar: {lugar}\n\nRespondé directamente a este mensaje:\n1️⃣ 1 - Confirmar Asistencia\n2️⃣ 2 - No podré asistir";
+        const guestName = cleanGuestName(row.name) || 'Invitado';
+        const coupleName = event?.couple_names || event?.title || 'nosotros';
+
+        const loc = event?.location;
+        let formattedLocation = 'Por confirmar';
+        if (loc && loc !== 'Por confirmar') {
+            if (loc.startsWith('http://') || loc.startsWith('https://')) {
+                formattedLocation = loc;
+            } else {
+                formattedLocation = `${loc}\n🗺️ Ver en Google Maps: https://maps.google.com/?q=${encodeURIComponent(loc)}`;
+            }
+        }
+
+        const total = Math.max(1, toInt(row.total, 1));
+        const placesText = total === 1 ? '1 persona' : `${total} personas`;
+
+        let text = rawTemplate;
+        if (total > 1 && !text.includes('{lugares}')) {
+            const line = '🎟️ Lugares reservados: *{lugares}*';
+            text = /^.*respond/im.test(text) ? text.replace(/^(.*respond)/im, `${line}\n\n$1`) : `${text}\n\n${line}`;
+        }
+
+        let msg = text
+            .replace(/\{nombre\}/g, guestName)
+            .replace(/\{pareja\}/g, coupleName)
+            .replace(/\{lugares\}/g, placesText)
+            .replace(/\{lugar\}/g, formattedLocation)
+            .replace(/\{link\}/g, `${window.location.origin}/confirmar/ejemplo`);
+
+        const companions = splitList(row.companions);
+        if (companions.length > 0 && !msg.toLowerCase().includes('acompañante')) {
+            msg += `\n👥 Acompañantes: ${companions.join(', ')}`;
+        }
+        if (row.table && !msg.toLowerCase().includes('mesa')) {
+            msg += `\n🍽️ Mesa asignada: ${row.table}`;
+        }
+
+        return msg;
     };
 
     return (
@@ -220,6 +265,29 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                     errors={rowErrors}
                     rowLabels={grid.map((r, i) => r._row ?? (i + 1))}
                     cellHint={companionCellHint(grid, setGrid)}
+                    beforeColumns={{
+                        label: 'Invitación',
+                        width: 140,
+                        render: (row) => {
+                            const hasName = Boolean(String(row.name || '').trim());
+                            return (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPreviewGuestRow(row);
+                                        setCopiedMessage(false);
+                                    }}
+                                    disabled={!hasName}
+                                    className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-[11px] font-bold transition-all disabled:opacity-25 disabled:pointer-events-none shadow-xs"
+                                    title={hasName ? `Ver cómo le llegará la invitación a ${cleanGuestName(row.name)}` : 'Escribí el nombre para ver la vista previa'}
+                                >
+                                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <span>Ver invitación</span>
+                                </button>
+                            );
+                        }
+                    }}
                 />
 
                 <p className="text-[11px] text-zinc-500">
@@ -243,6 +311,127 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                     </button>
                 </div>
             </div>
+
+            {/* Modal: Vista previa real de cómo le llegará la invitación de WhatsApp */}
+            {previewGuestRow && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-950/80 backdrop-blur-md animate-fade-in">
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+                        {/* WhatsApp Header */}
+                        <div className="bg-[#075e54] text-white p-3.5 flex items-center justify-between shrink-0 shadow-sm">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 rounded-full bg-emerald-700/80 flex items-center justify-center font-bold text-white shrink-0 border border-white/20 text-sm">
+                                    {cleanGuestName(previewGuestRow.name)?.[0]?.toUpperCase() || 'I'}
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="font-bold text-sm truncate">{cleanGuestName(previewGuestRow.name)}</div>
+                                    <div className="text-[11px] text-emerald-100/90 truncate flex items-center gap-1.5">
+                                        <span>{previewGuestRow.phone || 'Sin número asignado'}</span>
+                                        <span>•</span>
+                                        <span>{toInt(previewGuestRow.total, 1) === 1 ? 'Válido 1 persona' : `Válido ${toInt(previewGuestRow.total, 1)} personas`}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setPreviewGuestRow(null)}
+                                className="p-1.5 rounded-xl hover:bg-white/10 text-white/90 hover:text-white transition-colors"
+                                title="Cerrar vista previa"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Info Bar */}
+                        <div className="bg-emerald-50 dark:bg-emerald-950/30 px-4 py-2 border-b border-emerald-100 dark:border-emerald-900/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-emerald-900 dark:text-emerald-200">
+                            <span className="flex items-center gap-1.5 font-bold">
+                                <Smartphone className="w-3.5 h-3.5 text-emerald-600" /> Vista previa del mensaje de WhatsApp
+                            </span>
+                            {previewGuestRow.table && (
+                                <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                                    Mesa: {previewGuestRow.table}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* WhatsApp Chat Body */}
+                        <div className="flex-1 overflow-y-auto p-4 bg-[#efeae2] dark:bg-[#0b141a] space-y-3">
+                            <div className="text-center">
+                                <span className="inline-block px-3 py-1 rounded-lg bg-[#ffeecd] dark:bg-zinc-800/90 text-[#54656f] dark:text-zinc-400 text-[10px] shadow-xs">
+                                    🔒 Los mensajes están cifrados de extremo a extremo
+                                </span>
+                            </div>
+
+                            <div className="text-center">
+                                <span className="inline-block px-2.5 py-0.5 rounded-lg bg-white/80 dark:bg-zinc-800 text-[10px] text-zinc-600 dark:text-zinc-400 font-bold uppercase shadow-xs">
+                                    Hoy
+                                </span>
+                            </div>
+
+                            {/* Message Bubble */}
+                            <div className="max-w-[88%] mr-auto rounded-2xl rounded-tl-sm bg-white dark:bg-[#1f2c34] text-zinc-900 dark:text-zinc-100 shadow-md border border-black/5 dark:border-white/5 overflow-hidden">
+                                {(event?.cover_photo_url || event?.cover_photo_path) && (
+                                    <div className="w-full max-h-56 overflow-hidden bg-zinc-900 flex items-center justify-center">
+                                        <img
+                                            src={event.cover_photo_url || `/storage/${event.cover_photo_path}`}
+                                            alt="Flyer del evento"
+                                            className="w-full object-cover max-h-56"
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="p-3 text-xs whitespace-pre-line leading-relaxed font-sans select-text">
+                                    {formatWhatsAppInvitation(previewGuestRow)}
+                                    <div className="text-right text-[10px] text-zinc-400 mt-1.5 flex items-center justify-end gap-1 select-none">
+                                        <span>14:25</span>
+                                        <span className="text-[#53bdeb] font-black">✓✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Actions */}
+                        <div className="p-3.5 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(formatWhatsAppInvitation(previewGuestRow));
+                                        setCopiedMessage(true);
+                                        setTimeout(() => setCopiedMessage(false), 2000);
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    {copiedMessage ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                    <span>{copiedMessage ? 'Copiado al portapapeles' : 'Copiar texto'}</span>
+                                </button>
+
+                                {previewGuestRow.phone && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const cleanPhone = previewGuestRow.phone.replace(/[^\d]/g, '');
+                                            const text = encodeURIComponent(formatWhatsAppInvitation(previewGuestRow));
+                                            window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`, '_blank');
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors shadow-xs"
+                                        title="Abrir un chat de prueba en WhatsApp con este mensaje"
+                                    >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        <span>Probar en WhatsApp</span>
+                                    </button>
+                                )}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setPreviewGuestRow(null)}
+                                className="px-4 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-colors"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
