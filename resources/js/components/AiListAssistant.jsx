@@ -4,7 +4,7 @@ import { Sparkles, Upload, Send, Download, Users, AlertCircle, CheckCircle2, X, 
 import { apiFetch } from '../api';
 import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile } from '../guestSheet';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile, autoFixSheet } from '../guestSheet';
 
 // AI proposal <-> spreadsheet rows
 const fromInvitation = (g) => ({
@@ -54,6 +54,14 @@ export default function AiListAssistant({ event, showToast, onImported }) {
 
     // Problems of each row, checked live while editing
     const rowErrors = useMemo(() => (grid ? validateSheet(grid) : {}), [grid]);
+    // What the automatic corrections would do right now (suggested on top of the spreadsheet)
+    const suggestion = useMemo(() => (grid ? autoFixSheet(grid) : null), [grid]);
+    const [fixReport, setFixReport] = useState(null);
+    const applyAutoFix = () => {
+        const result = autoFixSheet(grid);
+        setGrid(result.rows);
+        setFixReport({ changes: result.changes, pending: result.pending });
+    };
 
     if (!event) {
         return <div className="p-12 text-center text-xs text-zinc-500">Seleccioná un evento para usar el asistente.</div>;
@@ -300,6 +308,36 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                                 </button>
                             </div>
                         </div>
+
+                        {/* Companions in their own rows, same phone twice, couples with two phones: suggested fix */}
+                        {suggestion?.changes.length > 0 && (
+                            <div className="p-4 rounded-2xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/70 dark:bg-sky-950/20 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                <div className="text-xs text-sky-900 dark:text-sky-200 space-y-0.5">
+                                    <div className="font-black">Detectamos {suggestion.changes.length} {suggestion.changes.length === 1 ? 'corrección' : 'correcciones'} que se pueden aplicar solas:</div>
+                                    {suggestion.changes.slice(0, 4).map((c, i) => <div key={i}>• {c}</div>)}
+                                    {suggestion.changes.length > 4 && <div className="text-sky-700/80">… y {suggestion.changes.length - 4} más</div>}
+                                </div>
+                                <button onClick={applyAutoFix} className="shrink-0 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-black">
+                                    Unir acompañantes y duplicados
+                                </button>
+                            </div>
+                        )}
+
+                        {fixReport && (
+                            <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/70 dark:bg-emerald-950/20 text-xs space-y-1 relative">
+                                <button onClick={() => setFixReport(null)} className="absolute top-2 right-2 p-1 text-zinc-400 hover:text-zinc-700"><X className="w-4 h-4" /></button>
+                                <div className="font-black text-emerald-800 dark:text-emerald-300">✅ {fixReport.changes.length} {fixReport.changes.length === 1 ? 'corrección aplicada' : 'correcciones aplicadas'}</div>
+                                <div className="max-h-28 overflow-y-auto text-emerald-900 dark:text-emerald-200">
+                                    {fixReport.changes.map((c, i) => <div key={i}>• {c}</div>)}
+                                </div>
+                                {fixReport.pending.length > 0 && (
+                                    <div className="pt-2 text-amber-800 dark:text-amber-300">
+                                        <div className="font-black">Para decidir vos ({fixReport.pending.length}):</div>
+                                        {fixReport.pending.map((c, i) => <div key={i}>• {c}</div>)}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <SpreadsheetGrid
                             columns={COLUMNS}

@@ -150,3 +150,98 @@ export const sheetRowsFromFile = (headers, rows) => {
         };
     });
 };
+
+const normName = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+const people = (n) => normName(n).split(/\s+(?:y|e)\s+|\s*[,/&+]\s*/).map((p) => p.trim()).filter(Boolean);
+const phoneKey = (p) => String(p || '').replace(/[^\d]/g, '').slice(-9);
+const hasPhone = (row) => String(row.phone || '').replace(/[^\d]/g, '').length >= 6;
+
+/**
+ * The same corrections as the import, applied to the spreadsheet (no AI):
+ *  1. rows without phone under an invitation are its companions, while they fit in its total
+ *     ("Marcos Pereira 6" + Adriana, Pauli, Abi, Jimena, Asaf -> one invitation with 5 named companions)
+ *  2. the same phone in several rows is one invitation (the other rows are companions; totals add up)
+ *  3. the same people in several rows with another phone ("Nadia y Enrique" twice, "Hector y Karen" +
+ *     "Karen") are one invitation, the other number becomes one of its other phones
+ * Returns the new rows, what changed and what couldn't be decided.
+ */
+export const autoFixSheet = (rows) => {
+    const list = (rows || []).filter(isFilledRow).map((r) => ({ ...r }));
+    const changes = [];
+    const pending = [];
+    const label = (r) => (r._row ? `fila ${r._row}` : 'fila nueva');
+    const addCompanion = (holder, name) => {
+        const names = splitList(holder.companions);
+        if (name && !names.map(normName).includes(normName(name))) holder.companions = [...names, name].join(', ');
+    };
+
+    // 1. Rows without phone under an invitation
+    let holder = null;
+    list.forEach((row) => {
+        if (hasPhone(row)) {
+            holder = row;
+            return;
+        }
+        if (!String(row.name || '').trim()) return;
+        if (!holder) {
+            pending.push(`${row.name} (${label(row)}): no tiene teléfono ni una invitación arriba a la que pertenezca.`);
+            return;
+        }
+        const total = Math.max(1, toInt(holder.total, 1));
+        const free = total - 1 - splitList(holder.companions).length;
+        if (free > 0) {
+            addCompanion(holder, row.name.trim());
+            if (row.category === 'Niño' && toInt(holder.children, 0) < total - 1) holder.children = String(toInt(holder.children, 0) + 1);
+            row._remove = true;
+            changes.push(`${row.name.trim()} → acompañante de ${holder.name}`);
+        } else {
+            pending.push(`${row.name} (${label(row)}): no entra en la invitación de ${holder.name} (${total} ${total === 1 ? 'persona' : 'personas'}). Subile el total a ${holder.name} o cargale un teléfono si es invitación aparte.`);
+        }
+    });
+    let kept = list.filter((r) => !r._remove);
+
+    // 2. Same phone in several rows
+    const byPhone = {};
+    kept.forEach((row) => {
+        if (!hasPhone(row)) return;
+        const key = phoneKey(row.phone);
+        const first = byPhone[key];
+        if (!first) {
+            byPhone[key] = row;
+            return;
+        }
+        const sameRow = normName(row.name) === normName(first.name) && toInt(row.total, 1) === toInt(first.total, 1);
+        if (!sameRow) {
+            first.total = String(toInt(first.total, 1) + Math.max(1, toInt(row.total, 1)));
+            first.children = String(toInt(first.children, 0) + toInt(row.children, 0));
+            if (normName(row.name) !== normName(first.name)) addCompanion(first, row.name.trim());
+            splitList(row.companions).forEach((n) => addCompanion(first, n));
+        }
+        row._remove = true;
+        changes.push(sameRow
+            ? `${row.name} (${label(row)}) estaba repetida: queda una sola vez`
+            : `${row.name} (${label(row)}) tiene el mismo teléfono que ${first.name}: es una sola invitación de ${first.total}`);
+    });
+    kept = kept.filter((r) => !r._remove);
+
+    // 3. Same people with another phone
+    const samePeople = (a, b) => normName(a.name) === normName(b.name) || people(a.name).includes(normName(b.name)) || people(b.name).includes(normName(a.name));
+    for (let i = 0; i < kept.length; i++) {
+        for (let j = i + 1; j < kept.length; j++) {
+            const a = kept[i];
+            const b = kept[j];
+            if (a._remove || b._remove || !hasPhone(a) || !hasPhone(b) || !String(a.name || '').trim() || !samePeople(a, b)) continue;
+            const [main, other] = people(b.name).length > people(a.name).length ? [b, a] : [a, b];
+            const ta = Math.max(1, toInt(main.total, 1));
+            const tb = Math.max(1, toInt(other.total, 1));
+            main.total = String(ta === tb && ta > 1 ? ta : ta + tb);
+            main.other_phones = [...splitList(main.other_phones), other.phone, ...splitList(other.other_phones)].join(', ');
+            if (normName(other.name) !== normName(main.name)) addCompanion(main, other.name.trim());
+            other._remove = true;
+            changes.push(`${other.name} (${label(other)}) es la misma invitación que ${main.name}: queda una sola de ${main.total}, con su número asociado`);
+        }
+    }
+    kept = kept.filter((r) => !r._remove);
+
+    return { rows: kept, changes, pending };
+};
