@@ -557,7 +557,7 @@ function Dashboard({ user, onLogout }) {
                     {activeTab === 'app' ? (
                         <AppReleases user={user} showToast={showToast} onReleasesChanged={loadAppUpdate} />
                     ) : activeTab === 'ai-list' && !isHostess ? (
-                        <AiListAssistant event={activeEvent} showToast={showToast} onImported={() => activeEvent && loadGuests(activeEvent.id)} />
+                        <AiListAssistant event={activeEvent} showToast={showToast} onImported={() => { setActiveTab('guests'); activeEvent && loadGuests(activeEvent.id); }} />
                     ) : activeTab === 'whatsapp' && !isHostess ? (
                         <WhatsAppWeb event={activeEvent} guests={guests} user={user} showToast={showToast} />
                     ) : activeTab === 'messages' && !isHostess ? (
@@ -654,7 +654,7 @@ function Dashboard({ user, onLogout }) {
                                     readOnly={isHostess}
                                     eventTitle={activeEvent?.couple_names || activeEvent?.title}
                                     onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
-                                    onOpenExcelModal={() => setIsExcelModalOpen(true)}
+                                    onOpenExcelModal={() => setActiveTab('ai-list')}
                                     onOpenWhatsAppModal={botOn ? () => setIsWhatsAppModalOpen(true) : undefined}
                                     onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
                                     onUpdateGuest={handleUpdateGuest}
@@ -750,7 +750,7 @@ function Dashboard({ user, onLogout }) {
 
                                             <div className="flex flex-wrap items-center gap-3 shrink-0 z-10">
                                                 <button
-                                                    onClick={() => setIsExcelModalOpen(true)}
+                                                    onClick={() => setActiveTab('ai-list')}
                                                     className="flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-white text-zinc-900 font-extrabold text-xs shadow-lg hover:bg-rose-50 transition-all active:scale-95"
                                                 >
                                                     <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
@@ -767,7 +767,7 @@ function Dashboard({ user, onLogout }) {
                                     <GuestList
                                         guests={guests}
                                         onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
-                                        onOpenExcelModal={() => setIsExcelModalOpen(true)}
+                                        onOpenExcelModal={() => setActiveTab('ai-list')}
                                         onOpenWhatsAppModal={botOn ? () => setIsWhatsAppModalOpen(true) : undefined}
                                         onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
                                         onUpdateGuest={handleUpdateGuest}
