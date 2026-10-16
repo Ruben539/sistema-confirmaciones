@@ -98,30 +98,58 @@ export const downloadSheet = (rows, fileName, normalizePhone = (p) => p, extraSh
     XLSX.writeFile(wb, fileName);
 };
 
+const normName = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+const people = (n) => normName(n).split(/\s+(?:y|e)\s+|\s*[,/&+]\s*/).map((p) => p.trim()).filter(Boolean);
+const phoneKey = (p) => String(p || '').replace(/[^\d]/g, '').slice(-9);
+const hasPhone = (row) => String(row.phone || '').replace(/[^\d]/g, '').length >= 6;
+
+export const isFamilyDescriptor = (part) => /^(?:familia|flia\.?|familiares|hijos?|niños?|bebes?)$/i.test(String(part || '').trim());
+
+export const splitCompoundName = (fullName) => {
+    let clean = String(fullName || '').trim().replace(/\s+/g, ' ');
+    clean = clean.replace(/\s+(?:y|e|&|\+|\/)$/i, '').trim();
+    if (!clean) return { isCompound: false, parts: [] };
+
+    const plusNum = clean.match(/^(.*?)\s*\+\s*(\d+)(?:\s*(?:personas?|acompañantes?|invitados?))?$/i);
+    if (plusNum) {
+        return { isCompound: true, isPlusNum: true, baseName: plusNum[1].trim(), count: parseInt(plusNum[2], 10) };
+    }
+
+    const rawParts = clean.split(/\s+(?:y|e|&|\+|\/)\s+|\s*\/\s*/i).map((s) => s.trim()).filter(Boolean);
+    if (rawParts.length >= 2) {
+        if (rawParts.length === 2 && isFamilyDescriptor(rawParts[1])) {
+            return { isCompound: false, isFamily: true, name: clean, baseName: rawParts[0] };
+        }
+        return { isCompound: true, parts: rawParts };
+    }
+    return { isCompound: false, parts: [clean] };
+};
+
 /**
  * Splits compound names like "Juan Pérez y María Gómez", "Carlos Benítez & Sra", "Pedro López + 1"
  * Returns: { name: cleanTitularName, companions: [companionNames], extraTotal: number }
  */
 export const extractCompanionsFromName = (rawName) => {
-    const trimmed = String(rawName || '').trim().replace(/\s+/g, ' ');
+    let trimmed = String(rawName || '').trim().replace(/\s+/g, ' ');
+    trimmed = trimmed.replace(/\s+(?:y|e|&|\+|\/)$/i, '').trim();
     if (!trimmed) return { name: '', companions: [], extraTotal: 0 };
 
     if (/^familia\s+/i.test(trimmed) && !/\s+(?:y|e|&|\+)\s+/i.test(trimmed)) {
         return { name: trimmed, companions: [], extraTotal: 0 };
     }
 
-    const plusNumMatch = trimmed.match(/^(.*?)\s*\+\s*(\d+)(?:\s*(?:personas?|acompañantes?|invitados?))?$/i);
-    if (plusNumMatch) {
-        const baseName = plusNumMatch[1].trim();
-        const count = parseInt(plusNumMatch[2], 10);
-        const compNames = Array.from({ length: count }, (_, i) => (count === 1 ? 'Acompañante' : `Acompañante ${i + 1}`));
-        return { name: baseName, companions: compNames, extraTotal: count };
+    const split = splitCompoundName(trimmed);
+    if (split.isFamily) {
+        return { name: split.name, companions: [], extraTotal: 0 };
     }
-
-    const parts = trimmed.split(/\s+(?:y|e|&|\+)\s+/i).map((s) => s.trim()).filter(Boolean);
-    if (parts.length >= 2) {
-        const titular = parts[0];
-        const companionList = parts.slice(1).map((part) => {
+    if (split.isPlusNum) {
+        const count = split.count;
+        const compNames = Array.from({ length: count }, (_, i) => (count === 1 ? 'Acompañante' : `Acompañante ${i + 1}`));
+        return { name: split.baseName, companions: compNames, extraTotal: count };
+    }
+    if (split.isCompound && split.parts.length >= 2) {
+        const titular = split.parts[0];
+        const companionList = split.parts.slice(1).filter((p) => !isFamilyDescriptor(p)).map((part) => {
             if (/^(sra\.?|esposa|señora)$/i.test(part)) {
                 const titularWords = titular.split(' ');
                 const lastName = titularWords.length > 1 ? titularWords.slice(1).join(' ') : '';
@@ -134,6 +162,121 @@ export const extractCompanionsFromName = (rawName) => {
     }
 
     return { name: trimmed, companions: [], extraTotal: 0 };
+};
+
+/**
+ * Contextual name resolution for the entire guest list:
+ * 1. If multiple rows share a compound name ("Nadia Mereles y Enrique Egusquiza") with different phones:
+ *    assigns one person per phone with total = 1 (each person with their own phone is their own invitation).
+ * 2. If a compound name mentions a companion who already has their own phone row in the list
+ *    ("Hector Servian y Karen Bobadilla" where Karen has her own row), Karen is NOT added as a companion.
+ * 3. Keeps family descriptors ("Rodrigo Mereles y familia") intact without turning "familia" into a companion.
+ */
+export const cleanContextualNames = (rows) => {
+    const list = (rows || []).map((r) => ({ ...r }));
+    const compoundGroups = new Map();
+    list.forEach((r, idx) => {
+        if (!hasPhone(r)) return;
+        const split = splitCompoundName(r.name);
+        if (split.isCompound && !split.isPlusNum) {
+            const key = split.parts.map(normName).sort().join(' | ');
+            if (!compoundGroups.has(key)) compoundGroups.set(key, []);
+            compoundGroups.get(key).push({ idx, row: r, split });
+        }
+    });
+
+    const handledIndices = new Set();
+    const changes = [];
+
+    // Distinct phones with same compound name: assign 1 person per phone, each with total = 1
+    compoundGroups.forEach((group) => {
+        const uniquePhones = new Set(group.map((g) => phoneKey(g.row.phone)));
+        if (uniquePhones.size > 1 && group.length === uniquePhones.size) {
+            const parts = group[0].split.parts;
+            if (parts.length === group.length) {
+                const unassignedParts = [...parts];
+                group.forEach((item) => {
+                    const row = list[item.idx];
+                    const oldName = row.name;
+                    let partIdx = unassignedParts.findIndex((p) => normName(row.name).startsWith(normName(p)));
+                    if (partIdx === -1) partIdx = 0;
+                    const assignedPart = unassignedParts.splice(partIdx, 1)[0];
+
+                    row.name = assignedPart;
+                    row.companions = '';
+                    row.total = '1';
+                    handledIndices.add(item.idx);
+                    changes.push(`${oldName} (fila ${row._row || item.idx + 1}): se asignó "${assignedPart}" a este número (1 persona)`);
+                });
+            }
+        }
+    });
+
+    // Single compound rows or cross-row references
+    list.forEach((row, idx) => {
+        if (handledIndices.has(idx) || !hasPhone(row)) return;
+        const split = splitCompoundName(row.name);
+        if (!split.isCompound) return;
+
+        if (split.isPlusNum) {
+            row.name = split.baseName;
+            const count = split.count;
+            const compNames = Array.from({ length: count }, (_, i) => (count === 1 ? 'Acompañante' : `Acompañante ${i + 1}`));
+            row.companions = compNames.join(', ');
+            row.total = String(Math.max(toInt(row.total, 1), 1 + count));
+            changes.push(`${split.baseName}: se separaron +${count} acompañantes`);
+            return;
+        }
+
+        const titular = split.parts[0];
+        const rawCompanions = split.parts.slice(1);
+        const validCompanions = [];
+
+        rawCompanions.forEach((c) => {
+            let compName = c;
+            if (/^(sra\.?|esposa|señora)$/i.test(c)) {
+                const titularWords = titular.split(' ');
+                const lastName = titularWords.length > 1 ? titularWords.slice(1).join(' ') : '';
+                compName = lastName ? `Sra. ${lastName}` : 'Sra.';
+            } else if (/^(sr\.?|esposo|señor)$/i.test(c)) {
+                compName = 'Sr.';
+            }
+
+            const compNorm = normName(compName);
+            const words = compNorm.split(' ');
+            let hasOwnPhone = false;
+            list.forEach((otherRow, otherIdx) => {
+                if (otherIdx !== idx && hasPhone(otherRow)) {
+                    const otherNorm = normName(otherRow.name);
+                    if (words.length >= 2) {
+                        if (otherNorm === compNorm || otherNorm.startsWith(compNorm + ' ') || otherNorm.endsWith(' ' + compNorm)) {
+                            hasOwnPhone = true;
+                        }
+                    } else if (otherNorm === compNorm) {
+                        hasOwnPhone = true;
+                    }
+                }
+            });
+
+            if (!hasOwnPhone) {
+                validCompanions.push(compName);
+            }
+        });
+
+        const oldName = row.name;
+        row.name = titular;
+        if (validCompanions.length > 0) {
+            row.companions = validCompanions.join(', ');
+            row.total = String(Math.max(toInt(row.total, 1), 1 + validCompanions.length));
+            changes.push(`${titular}: se separó a ${validCompanions.join(', ')} como acompañante`);
+        } else {
+            row.companions = '';
+            row.total = '1';
+            changes.push(`${titular}: los otros nombres ya tienen su propio teléfono/invitación`);
+        }
+    });
+
+    return { list, changes };
 };
 
 export const fillGenericCompanions = (rows) => {
@@ -188,7 +331,7 @@ export const sheetRowsFromFile = (headers, rows) => {
     const companionValues = companionAdults === -1 ? [] : rows.map((r) => cell(r, companionAdults)).filter((v) => v !== '').map((v) => toInt(v, 0));
     const companionsAreTotal = total === -1 && companionValues.length > 0 && companionValues.every((n) => n >= 1);
 
-    return rows.map((r) => {
+    const initialRows = rows.map((r) => {
         const kids = toInt(cell(r, children), 0);
         let people;
         if (total !== -1 && cell(r, total) !== '') people = toInt(cell(r, total), 1);
@@ -196,21 +339,15 @@ export const sheetRowsFromFile = (headers, rows) => {
         else people = 1 + kids;
         const cat = cell(r, category).toLowerCase();
         const rawFullName = [cell(r, name), cell(r, lastName)].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ');
-        const extracted = extractCompanionsFromName(rawFullName);
-        const finalName = extracted.name || rawFullName;
         const initialCompanions = splitList(cell(r, companionNames));
-        extracted.companions.forEach((c) => {
-            if (!initialCompanions.map(normName).includes(normName(c))) initialCompanions.push(c);
-        });
-        const finalTotal = Math.max(1, people, 1 + initialCompanions.length);
 
         return {
-            name: finalName,
+            name: rawFullName,
             phone: cell(r, phone),
             other_phones: cell(r, phone2),
             table: cell(r, table),
             category: /(jov|jóv|teen|adolesc)/.test(cat) ? 'Joven' : /(niñ|nin|child|kid|infant)/.test(cat) ? 'Niño' : 'Adulto',
-            total: String(finalTotal),
+            total: String(Math.max(1, people, 1 + initialCompanions.length)),
             children: String(kids),
             companions: initialCompanions.join(', '),
             dietary: cell(r, dietary),
@@ -218,16 +355,13 @@ export const sheetRowsFromFile = (headers, rows) => {
             _row: r.row,
         };
     });
-};
 
-const normName = (n) => String(n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
-const people = (n) => normName(n).split(/\s+(?:y|e)\s+|\s*[,/&+]\s*/).map((p) => p.trim()).filter(Boolean);
-const phoneKey = (p) => String(p || '').replace(/[^\d]/g, '').slice(-9);
-const hasPhone = (row) => String(row.phone || '').replace(/[^\d]/g, '').length >= 6;
+    return cleanContextualNames(initialRows).list;
+};
 
 /**
  * The same corrections as the import, applied to the spreadsheet (no AI):
- *  1. compound names ("Juan y Maria", "Pedro + 1") -> separate titular and companions
+ *  1. contextual compound names ("Nadia y Enrique" across different phones -> 1 person each)
  *  2. rows without phone under an invitation are its companions, while they fit in its total
  *     ("Marcos Pereira 6" + Adriana, Pauli, Abi, Jimena, Asaf -> one invitation with 5 named companions)
  *  3. the same phone in several rows is one invitation (the other rows are companions; totals add up)
@@ -235,29 +369,14 @@ const hasPhone = (row) => String(row.phone || '').replace(/[^\d]/g, '').length >
  * Returns the new rows, what changed and what couldn't be decided.
  */
 export const autoFixSheet = (rows) => {
-    const list = (rows || []).filter(isFilledRow).map((r) => ({ ...r }));
-    const changes = [];
+    const { list, changes: ctxChanges } = cleanContextualNames((rows || []).filter(isFilledRow));
+    const changes = [...ctxChanges];
     const pending = [];
     const label = (r) => (r._row ? `fila ${r._row}` : 'fila nueva');
     const addCompanion = (holder, name) => {
         const names = splitList(holder.companions);
         if (name && !names.map(normName).includes(normName(name))) holder.companions = [...names, name].join(', ');
     };
-
-    // 0. Compound names ("Juan y Maria", "Carlos + 1")
-    list.forEach((row) => {
-        if (!hasPhone(row)) return;
-        const extracted = extractCompanionsFromName(row.name);
-        if (extracted.companions.length > 0) {
-            row.name = extracted.name;
-            extracted.companions.forEach((c) => addCompanion(row, c));
-            const neededTotal = 1 + splitList(row.companions).length;
-            if (toInt(row.total, 1) < neededTotal) {
-                row.total = String(neededTotal);
-            }
-            changes.push(`${extracted.name}: se separó a ${extracted.companions.join(', ')} como acompañante`);
-        }
-    });
 
     // 1. Rows without phone under an invitation
     let holder = null;
