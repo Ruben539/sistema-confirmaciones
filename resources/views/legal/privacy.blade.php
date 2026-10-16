@@ -29,7 +29,7 @@
     <h2>Con quién se comparten</h2>
     <ul>
         <li>Con los <strong>anfitriones y organizadores del evento</strong> al que el invitado fue invitado (solo los de ese evento).</li>
-        <li>Con los proveedores que hacen funcionar el servicio: <strong>WhatsApp / Meta</strong> (envío y recepción de mensajes), <strong>Google Drive</strong> (fotos y archivos del evento) y el proveedor de hosting del servidor.</li>
+        <li>Con los proveedores que hacen funcionar el servicio: <strong>WhatsApp / Meta</strong> (envío y recepción de mensajes), <strong>Google Drive</strong> (fotos y archivos del evento), <strong>Anthropic</strong> (asistente de inteligencia artificial que ayuda a ordenar las listas de invitados que suben los organizadores) y el proveedor de hosting del servidor.</li>
     </ul>
 
     <h2>Cuánto tiempo se guardan</h2>

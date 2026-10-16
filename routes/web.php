@@ -15,6 +15,7 @@ use App\Http\Controllers\TimingController;
 use App\Http\Controllers\EventTypeController;
 use App\Http\Controllers\SpotifyController;
 use App\Http\Controllers\WhatsAppCloudWebhookController;
+use App\Http\Controllers\AiListController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -109,6 +110,8 @@ Route::prefix('api')->group(function () {
         Route::get('/events/{eventId}/guests', [GuestController::class, 'index']);
         Route::post('/events/{eventId}/guests', [GuestController::class, 'store']);
         Route::post('/events/{eventId}/guests/import', [GuestController::class, 'importBatch']);
+        // Asistente de listas (IA): Claude propone las invitaciones de un Excel (tiene costo por uso)
+        Route::post('/events/{eventId}/ai-list/analyze', [AiListController::class, 'analyze'])->middleware('throttle:20,1');
         Route::post('/events/{eventId}/send-bulk-queue', [GuestController::class, 'sendBulkQueue']);
         Route::post('/events/{eventId}/cancel-bulk-queue', [GuestController::class, 'cancelBulkQueue']);
         Route::get('/events/{eventId}/bulk-status', [GuestController::class, 'bulkStatus']);

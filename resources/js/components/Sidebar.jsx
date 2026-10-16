@@ -128,6 +128,15 @@ export default function Sidebar({
                         )}
                     </button>
 
+                    {/* Guest list from any Excel with AI (separate from the guest list) */}
+                    <button
+                        onClick={() => setActiveTab('ai-list')}
+                        className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'ai-list' ? 'bg-gradient-to-r from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                    >
+                        <Sparkles className="w-4 h-4 shrink-0 text-violet-400" />
+                        {!collapsed && <span>Asistente de listas (IA)</span>}
+                    </button>
+
                     {/* Write to any guest, like WhatsApp Web */}
                     <button
                         onClick={() => setActiveTab('whatsapp')}

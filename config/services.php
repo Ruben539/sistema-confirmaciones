@@ -41,6 +41,12 @@ return [
         'api_key' => env('SPOTIFY_API_KEY', env('SPOTIFYAPIKEY')),
     ],
 
+    // Claude (Anthropic): "Asistente de listas" module, reads any guest-list Excel and proposes the invitations
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-opus-5-5'),
+    ],
+
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
     ],

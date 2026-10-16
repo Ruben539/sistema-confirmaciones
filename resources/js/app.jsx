@@ -23,6 +23,7 @@ import AppReleases from './components/AppReleases';
 import MessagesInbox from './components/MessagesInbox';
 import SendReviewModal from './components/SendReviewModal';
 import WhatsAppWeb from './components/WhatsAppWeb';
+import AiListAssistant from './components/AiListAssistant';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
@@ -555,6 +556,8 @@ function Dashboard({ user, onLogout }) {
                     {/* Active View based on activeTab */}
                     {activeTab === 'app' ? (
                         <AppReleases user={user} showToast={showToast} onReleasesChanged={loadAppUpdate} />
+                    ) : activeTab === 'ai-list' && !isHostess ? (
+                        <AiListAssistant event={activeEvent} showToast={showToast} onImported={() => activeEvent && loadGuests(activeEvent.id)} />
                     ) : activeTab === 'whatsapp' && !isHostess ? (
                         <WhatsAppWeb event={activeEvent} guests={guests} user={user} showToast={showToast} />
                     ) : activeTab === 'messages' && !isHostess ? (
