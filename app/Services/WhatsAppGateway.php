@@ -192,6 +192,39 @@ class WhatsAppGateway
         ], $qrUrl);
     }
 
+    /**
+     * A person opened the guest's chat in the panel: their messages get the blue ticks in WhatsApp now (not
+     * when the bot received them). Bot only; never blocks the panel if the bot doesn't answer.
+     */
+    public static function markChatRead(Guest $guest): void
+    {
+        if (self::channelFor($guest) === 'cloud') {
+            return;
+        }
+        $phones = array_filter(array_merge([$guest->phone, $guest->whatsapp_lid], $guest->altPhoneList()));
+        $url = preg_replace('#/lead/?$#', '/read', (string) config('whatsapp.bot_url'));
+        try {
+            Http::timeout(5)->post($url, ['phones' => array_values($phones)]);
+        } catch (\Throwable $e) {
+            // Cosmetic: the ticks will be set next time
+        }
+    }
+
+    /**
+     * Edits a text message sent through the bot (WhatsApp allows it for 15 minutes after sending).
+     * The official Cloud API doesn't allow editing messages.
+     */
+    public static function editText(string $jid, string $waId, string $text): array
+    {
+        $url = preg_replace('#/lead/?$#', '/edit', (string) config('whatsapp.bot_url'));
+        try {
+            $res = Http::timeout(55)->post($url, ['jid' => $jid, 'id' => $waId, 'message' => $text]);
+        } catch (ConnectionException $e) {
+            return ['ok' => false, 'error' => 'No se pudo contactar al bot de WhatsApp.'];
+        }
+        return $res->successful() ? ['ok' => true] : ['ok' => false, 'error' => $res->json('error') ?: 'El bot no pudo editar el mensaje.'];
+    }
+
     // Blue ticks on the guest's message (Cloud only)
     public static function markRead(string $messageId): void
     {
@@ -216,7 +249,9 @@ class WhatsAppGateway
         }
 
         if ($res->successful()) {
-            return ['ok' => true];
+            // WhatsApp's id of the sent message (to edit it later)
+            $key = $res->json('responseExSave.key') ?? [];
+            return ['ok' => true, 'channel' => 'baileys', 'wa_id' => $key['id'] ?? null, 'wa_jid' => $key['remoteJid'] ?? null];
         }
         // Bot up but its WhatsApp session is disconnected / busy
         return ['ok' => false, 'retry' => $res->serverError(), 'retry_after' => 600, 'error' => $res->body()];

@@ -12,9 +12,10 @@ class GuestMessage extends Model
 {
     public const UPDATED_AT = null;
 
-    protected $fillable = ['event_id', 'guest_id', 'direction', 'author', 'user_id', 'body'];
+    protected $fillable = ['event_id', 'guest_id', 'direction', 'author', 'user_id', 'body', 'wa_id', 'wa_jid', 'channel', 'edited_at'];
 
     protected $casts = [
+        'edited_at' => 'datetime',
         'created_at' => 'datetime',
     ];
 

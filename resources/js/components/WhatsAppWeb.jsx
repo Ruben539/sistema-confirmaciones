@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, Send, ArrowLeft, Plus, X, Bot, Phone, Check } from 'lucide-react';
+import { Search, Send, ArrowLeft, Plus, X, Bot, Phone, Check, Pencil } from 'lucide-react';
 import { apiFetch } from '../api';
 
 const LIST_REFRESH_MS = 15000;
@@ -62,6 +62,9 @@ export default function WhatsAppWeb({ event, guests = [], user, showToast }) {
     const [thread, setThread] = useState(null);
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
+    // Editing one of our messages (WhatsApp allows it for 15 minutes)
+    const [editing, setEditing] = useState(null); // { id, text }
+    const [savingEdit, setSavingEdit] = useState(false);
     const bottomRef = useRef(null);
     const lastCountRef = useRef(0);
 
@@ -134,6 +137,27 @@ export default function WhatsAppWeb({ event, guests = [], user, showToast }) {
             loadChats();
         } else {
             showToast && showToast(json?.message || 'No se pudo enviar el mensaje.');
+        }
+    };
+
+    const canEdit = (m) => m.direction === 'out' && m.author === 'planner' && m.wa_id && m.channel !== 'cloud'
+        && Date.now() - new Date(m.created_at).getTime() < 15 * 60 * 1000;
+
+    const saveEdit = async () => {
+        const text = editing?.text.trim();
+        if (!text || savingEdit) return;
+        setSavingEdit(true);
+        const { ok, json } = await apiFetch(`/api/guest-messages/${editing.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ message: text }),
+        });
+        setSavingEdit(false);
+        if (ok) {
+            setEditing(null);
+            loadThread(openId);
+            loadChats();
+        } else {
+            showToast && showToast(json?.message || 'No se pudo editar el mensaje.');
         }
     };
 
@@ -289,8 +313,42 @@ export default function WhatsAppWeb({ event, guests = [], user, showToast }) {
                                                         {m.author === 'bot' ? '🤖 Automático' : (m.user?.name || 'Organización')}
                                                     </div>
                                                 )}
-                                                <div className="whitespace-pre-wrap break-words">{renderText(m.body)}</div>
+                                                {editing?.id === m.id ? (
+                                                    <div className="space-y-1.5 min-w-[220px]">
+                                                        <textarea
+                                                            autoFocus
+                                                            rows={3}
+                                                            value={editing.text}
+                                                            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); }
+                                                                if (e.key === 'Escape') setEditing(null);
+                                                            }}
+                                                            maxLength={2000}
+                                                            className="w-full resize-none rounded-md bg-white/80 dark:bg-[#0b141a]/60 text-[14px] text-zinc-900 dark:text-[#e9edef] p-2 outline-none"
+                                                        />
+                                                        <div className="flex justify-end gap-2 text-[12px] font-bold">
+                                                            <button type="button" onClick={() => setEditing(null)} className="px-2 py-1 text-zinc-500">Cancelar</button>
+                                                            <button type="button" onClick={saveEdit} disabled={savingEdit || !editing.text.trim()} className="px-3 py-1 rounded-full bg-[#00a884] text-white disabled:opacity-50">
+                                                                {savingEdit ? 'Guardando...' : 'Guardar'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="whitespace-pre-wrap break-words">{renderText(m.body)}</div>
+                                                )}
                                                 <div className="flex items-center justify-end gap-1 text-[11px] text-zinc-500 dark:text-[#8696a0] mt-0.5">
+                                                    {canEdit(m) && editing?.id !== m.id && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setEditing({ id: m.id, text: m.body })}
+                                                            title="Editar (WhatsApp lo permite durante 15 minutos)"
+                                                            className="mr-1 opacity-60 hover:opacity-100"
+                                                        >
+                                                            <Pencil className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                    {m.edited_at && <span className="italic">Editado</span>}
                                                     {timeLabel(m.created_at)}
                                                     {out && <Check className="w-3.5 h-3.5 text-[#53bdeb]" />}
                                                 </div>

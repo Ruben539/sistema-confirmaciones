@@ -89,6 +89,8 @@ class ConversationController extends Controller
 
         if ($guest->unread_messages > 0) {
             $guest->update(['unread_messages' => 0]);
+            // Read in the panel = read in WhatsApp (blue ticks for the guest)
+            \App\Services\WhatsAppGateway::markChatRead($guest);
         }
 
         return response()->json([
@@ -147,6 +149,9 @@ class ConversationController extends Controller
             'author' => 'planner',
             'user_id' => Auth::id(),
             'body' => $validated['message'],
+            'channel' => $result['channel'] ?? $channel,
+            'wa_id' => $result['wa_id'] ?? null,
+            'wa_jid' => $result['wa_jid'] ?? null,
         ]);
         $guest->update(['needs_reply' => false, 'unread_messages' => 0, 'last_message_at' => now()]);
 
@@ -154,6 +159,35 @@ class ConversationController extends Controller
             'message' => 'Mensaje enviado.',
             'sent' => $message->load('user:id,name'),
         ], 201);
+    }
+
+    /**
+     * Edits a message written from the panel, like WhatsApp's "Editar": only text sent through the bot,
+     * during the 15 minutes after sending (WhatsApp's limit). The guest sees it changed, marked as edited.
+     */
+    public function editMessage(Request $request, $messageId)
+    {
+        $message = GuestMessage::with('guest.event')->findOrFail($messageId);
+        $this->authorizeEvent($message->guest->event);
+        $validated = $request->validate(['message' => 'required|string|max:2000']);
+
+        if ($message->direction !== 'out' || $message->author !== 'planner') {
+            return response()->json(['message' => 'Solo se pueden editar los mensajes escritos desde el panel.'], 422);
+        }
+        if (!$message->wa_id || !$message->wa_jid || $message->channel === 'cloud') {
+            return response()->json(['message' => 'Este mensaje no se puede editar (se envió antes de esta función o por el WhatsApp oficial).'], 422);
+        }
+        if ($message->created_at->lt(now()->subMinutes(15))) {
+            return response()->json(['message' => 'WhatsApp solo permite editar un mensaje durante los 15 minutos siguientes al envío.'], 422);
+        }
+
+        $result = \App\Services\WhatsAppGateway::editText($message->wa_jid, $message->wa_id, $validated['message']);
+        if (!$result['ok']) {
+            return response()->json(['message' => $result['error'] ?? 'No se pudo editar el mensaje.'], 502);
+        }
+
+        $message->update(['body' => $validated['message'], 'edited_at' => now()]);
+        return response()->json(['message' => 'Mensaje editado.', 'edited' => $message->fresh('user:id,name')]);
     }
 
     // "Listo": the conversation no longer needs a person

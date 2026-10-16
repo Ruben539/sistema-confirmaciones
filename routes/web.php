@@ -85,6 +85,7 @@ Route::prefix('api')->group(function () {
         Route::get('/guests/{guestId}/conversation', [ConversationController::class, 'show']);
         Route::post('/guests/{guestId}/conversation', [ConversationController::class, 'reply']);
         Route::post('/guests/{guestId}/conversation/resolve', [ConversationController::class, 'resolve']);
+        Route::put('/guest-messages/{messageId}', [ConversationController::class, 'editMessage']);
         Route::delete('/guests/{guestId}/conversation', [ConversationController::class, 'destroyConversation']);
         Route::get('/messages/stats', [ConversationController::class, 'stats']);
         Route::post('/messages/purge', [ConversationController::class, 'purge']);

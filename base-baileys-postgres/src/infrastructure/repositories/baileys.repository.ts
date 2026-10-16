@@ -232,7 +232,12 @@ export class BaileysTransporter implements LeadExternal {
           const isMentioned = mentionedJids.some(jid => jid.startsWith(botPhone));
 
           // Read it like a person: blue ticks 2-4 s after it arrives, not in the same millisecond
-          if (!isGroup) this.markReadLater(msg);
+          // Blue ticks: right away only if BOT_AUTO_READ=true (automatic chatbot). Otherwise they appear when a
+          // person opens the chat in the panel (see markChatRead), as in real WhatsApp
+          if (!isGroup) {
+            if (process.env.BOT_AUTO_READ === "true") this.markReadLater(msg);
+            else this.rememberUnread(cleanPhone, msg);
+          }
 
           if (this.onMessageCallback) {
             console.log(`[Baileys] Mensaje de ${phone}${groupJid ? ` (grupo: ${groupJid})` : ""}${isMentioned ? " [@mencionado]" : ""}${mediaType ? ` [${mediaType}]` : ""}${mediaPath ? " [imagen guardada]" : ""}: "${text}"`);
@@ -369,6 +374,39 @@ export class BaileysTransporter implements LeadExternal {
     return Math.floor(min + Math.random() * (max - min));
   }
 
+  // Received messages not marked as read yet, per phone (digits), until a person opens the chat
+  private unreadByPhone = new Map<string, any[]>();
+
+  private rememberUnread(phone: string, msg: any): void {
+    if (!phone || !msg?.key) return;
+    const list = this.unreadByPhone.get(phone) || [];
+    list.push(msg.key);
+    this.unreadByPhone.set(phone, list.slice(-50));
+    if (this.unreadByPhone.size > 5000) {
+      const oldest = this.unreadByPhone.keys().next().value;
+      if (oldest) this.unreadByPhone.delete(oldest);
+    }
+  }
+
+  /**
+   * A person opened the chat in the panel: the guest's messages get their blue ticks now (after a short,
+   * human-like pause). Phones are matched by their last 9 digits (with or without 595, LID, other numbers).
+   */
+  async markChatRead(phones: string[]): Promise<number> {
+    const wanted = phones.map((p) => String(p || "").replace(/[^\d]/g, "")).filter(Boolean).map((p) => p.slice(-9));
+    const keys: any[] = [];
+    for (const [phone, list] of this.unreadByPhone.entries()) {
+      if (wanted.includes(phone.slice(-9))) {
+        keys.push(...list);
+        this.unreadByPhone.delete(phone);
+      }
+    }
+    if (!keys.length || !this.connection) return 0;
+    await this.sleep(this.randomBetween(800, 2000));
+    await this.connection.readMessages(keys).catch((e: any) => console.warn("[Baileys] No se pudo marcar como leído:", e?.message));
+    return keys.length;
+  }
+
   private markReadLater(msg: any): void {
     setTimeout(() => {
       this.connection?.readMessages([msg.key]).catch((e: any) => console.warn("[Baileys] No se pudo marcar como leído:", e?.message));
@@ -412,6 +450,24 @@ export class BaileysTransporter implements LeadExternal {
     Number(process.env.BOT_MEDIA_MAX_SECONDS || 30) * 1000,
   ];
 
+  /**
+   * Edits a text message we sent (WhatsApp allows it for 15 minutes). Goes through the same queue as the
+   * rest so it never fires at the same time as another message.
+   */
+  async editMsg({ jid, id, message }: { jid: string; id: string; message: string }): Promise<any> {
+    this.sendQueue = this.sendQueue.then(async () => {
+      if (!this.connection || this.connectionState?.connection !== "open") {
+        throw new Error("No se puede editar: la conexión con WhatsApp no está abierta.");
+      }
+      const key = { remoteJid: jid, fromMe: true, id };
+      const response = await this.connection.sendMessage(jid, { text: message, edit: key } as any);
+      this.lastSendTimestamp = Date.now();
+      console.log(`[Baileys] <<< Mensaje ${id} editado en ${jid}`);
+      return response;
+    });
+    return this.sendQueue;
+  }
+
   async sendMsg({ message, phone, groupJid, replyJid, mediaUrl }: { message: string; phone: string; groupJid?: string; replyJid?: string; mediaUrl?: string }): Promise<any> {
     this.sendQueue = this.sendQueue.then(() => this.executeSend({ message, phone, groupJid, replyJid, mediaUrl }));
     return this.sendQueue;
@@ -452,10 +508,11 @@ export class BaileysTransporter implements LeadExternal {
       if (groupJid) {
         jid = groupJid;
       } else if (lastMsg && lastMsg.key && lastMsg.key.remoteJid) {
-        // Para respuestas a mensajes del usuario, citar el mensaje original (quoted) y usar su remoteJid
-        // para que libsignal utilice el trinquete (ratchet) y registrationId exacto del mensaje entrante.
+        // Usar el remoteJid del mensaje entrante para que libsignal utilice el trinquete (ratchet) y
+        // registrationId exacto del chat (incluye contactos @lid).
         jid = lastMsg.key.remoteJid;
-        sendOptions.quoted = lastMsg;
+        // Only the automatic answers quote the guest's message; one written by a person goes as a normal message
+        if (isConversationalReply) sendOptions.quoted = lastMsg;
       } else if (replyJid && replyJid.endsWith("@s.whatsapp.net")) {
         jid = replyJid;
       } else if (cleanPhone) {
