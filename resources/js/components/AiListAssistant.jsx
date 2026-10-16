@@ -4,7 +4,7 @@ import { Sparkles, Upload, Send, Download, Users, AlertCircle, CheckCircle2, X, 
 import { apiFetch } from '../api';
 import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
 import SpreadsheetGrid from './SpreadsheetGrid';
-import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow } from '../guestSheet';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow, sheetRowsFromFile } from '../guestSheet';
 
 // AI proposal <-> spreadsheet rows
 const fromInvitation = (g) => ({
@@ -230,13 +230,25 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                     <FileSpreadsheet className="w-9 h-9 mx-auto text-emerald-600" />
                     <div className="text-sm font-bold text-zinc-900 dark:text-white">{file?.name}</div>
                     <div className="text-xs text-zinc-500">{sheet.rows.length} filas · columnas: {sheet.headers.filter(Boolean).join(', ')}</div>
-                    <button
-                        onClick={() => ask()}
-                        disabled={working}
-                        className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white text-sm font-black shadow-lg disabled:opacity-60"
-                    >
-                        <Sparkles className="w-4 h-4" /> {working ? 'Analizando la lista… (puede tardar hasta un minuto)' : 'Armar la lista con IA'}
-                    </button>
+                    <div className="flex flex-col sm:flex-row justify-center gap-3">
+                        <button
+                            onClick={() => { setGrid(sheetRowsFromFile(sheet.headers, sheet.rows)); setObservations([]); }}
+                            disabled={working}
+                            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-black shadow-lg disabled:opacity-60"
+                        >
+                            <FileSpreadsheet className="w-4 h-4" /> Abrir en la planilla para editar
+                        </button>
+                        <button
+                            onClick={() => ask()}
+                            disabled={working}
+                            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white text-sm font-black shadow-lg disabled:opacity-60"
+                        >
+                            <Sparkles className="w-4 h-4" /> {working ? 'Analizando la lista… (puede tardar hasta un minuto)' : 'Armar la lista con IA'}
+                        </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                        <strong>Planilla:</strong> cada fila del Excel pasa a las columnas del sistema y la corregís a mano (sin costo). <strong>IA:</strong> además une acompañantes, parejas y teléfonos repetidos y te marca lo que no cuadra.
+                    </p>
                 </div>
             )}
 
@@ -250,12 +262,29 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                                 <span className="px-2.5 py-1 rounded-lg bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300">{people} personas</span>
                                 {errorCount > 0 && <span className="px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300">{errorCount} filas con errores (en rojo)</span>}
                             </div>
-                            <button onClick={download} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold">
-                                <Download className="w-3.5 h-3.5" /> Descargar en este formato
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                                {sheet && (
+                                    <button
+                                        onClick={() => ask('Revisá esta planilla: uní acompañantes, parejas con dos teléfonos y teléfonos repetidos, y marcá lo que no cuadra.')}
+                                        disabled={working || !filledRows.length}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 text-white text-[11px] font-bold disabled:opacity-50"
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5" /> {working ? 'Revisando…' : 'Revisar con IA'}
+                                    </button>
+                                )}
+                                <button onClick={download} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold">
+                                    <Download className="w-3.5 h-3.5" /> Descargar en este formato
+                                </button>
+                            </div>
                         </div>
 
-                        <SpreadsheetGrid columns={COLUMNS} rows={grid} onChange={setGrid} errors={rowErrors} />
+                        <SpreadsheetGrid
+                            columns={COLUMNS}
+                            rows={grid}
+                            onChange={setGrid}
+                            errors={rowErrors}
+                            rowLabels={grid.map((r, i) => r._row ?? (sheet ? `+${i + 1}` : i + 2))}
+                        />
 
                         <p className="text-[11px] text-zinc-500">
                             <strong>Total Personas</strong> incluye al titular (un 2 = el invitado + 1 acompañante). <strong>Acompañantes Niños</strong> son los niños dentro de ese total. Los nombres de acompañantes y los otros teléfonos van separados por coma. Pasá el mouse sobre una fila en rojo para ver qué tiene mal.

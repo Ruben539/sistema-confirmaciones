@@ -97,3 +97,56 @@ export const downloadSheet = (rows, fileName, normalizePhone = (p) => p, extraSh
     });
     XLSX.writeFile(wb, fileName);
 };
+
+/**
+ * An uploaded Excel (any layout) as spreadsheet rows with the system's columns, one row per row of the file,
+ * so the planner can fix it by hand. Columns are recognized by their header; anything unknown is left out.
+ * A quantity column under "Acompañantes" that never has 0 is taken as the total (as many planners fill it).
+ */
+export const sheetRowsFromFile = (headers, rows) => {
+    const lower = headers.map((h) => String(h || '').toLowerCase());
+    const used = new Set();
+    const find = (test) => {
+        const i = lower.findIndex((h, idx) => !used.has(idx) && test(h));
+        if (i !== -1) used.add(i);
+        return i;
+    };
+    const companionNames = find((h) => h.includes('acompa') && /(nombre|quien|quién)/.test(h));
+    const children = find((h) => /(niñ|nin[oa]s?\b|hij|beb[eé])/.test(h));
+    const companionAdults = find((h) => h.includes('acompa'));
+    const total = find((h) => /(total|cantidad|personas|pases|lugares|cupo)/.test(h) && !h.includes('mesa'));
+    const phone = find((h) => /(tel[eé]f|celular|whatsapp|m[oó]vil|phone)/.test(h));
+    const phone2 = find((h) => /(tel[eé]f|celular|whatsapp|m[oó]vil|phone)/.test(h));
+    const lastName = find((h) => h.includes('apellido') && !h.includes('nombre'));
+    const name = find((h) => /(nombre|invitad|name)/.test(h));
+    const table = find((h) => /(mesa|table)/.test(h));
+    const category = find((h) => /(tipo|categor|edad|clasific)/.test(h));
+    const dietary = find((h) => /(dieta|alimentari|restric|alergi|men[uú])/.test(h));
+    const notes = find((h) => /(nota|observ|familia|grupo|comentario)/.test(h));
+
+    const cell = (r, i) => (i === -1 ? '' : String(r.cells[i] ?? '').trim());
+    const companionValues = companionAdults === -1 ? [] : rows.map((r) => cell(r, companionAdults)).filter((v) => v !== '').map((v) => toInt(v, 0));
+    const companionsAreTotal = total === -1 && companionValues.length > 0 && companionValues.every((n) => n >= 1);
+
+    return rows.map((r) => {
+        const kids = toInt(cell(r, children), 0);
+        let people;
+        if (total !== -1 && cell(r, total) !== '') people = toInt(cell(r, total), 1);
+        else if (companionAdults !== -1 && cell(r, companionAdults) !== '') people = companionsAreTotal ? toInt(cell(r, companionAdults), 1) : 1 + toInt(cell(r, companionAdults), 0) + kids;
+        else people = 1 + kids;
+        const cat = cell(r, category).toLowerCase();
+        return {
+            name: [cell(r, name), cell(r, lastName)].filter(Boolean).join(' ').replace(/\s{2,}/g, ' '),
+            phone: cell(r, phone),
+            other_phones: cell(r, phone2),
+            table: cell(r, table),
+            category: /(jov|jóv|teen|adolesc)/.test(cat) ? 'Joven' : /(niñ|nin|child|kid|infant)/.test(cat) ? 'Niño' : 'Adulto',
+            total: String(Math.max(1, people)),
+            children: String(kids),
+            companions: cell(r, companionNames),
+            dietary: cell(r, dietary),
+            notes: cell(r, notes),
+            _row: r.row,
+        };
+    });
+};
