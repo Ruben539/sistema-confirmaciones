@@ -161,8 +161,6 @@ const hasPhone = (row) => String(row.phone || '').replace(/[^\d]/g, '').length >
  *  1. rows without phone under an invitation are its companions, while they fit in its total
  *     ("Marcos Pereira 6" + Adriana, Pauli, Abi, Jimena, Asaf -> one invitation with 5 named companions)
  *  2. the same phone in several rows is one invitation (the other rows are companions; totals add up)
- *  3. the same people in several rows with another phone ("Nadia y Enrique" twice, "Hector y Karen" +
- *     "Karen") are one invitation, the other number becomes one of its other phones
  * Returns the new rows, what changed and what couldn't be decided.
  */
 export const autoFixSheet = (rows) => {
@@ -230,25 +228,6 @@ export const autoFixSheet = (rows) => {
             ? `${row.name} (${label(row)}) estaba repetida: queda una sola vez`
             : `${row.name} (${label(row)}) tiene el mismo teléfono que ${first.name}: es una sola invitación de ${first.total}`);
     });
-    kept = kept.filter((r) => !r._remove);
-
-    // 3. Same people with another phone
-    const samePeople = (a, b) => normName(a.name) === normName(b.name) || people(a.name).includes(normName(b.name)) || people(b.name).includes(normName(a.name));
-    for (let i = 0; i < kept.length; i++) {
-        for (let j = i + 1; j < kept.length; j++) {
-            const a = kept[i];
-            const b = kept[j];
-            if (a._remove || b._remove || !hasPhone(a) || !hasPhone(b) || !String(a.name || '').trim() || !samePeople(a, b)) continue;
-            const [main, other] = people(b.name).length > people(a.name).length ? [b, a] : [a, b];
-            const ta = Math.max(1, toInt(main.total, 1));
-            const tb = Math.max(1, toInt(other.total, 1));
-            main.total = String(ta === tb && ta > 1 ? ta : ta + tb);
-            main.other_phones = [...splitList(main.other_phones), other.phone, ...splitList(other.other_phones)].join(', ');
-            if (normName(other.name) !== normName(main.name)) addCompanion(main, other.name.trim());
-            other._remove = true;
-            changes.push(`${other.name} (${label(other)}) es la misma invitación que ${main.name}: queda una sola de ${main.total}, con su número asociado`);
-        }
-    }
     kept = kept.filter((r) => !r._remove);
 
     return { rows: kept, changes, pending };
