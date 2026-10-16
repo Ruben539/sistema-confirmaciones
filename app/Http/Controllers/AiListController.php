@@ -27,6 +27,9 @@ class AiListController extends Controller
             'proposal' => 'nullable|array',
         ]);
 
+        // A long list can take a minute or more to analyze
+        @set_time_limit(180);
+
         try {
             $result = $assistant->analyze(
                 $validated['headers'],

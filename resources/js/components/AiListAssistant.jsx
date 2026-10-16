@@ -1,35 +1,74 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Sparkles, Upload, Send, Download, Users, AlertCircle, CheckCircle2, X, FileSpreadsheet } from 'lucide-react';
 import { apiFetch } from '../api';
-import { normalizePhone } from './ExcelUploadModal';
+import { normalizePhone, cleanGuestName } from './ExcelUploadModal';
+import SpreadsheetGrid from './SpreadsheetGrid';
+import { SHEET_COLUMNS as COLUMNS, splitList, toInt, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet, emptySheetRow } from '../guestSheet';
+
+// AI proposal <-> spreadsheet rows
+const fromInvitation = (g) => ({
+    name: g.name || '',
+    phone: g.phone || '',
+    other_phones: (g.other_phones || []).join(', '),
+    table: g.table || '',
+    category: 'Adulto',
+    total: String(Math.max(1, g.total_people || 1)),
+    children: String(g.children || 0),
+    companions: (g.companions || []).map((c) => c.name).join(', '),
+    dietary: g.dietary || '',
+    notes: g.notes || '',
+});
+const toInvitation = (row) => ({
+    name: cleanGuestName(row.name),
+    phone: row.phone,
+    other_phones: splitList(row.other_phones),
+    total_people: Math.max(1, toInt(row.total, 1)),
+    children: toInt(row.children, 0),
+    companions: splitList(row.companions).map((name) => ({ name, category: 'adult' })),
+    table: row.table || '',
+    dietary: row.dietary || '',
+    notes: row.notes || '',
+    source_rows: [],
+});
 
 /**
- * "Asistente de listas (IA)": upload the guest list in any format, Claude proposes how it ends up (one
- * invitation per phone, total people, named companions, other numbers) and what doesn't add up. The planner
- * corrects it by writing ("Nicole va con Oso", "Ariana está repetida") and imports when nothing is pending.
+ * "Asistente de listas (IA)": the list as the system expects it, in a spreadsheet in the browser. It can be
+ * filled by the AI from any Excel, pasted from Excel, or typed. Each problem is marked on its row; the AI
+ * also corrects it from a written instruction ("Nicole va con Oso"). Imports when nothing is wrong.
  */
 export default function AiListAssistant({ event, showToast, onImported }) {
     const [file, setFile] = useState(null);
-    const [sheet, setSheet] = useState(null); // { headers, rows: [{ row, cells }] }
-    const [proposal, setProposal] = useState(null);
-    const [chat, setChat] = useState([]); // [{ from: 'user'|'ai', text }]
+    const [sheet, setSheet] = useState(null); // the uploaded Excel as it came: { headers, rows }
+    const [grid, setGrid] = useState(null); // the list as the system expects it
+    const [observations, setObservations] = useState([]);
+    const [reviewed, setReviewed] = useState(false);
+    const [chat, setChat] = useState([]);
     const [instruction, setInstruction] = useState('');
     const [working, setWorking] = useState(false);
     const [importing, setImporting] = useState(false);
-    const [tab, setTab] = useState('result');
     const [error, setError] = useState(null);
     const inputRef = useRef(null);
+
+    // Problems of each row, checked live while editing
+    const rowErrors = useMemo(() => (grid ? validateSheet(grid) : {}), [grid]);
 
     if (!event) {
         return <div className="p-12 text-center text-xs text-zinc-500">Seleccioná un evento para usar el asistente.</div>;
     }
 
-    // Read the file as it came: Windows / UTF-8 CSV, header row after a title, empty rows skipped
+    const filledRows = (grid || []).filter(isFilledRow);
+    const people = sheetPeople(grid);
+    const errorCount = Object.keys(rowErrors).length;
+    const pendingObservations = reviewed ? 0 : observations.length;
+    const canImport = filledRows.length > 0 && errorCount === 0 && pendingObservations === 0;
+
+    // Read the Excel as it came (Windows / UTF-8 CSV, title rows above the headers)
     const readFile = (uploaded) => {
         setError(null);
         setFile(uploaded);
-        setProposal(null);
+        setGrid(null);
+        setObservations([]);
         setChat([]);
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -66,25 +105,30 @@ export default function AiListAssistant({ event, showToast, onImported }) {
         reader.readAsArrayBuffer(uploaded);
     };
 
+    // The AI reads the original Excel (and, for a correction, the current spreadsheet)
     const ask = async (text = null) => {
-        if (!sheet || working) return;
+        if (working) return;
+        const source = sheet || { headers: COLUMNS.map((c) => c.label), rows: filledRows.map((row, i) => ({ row: i + 2, cells: COLUMNS.map((c) => row[c.key] || '') })) };
+        if (!source.rows.length) return;
         setWorking(true);
         setError(null);
         if (text) setChat((prev) => [...prev, { from: 'user', text }]);
+        const current = grid ? { invitations: filledRows.map(toInvitation), observations, summary: '' } : null;
         const { ok, json } = await apiFetch(`/api/events/${event.id}/ai-list/analyze`, {
             method: 'POST',
             body: JSON.stringify({
-                headers: sheet.headers,
-                rows: sheet.rows,
-                ...(text && proposal ? { instruction: text, proposal } : {}),
+                headers: source.headers,
+                rows: source.rows,
+                ...(text && current ? { instruction: text, proposal: current } : {}),
             }),
         });
         setWorking(false);
         if (ok && json?.invitations) {
-            setProposal(json);
+            setGrid(json.invitations.map(fromInvitation));
+            setObservations(json.observations || []);
+            setReviewed(false);
             setChat((prev) => [...prev, { from: 'ai', text: json.summary || 'Listo.' }]);
             setInstruction('');
-            setTab(json.observations?.length ? 'issues' : 'result');
         } else {
             const message = json?.message || 'El asistente no pudo procesar la lista.';
             setError(message);
@@ -92,37 +136,24 @@ export default function AiListAssistant({ event, showToast, onImported }) {
         }
     };
 
-    const invitations = proposal?.invitations || [];
-    const observations = proposal?.observations || [];
-    const people = invitations.reduce((acc, g) => acc + Math.max(1, g.total_people || 1), 0);
-    const missingPhone = invitations.filter((g) => String(g.phone || '').replace(/[^\d]/g, '').length < 6);
-    const blockers = observations.length + missingPhone.length;
+    const startBlank = () => {
+        setFile(null);
+        setSheet(null);
+        setObservations([]);
+        setChat([]);
+        setError(null);
+        setGrid(Array.from({ length: 10 }, emptySheetRow));
+    };
 
     // Same payload as the usual Excel import (counts, named companions, other numbers)
     const importList = async () => {
-        if (blockers > 0 || importing) return;
-        if (!window.confirm(`¿Importar ${invitations.length} invitaciones (${people} personas) a ${event.couple_names || event.title}?`)) return;
+        if (!canImport || importing) return;
+        if (!window.confirm(`¿Importar ${filledRows.length} invitaciones (${people} personas) a ${event.couple_names || event.title}?`)) return;
         setImporting(true);
         const { ok, json } = await apiFetch(`/api/events/${event.id}/guests/import`, {
             method: 'POST',
             body: JSON.stringify({
-                guests: invitations.map((g) => {
-                    const total = Math.max(1, g.total_people || 1);
-                    const children = Math.max(0, Math.min(total - 1, g.children || 0));
-                    return {
-                        name: g.name,
-                        phone: g.phone,
-                        table_number: g.table || '',
-                        category: null,
-                        companion_adults: Math.max(0, total - 1 - children),
-                        companion_children: children,
-                        companions: (g.companions || []).map((c) => c.name).join(', ').slice(0, 255),
-                        members: (g.companions || []).slice(0, total - 1),
-                        alt_phones: (g.other_phones || []).filter(Boolean),
-                        dietary_restrictions: g.dietary || '',
-                        notes: g.notes || '',
-                    };
-                }),
+                guests: filledRows.map((row) => sheetRowToImport(row, cleanGuestName)),
             }),
         });
         setImporting(false);
@@ -130,35 +161,15 @@ export default function AiListAssistant({ event, showToast, onImported }) {
         if (ok) onImported && onImported();
     };
 
-    const downloadCorrected = () => {
-        const rows = invitations.map((g) => ({
-            'Nombre Completo': g.name,
-            'Teléfono (WhatsApp)': normalizePhone(g.phone),
-            'Otros Teléfonos': (g.other_phones || []).map(normalizePhone).join(', '),
-            'Número de Mesa': g.table || '',
-            'Tipo de Invitado': 'Adulto',
-            'Total Personas': Math.max(1, g.total_people || 1),
-            'Acompañantes Niños': g.children || 0,
-            'Nombres Acompañantes': (g.companions || []).map((c) => c.name).join(', '),
-            'Restricción Alimentaria': g.dietary || '',
-            'Familia / Notas': g.notes || '',
-        }));
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(rows);
-        ws['!cols'] = [30, 18, 18, 16, 14, 14, 18, 40, 24, 24].map((wch) => ({ wch }));
-        XLSX.utils.book_append_sheet(wb, ws, 'Invitados');
-        if (observations.length) {
-            const rev = XLSX.utils.json_to_sheet(observations.map((o) => ({ Filas: (o.rows || []).join(', '), Observación: o.message })));
-            rev['!cols'] = [{ wch: 14 }, { wch: 90 }];
-            XLSX.utils.book_append_sheet(wb, rev, 'Para revisar');
-        }
-        XLSX.writeFile(wb, `${(file?.name || 'Lista').replace(/\.[^.]+$/, '')} - revisada con IA.xlsx`);
+    const download = () => {
+        downloadSheet(grid, `${(file?.name || 'Lista de invitados').replace(/\.[^.]+$/, '')} - formato del sistema.xlsx`, normalizePhone);
     };
 
     const reset = () => {
         setFile(null);
         setSheet(null);
-        setProposal(null);
+        setGrid(null);
+        setObservations([]);
         setChat([]);
         setError(null);
     };
@@ -172,10 +183,10 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                         <Sparkles className="w-5 h-5 text-violet-500" /> Asistente de listas (IA)
                     </h2>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        Subí la lista de <strong>{event.couple_names || event.title}</strong> en cualquier formato: la IA arma las invitaciones (titular, total de personas, acompañantes, otros números) y te marca lo que no cuadra. Corregís escribiéndole y recién ahí importás.
+                        La lista de <strong>{event.couple_names || event.title}</strong> tal como la espera el sistema: subí el Excel en cualquier formato y la IA la arma, o pegala desde Excel. Corregís en la planilla o escribiéndole al asistente, y recién ahí importás.
                     </p>
                 </div>
-                {file && (
+                {(file || grid) && (
                     <button onClick={reset} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-600 dark:text-zinc-300">
                         <X className="w-4 h-4" /> Empezar de nuevo
                     </button>
@@ -188,23 +199,33 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                 </div>
             )}
 
-            {/* 1. Upload */}
-            {!sheet && (
-                <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) readFile(f); }}
-                    onClick={() => inputRef.current?.click()}
-                    className="cursor-pointer p-12 rounded-3xl border-2 border-dashed border-violet-300 dark:border-violet-800 bg-violet-50/40 dark:bg-violet-950/10 text-center space-y-2 hover:bg-violet-50 dark:hover:bg-violet-950/20"
-                >
-                    <Upload className="w-10 h-10 mx-auto text-violet-500" />
-                    <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">Arrastrá la lista acá o tocá para elegirla</div>
-                    <div className="text-xs text-zinc-500">.xlsx, .xls o .csv · cualquier orden de columnas · hasta 600 filas</div>
-                    <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
+            {/* 1. Start: an Excel for the AI, or the blank spreadsheet */}
+            {!sheet && !grid && (
+                <div className="grid md:grid-cols-2 gap-4">
+                    <div
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) readFile(f); }}
+                        onClick={() => inputRef.current?.click()}
+                        className="cursor-pointer p-10 rounded-3xl border-2 border-dashed border-violet-300 dark:border-violet-800 bg-violet-50/40 dark:bg-violet-950/10 text-center space-y-2 hover:bg-violet-50 dark:hover:bg-violet-950/20"
+                    >
+                        <Upload className="w-10 h-10 mx-auto text-violet-500" />
+                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">Subir un Excel y que la IA lo arme</div>
+                        <div className="text-xs text-zinc-500">.xlsx, .xls o .csv · cualquier formato · hasta 600 filas</div>
+                        <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
+                    </div>
+                    <button
+                        onClick={startBlank}
+                        className="p-10 rounded-3xl border-2 border-dashed border-sky-300 dark:border-sky-800 bg-sky-50/40 dark:bg-sky-950/10 text-center space-y-2 hover:bg-sky-50 dark:hover:bg-sky-950/20"
+                    >
+                        <FileSpreadsheet className="w-10 h-10 mx-auto text-sky-500" />
+                        <div className="text-sm font-bold text-zinc-800 dark:text-zinc-200">Completar la planilla (o pegar desde Excel)</div>
+                        <div className="text-xs text-zinc-500">Ves exactamente las columnas que espera el sistema. Copiá las filas en Excel y pegalas en la primera celda.</div>
+                    </button>
                 </div>
             )}
 
-            {/* 2. Analyze */}
-            {sheet && !proposal && (
+            {/* 2. Analyze the uploaded Excel */}
+            {sheet && !grid && (
                 <div className="p-6 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-center space-y-3">
                     <FileSpreadsheet className="w-9 h-9 mx-auto text-emerald-600" />
                     <div className="text-sm font-bold text-zinc-900 dark:text-white">{file?.name}</div>
@@ -214,108 +235,71 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                         disabled={working}
                         className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white text-sm font-black shadow-lg disabled:opacity-60"
                     >
-                        <Sparkles className="w-4 h-4" /> {working ? 'Analizando la lista… (puede tardar hasta un minuto)' : 'Analizar con IA'}
+                        <Sparkles className="w-4 h-4" /> {working ? 'Analizando la lista… (puede tardar hasta un minuto)' : 'Armar la lista con IA'}
                     </button>
                 </div>
             )}
 
-            {/* 3. Review + correct by chatting */}
-            {proposal && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-                    <div className="xl:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden">
-                        <div className="p-3 flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800">
-                            <div className="flex flex-wrap gap-1.5 text-xs font-bold">
-                                <button onClick={() => setTab('result')} className={`px-3 py-1.5 rounded-xl ${tab === 'result' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' : 'text-zinc-600 dark:text-zinc-300'}`}>
-                                    Cómo queda ({invitations.length} · {people} personas)
-                                </button>
-                                <button onClick={() => setTab('issues')} className={`px-3 py-1.5 rounded-xl ${tab === 'issues' ? (blockers ? 'bg-rose-600 text-white' : 'bg-zinc-900 text-white') : (blockers ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/30' : 'text-zinc-600 dark:text-zinc-300')}`}>
-                                    Observaciones ({blockers})
-                                </button>
+            {/* 3. The spreadsheet as the system expects it + the assistant */}
+            {grid && (
+                <div className="grid grid-cols-1 2xl:grid-cols-4 gap-4">
+                    <div className="2xl:col-span-3 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap gap-2 text-xs font-bold">
+                                <span className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">{filledRows.length} invitaciones</span>
+                                <span className="px-2.5 py-1 rounded-lg bg-teal-100 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300">{people} personas</span>
+                                {errorCount > 0 && <span className="px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300">{errorCount} filas con errores (en rojo)</span>}
                             </div>
-                            <button onClick={downloadCorrected} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold">
-                                <Download className="w-3.5 h-3.5" /> Excel revisado
+                            <button onClick={download} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[11px] font-bold">
+                                <Download className="w-3.5 h-3.5" /> Descargar en este formato
                             </button>
                         </div>
 
-                        <div className="max-h-[60vh] overflow-y-auto">
-                            {tab === 'result' ? (
-                                <table className="w-full text-left text-xs">
-                                    <thead className="bg-zinc-50 dark:bg-zinc-800 text-zinc-500 uppercase tracking-wider sticky top-0">
-                                        <tr>
-                                            <th className="p-3">#</th>
-                                            <th className="p-3">Invitación</th>
-                                            <th className="p-3">Teléfono</th>
-                                            <th className="p-3 text-center">Personas</th>
-                                            <th className="p-3">Acompañantes</th>
-                                            <th className="p-3">Mesa / Dieta / Notas</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                        {invitations.map((g, i) => (
-                                            <tr key={i} className="bg-white dark:bg-zinc-900">
-                                                <td className="p-3 text-zinc-400">{i + 1}</td>
-                                                <td className="p-3">
-                                                    <div className="font-bold text-zinc-900 dark:text-white">{g.name}</div>
-                                                    <div className="text-[10px] text-zinc-500">filas {(g.source_rows || []).join(', ')}</div>
-                                                </td>
-                                                <td className="p-3 font-mono text-zinc-600 dark:text-zinc-400">
-                                                    {normalizePhone(g.phone) || <span className="text-rose-600">sin teléfono</span>}
-                                                    {(g.other_phones || []).map((p) => <div key={p} className="text-[10px] text-zinc-400">+ {normalizePhone(p)}</div>)}
-                                                </td>
-                                                <td className="p-3 text-center text-base font-black text-zinc-900 dark:text-white">
-                                                    {Math.max(1, g.total_people || 1)}
-                                                    {g.children > 0 && <div className="text-[10px] font-semibold text-teal-600">{g.children} niño{g.children > 1 ? 's' : ''}</div>}
-                                                </td>
-                                                <td className="p-3 text-zinc-600 dark:text-zinc-300">
-                                                    {(g.companions || []).length
-                                                        ? g.companions.map((c) => c.name).join(', ')
-                                                        : (g.total_people > 1 ? <span className="italic text-zinc-400">{g.total_people - 1} sin nombre</span> : '—')}
-                                                </td>
-                                                <td className="p-3 text-zinc-500">{[g.table, g.dietary, g.notes].filter(Boolean).join(' · ') || '—'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            ) : blockers === 0 ? (
-                                <div className="p-8 text-center text-xs text-emerald-700 dark:text-emerald-400 font-bold">✅ Sin observaciones: la lista cuadra.</div>
-                            ) : (
-                                <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                    {observations.map((o, i) => (
-                                        <div key={i} className="p-3 text-xs flex gap-3">
-                                            <span className="shrink-0 font-mono text-zinc-400">Fila {(o.rows || []).join(', ') || '—'}</span>
-                                            <span className="text-rose-600 dark:text-rose-400">{o.message}</span>
-                                        </div>
-                                    ))}
-                                    {missingPhone.map((g, i) => (
-                                        <div key={`p${i}`} className="p-3 text-xs flex gap-3">
-                                            <span className="shrink-0 font-mono text-zinc-400">Fila {(g.source_rows || []).join(', ')}</span>
-                                            <span className="text-rose-600 dark:text-rose-400">{g.name}: falta el teléfono (o está incompleto).</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+                        <SpreadsheetGrid columns={COLUMNS} rows={grid} onChange={setGrid} errors={rowErrors} />
 
-                        <div className="p-4 border-t border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-                            <span className="text-[11px] text-zinc-500">
-                                {blockers ? `Resolvé las ${blockers} observaciones (escribiéndole al asistente) para poder importar.` : 'Revisá que cada invitación sea correcta antes de importar.'}
+                        <p className="text-[11px] text-zinc-500">
+                            <strong>Total Personas</strong> incluye al titular (un 2 = el invitado + 1 acompañante). <strong>Acompañantes Niños</strong> son los niños dentro de ese total. Los nombres de acompañantes y los otros teléfonos van separados por coma. Pasá el mouse sobre una fila en rojo para ver qué tiene mal.
+                        </p>
+
+                        {observations.length > 0 && (
+                            <div className="p-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 space-y-2">
+                                <div className="text-xs font-black text-amber-800 dark:text-amber-300">Observaciones del asistente ({observations.length})</div>
+                                {observations.map((o, i) => (
+                                    <div key={i} className="text-xs text-zinc-700 dark:text-zinc-300">
+                                        <span className="font-mono text-zinc-400 mr-2">Fila {(o.rows || []).join(', ') || '—'}</span>{o.message}
+                                    </div>
+                                ))}
+                                <label className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-300 pt-1 cursor-pointer">
+                                    <input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
+                                    Ya las revisé y corregí en la planilla
+                                </label>
+                            </div>
+                        )}
+
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                            <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+                                {canImport
+                                    ? <><CheckCircle2 className="w-4 h-4 text-emerald-600" /> La lista cuadra. Revisala y tocá Importar.</>
+                                    : errorCount > 0
+                                        ? `Corregí las ${errorCount} filas en rojo para poder importar.`
+                                        : pendingObservations > 0 ? 'Revisá las observaciones del asistente para poder importar.' : 'Completá al menos una invitación.'}
                             </span>
                             <button
                                 onClick={importList}
-                                disabled={blockers > 0 || importing || !invitations.length}
+                                disabled={!canImport || importing}
                                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black disabled:opacity-50"
                             >
-                                <Users className="w-4 h-4" /> {importing ? 'Importando...' : `Importar ${invitations.length} invitaciones`}
+                                <Users className="w-4 h-4" /> {importing ? 'Importando...' : `Importar ${filledRows.length} invitaciones`}
                             </button>
                         </div>
                     </div>
 
-                    {/* Chat with the assistant */}
-                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl flex flex-col min-h-[420px]">
+                    {/* Correct with the assistant */}
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl flex flex-col min-h-[360px]">
                         <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
                             <Sparkles className="w-4 h-4 text-violet-500" /> Corregir con el asistente
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[50vh]">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[55vh]">
                             {chat.map((m, i) => (
                                 <div key={i} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
                                     <div className={`max-w-[90%] rounded-2xl px-3 py-2 text-xs whitespace-pre-wrap ${m.from === 'user' ? 'bg-violet-600 text-white rounded-tr-sm' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-tl-sm'}`}>
@@ -325,7 +309,7 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                             ))}
                             {working && <div className="text-xs text-zinc-500 italic">El asistente está revisando la lista…</div>}
                             {!chat.length && (
-                                <p className="text-xs text-zinc-500">Ejemplos: «Nicole Gallardo va con Oso, son 2», «Ariana Coronel está repetida, es una sola invitación de 2», «Marcos Pereira son 6».</p>
+                                <p className="text-xs text-zinc-500">Ejemplos: «Nicole Gallardo va con Oso, son 2», «Ariana Coronel está repetida», «separá los nombres de acompañantes de la columna Notas».</p>
                             )}
                         </div>
                         <form
@@ -341,17 +325,11 @@ export default function AiListAssistant({ event, showToast, onImported }) {
                                 placeholder="Decile qué corregir…"
                                 className="flex-1 resize-none text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white p-2.5 outline-none"
                             />
-                            <button disabled={working || !instruction.trim()} className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center disabled:opacity-50">
+                            <button disabled={working || !instruction.trim() || !filledRows.length} className="h-10 w-10 rounded-xl bg-violet-600 text-white flex items-center justify-center disabled:opacity-50">
                                 <Send className="w-4 h-4" />
                             </button>
                         </form>
                     </div>
-                </div>
-            )}
-
-            {proposal && blockers === 0 && (
-                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4" /> La lista cuadra. Revisá «Cómo queda» y tocá Importar.
                 </div>
             )}
         </div>

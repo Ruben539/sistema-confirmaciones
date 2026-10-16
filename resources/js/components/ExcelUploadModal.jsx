@@ -3,6 +3,8 @@ import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Download, Check, AlertCircle, X, Sparkles, Users, ShieldCheck, Bot } from 'lucide-react';
 import { apiFetch } from '../api';
 import { getPlanLabel } from '../plans';
+import SpreadsheetGrid from './SpreadsheetGrid';
+import { SHEET_COLUMNS, validateSheet, sheetRowToImport, isFilledRow, sheetPeople, downloadSheet } from '../guestSheet';
 
 // "Larisa Rojas y " -> "Larisa Rojas", "Gerardo  SANCHEZ Hermosa" -> "Gerardo Sanchez Hermosa":
 // extra spaces, a loose connector at the end and words in CAPITALS (initials like "M." stay as they are)
@@ -41,6 +43,10 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const [merges, setMerges] = useState([]);
     // Preview: how the list ends up / what has to be fixed / the rows as they came
     const [previewTab, setPreviewTab] = useState('result');
+    // "Así se va a cargar": editable; what is imported and downloaded is what this spreadsheet has
+    const [sheetRows, setSheetRows] = useState([]);
+    const [sheetEdited, setSheetEdited] = useState(false);
+    const [issuesReviewed, setIssuesReviewed] = useState(false);
     const [sendingCorrections, setSendingCorrections] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -72,6 +78,12 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     const excelRow = (r) => (r.sheetRow !== undefined ? r.sheetRow + 1 : r.id + 2);
     const issues = parsedData.filter((r) => r.warnings.length > 0 && !r.attachedTo);
     const invitations = parsedData.filter((r) => r.isValid);
+    const sheetErrors = validateSheet(sheetRows);
+    const filledSheet = sheetRows.filter(isFilledRow);
+    const sheetErrorCount = Object.keys(sheetErrors).length;
+    // Observations of the file block the import until fixed in the Excel, or in the spreadsheet (and marked)
+    const pendingIssues = issuesReviewed ? 0 : issues.length;
+    const canImport = filledSheet.length > 0 && sheetErrorCount === 0 && pendingIssues === 0;
     const templateHeaders = ['nombre completo', 'teléfono (whatsapp)', 'número de mesa', 'tipo de invitado', 'total personas', 'acompañantes niños', 'nombres acompañantes', 'restricción alimentaria', 'familia / notas'];
     const isTemplateFormat = headers.length > 0 && templateHeaders.every((h) => headers.map((x) => x.toLowerCase()).includes(h));
 
@@ -507,6 +519,27 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
         });
 
         setParsedData(list);
+        // The spreadsheet of what will be saved (re-built when the file, the columns or the options change)
+        setSheetRows(list.filter((r) => r.isValid).map((g) => ({
+            name: g.name,
+            phone: normalizePhone(g.phone),
+            other_phones: (g.altPhones || []).map(normalizePhone).join(', '),
+            table: g.table_number || '',
+            category: g.categoryLabel,
+            total: String(g.passes),
+            children: String(g.companion_children || 0),
+            companions: g.companions || '',
+            dietary: g.dietary_restrictions || '',
+            notes: g.notes || '',
+            // Not shown: to keep what the file said when the planner didn't change it
+            _hasCategory: Boolean(g.category),
+            _companions: g.companions || '',
+            _members: g.members,
+            _row: g.sheetRow !== undefined ? g.sheetRow + 1 : g.id + 2,
+            _warnings: g.warnings,
+        })));
+        setSheetEdited(false);
+        setIssuesReviewed(false);
     };
 
     const changeOptions = (patch) => {
@@ -529,40 +562,18 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     // The uploaded list in the system's template format (same columns and order as the downloadable template),
     // already interpreted: totals, phones 595…, companions in rows below joined in one cell, clean names.
     // What couldn't be solved goes to a second sheet, "Para revisar".
+    // The spreadsheet as it is now (with the planner's corrections), with the system's columns
     const handleDownloadCorrected = () => {
-        const valid = parsedData.filter((r) => r.isValid);
-        const rows = valid.map((r) => ({
-            'Nombre Completo': r.name,
-            'Teléfono (WhatsApp)': normalizePhone(r.phone),
-            'Otros Teléfonos': (r.altPhones || []).map(normalizePhone).join(', '),
-            'Número de Mesa': r.table_number || '',
-            'Tipo de Invitado': r.categoryLabel,
-            'Total Personas': r.passes,
-            'Acompañantes Niños': r.companion_children || 0,
-            'Nombres Acompañantes': r.companions || '',
-            'Restricción Alimentaria': r.dietary_restrictions || '',
-            'Familia / Notas': r.notes || '',
-        }));
         const review = parsedData
             .filter((r) => r.warnings.length && !r.attachedTo)
             .map((r) => ({
+                'Fila': r.sheetRow !== undefined ? r.sheetRow + 1 : r.id + 2,
                 'Nombre Completo': r.name || '(sin nombre)',
                 'Teléfono (WhatsApp)': r.phone ? normalizePhone(r.phone) : '',
-                'Total Personas': r.isValid ? r.passes : '',
                 'Motivo': r.warnings.join(' '),
             }));
-
-        const workbook = XLSX.utils.book_new();
-        const sheet = XLSX.utils.json_to_sheet(rows);
-        sheet['!cols'] = [30, 18, 18, 16, 16, 14, 18, 40, 24, 24].map((wch) => ({ wch }));
-        XLSX.utils.book_append_sheet(workbook, sheet, 'Invitados');
-        if (review.length) {
-            const reviewSheet = XLSX.utils.json_to_sheet(review);
-            reviewSheet['!cols'] = [30, 18, 14, 70].map((wch) => ({ wch }));
-            XLSX.utils.book_append_sheet(workbook, reviewSheet, 'Para revisar');
-        }
         const base = (file?.name || 'Lista').replace(/\.[^.]+$/, '');
-        XLSX.writeFile(workbook, `${base} - corregida.xlsx`);
+        downloadSheet(sheetRows, `${base} - corregida.xlsx`, normalizePhone, issuesReviewed ? [] : [{ name: 'Para revisar', rows: review, cols: [8, 30, 18, 70] }]);
     };
 
     const handleDownloadTemplate = () => {
@@ -581,13 +592,10 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
     };
 
     const handleSubmitImport = async () => {
-        if (parsedData.some((r) => r.warnings.length > 0 && !r.attachedTo)) {
-            setError('El Excel tiene observaciones sin resolver. Corregilas (podés descargar el Excel corregido y ver la hoja «Para revisar») y volvé a subirlo.');
-            return;
-        }
-        const validGuests = parsedData.filter(g => g.isValid);
-        if (validGuests.length === 0) {
-            setError('No hay invitados válidos para importar. Revisa el mapeo de columnas.');
+        if (!canImport) {
+            setError(sheetErrorCount
+                ? `Corregí las ${sheetErrorCount} filas en rojo de la planilla.`
+                : 'El Excel tiene observaciones sin resolver: corregilas en la planilla (y marcá que las revisaste) o en el Excel y volvé a subirlo.');
             return;
         }
 
@@ -598,19 +606,15 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
             const { ok, json } = await apiFetch(`/api/events/${activeEventId}/guests/import`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    guests: validGuests.map(g => ({
-                        name: g.name,
-                        phone: g.phone,
-                        table_number: g.table_number,
-                        category: g.category,
-                        companion_adults: g.companion_adults,
-                        companion_children: g.companion_children,
-                        companions: g.companions,
-                        members: g.members,
-                        alt_phones: g.altPhones && g.altPhones.length ? g.altPhones : undefined,
-                        dietary_restrictions: g.dietary_restrictions,
-                        notes: g.notes
-                    }))
+                    guests: filledSheet.map((row) => {
+                        const guest = sheetRowToImport(row, cleanGuestName);
+                        // Keep what the file said when the planner didn't touch it: no category -> don't reset
+                        // existing guests to Adulto; same companions -> keep their categories (e.g. "hija, 4 años")
+                        if (!row._hasCategory && row.category === 'Adulto') guest.category = null;
+                        if (row._members && row.companions === row._companions) guest.members = row._members;
+                        if (!guest.alt_phones.length) delete guest.alt_phones;
+                        return guest;
+                    })
                 })
             });
 
@@ -1005,17 +1009,43 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                             {/* How the list ends up: invitations, what to fix, and the rows as they came */}
                             {!isTemplateFormat && (
                                 <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-900/50 text-[11px] text-sky-800 dark:text-sky-200">
-                                    Este archivo <strong>no tiene el formato de la plantilla</strong>. Revisá en <strong>Cómo queda</strong> que cada invitación sea correcta, o descargá el <strong>Excel corregido</strong>, revisalo y subí ese.
+                                    Este archivo <strong>no tiene el formato de la plantilla</strong>. Revisá abajo, en <strong>Así se va a cargar</strong>, que cada invitación sea correcta, o descargá el <strong>Excel corregido</strong>, revisalo y subí ese.
                                 </div>
                             )}
 
+                            {/* What is wrong (on top) */}
+                            {issues.length > 0 ? (
+                                <div className="rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/60 dark:bg-rose-950/20 overflow-hidden">
+                                    <div className="px-4 py-2.5 text-xs font-black text-rose-700 dark:text-rose-300 flex items-center gap-2">
+                                        <AlertCircle className="w-4 h-4" /> {issues.length} {issues.length === 1 ? 'observación' : 'observaciones'}: corregilas abajo en la planilla, o en el Excel y volvé a subirlo
+                                    </div>
+                                    <div className="max-h-40 overflow-y-auto divide-y divide-rose-100 dark:divide-rose-900/40 bg-white/60 dark:bg-zinc-900/40">
+                                        {issues.map((r) => (
+                                            <div key={r.id} className="px-4 py-2 text-xs flex gap-3">
+                                                <span className="shrink-0 font-mono text-zinc-400">Fila {excelRow(r)}</span>
+                                                <span className="font-bold text-zinc-900 dark:text-white">{r.name || '(sin nombre)'}</span>
+                                                <span className="text-rose-600 dark:text-rose-400">{r.warnings.join(' ')}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <label className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer border-t border-rose-100 dark:border-rose-900/40">
+                                        <input type="checkbox" checked={issuesReviewed} onChange={(e) => setIssuesReviewed(e.target.checked)} />
+                                        Ya las corregí en la planilla de abajo
+                                    </label>
+                                </div>
+                            ) : (
+                                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                    ✅ Sin observaciones: la lista cuadra. Abajo ves exactamente lo que se va a cargar (y podés corregirlo ahí).
+                                </div>
+                            )}
+
+                            {/* What will be saved (below), as a spreadsheet with the system's columns */}
                             <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
                                 <div className="px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800/80 flex flex-wrap justify-between items-center gap-2">
                                     <div className="flex gap-1 text-xs font-bold">
                                         {[
-                                            ['result', `Cómo queda (${invitations.length})`],
-                                            ['issues', `Observaciones (${issues.length})`],
-                                            ['rows', `Filas del Excel (${parsedData.length})`],
+                                            ['result', `Así se va a cargar (${invitations.length} invitaciones)`],
+                                            ['rows', `Filas del Excel original (${parsedData.length})`],
                                         ].map(([id, label]) => (
                                             <button
                                                 key={id}
@@ -1042,61 +1072,15 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
 
                                 <div className="max-h-[50vh] overflow-y-auto">
                                     {previewTab === 'result' && (
-                                        <table className="w-full text-left text-xs">
-                                            <thead className="bg-zinc-100/70 dark:bg-zinc-800 text-zinc-500 uppercase tracking-wider sticky top-0">
-                                                <tr>
-                                                    <th className="p-3">#</th>
-                                                    <th className="p-3">Invitación</th>
-                                                    <th className="p-3">Teléfono</th>
-                                                    <th className="p-3 text-center">Personas</th>
-                                                    <th className="p-3">Acompañantes</th>
-                                                    <th className="p-3">Mesa</th>
-                                                    <th className="p-3">Dieta / Notas</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                                {invitations.map((g, i) => (
-                                                    <tr key={g.id} className={g.warnings.length ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'bg-white dark:bg-zinc-900'}>
-                                                        <td className="p-3 text-zinc-400">{i + 1}</td>
-                                                        <td className="p-3">
-                                                            <div className="font-bold text-zinc-900 dark:text-white">{g.name}</div>
-                                                            <div className="text-[10px] text-zinc-500">{g.categoryLabel} · fila {excelRow(g)}</div>
-                                                            {g.warnings.map((w, k) => (
-                                                                <div key={k} className="text-[10px] font-semibold text-amber-700 dark:text-amber-400">⚠️ {w}</div>
-                                                            ))}
-                                                        </td>
-                                                        <td className="p-3 font-mono text-zinc-600 dark:text-zinc-400">
-                                                            {normalizePhone(g.phone)}
-                                                            {(g.altPhones || []).map((p) => <div key={p} className="text-[10px] text-zinc-400">+ {normalizePhone(p)}</div>)}
-                                                        </td>
-                                                        <td className="p-3 text-center text-base font-black text-zinc-900 dark:text-white">{g.passes}</td>
-                                                        <td className="p-3 text-zinc-600 dark:text-zinc-300">
-                                                            {g.members.length ? g.members.map((m) => m.name).join(', ') : (g.companions || (g.passes > 1 ? <span className="text-zinc-400 italic">{g.passes - 1} sin nombre</span> : '—'))}
-                                                        </td>
-                                                        <td className="p-3 text-amber-600 dark:text-amber-400 font-bold">{g.table_number || '—'}</td>
-                                                        <td className="p-3 text-zinc-500">{[g.dietary_restrictions, g.notes].filter(Boolean).join(' · ') || '—'}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-
-                                    {previewTab === 'issues' && (
-                                        issues.length === 0 ? (
-                                            <div className="p-8 text-center text-xs text-emerald-700 dark:text-emerald-400 font-bold">✅ Sin observaciones: la lista cuadra.</div>
-                                        ) : (
-                                            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                                {issues.map((r) => (
-                                                    <div key={r.id} className="p-3 text-xs flex gap-3">
-                                                        <span className="shrink-0 font-mono text-zinc-400">Fila {excelRow(r)}</span>
-                                                        <div>
-                                                            <div className="font-bold text-zinc-900 dark:text-white">{r.name || '(sin nombre)'} <span className="font-mono font-normal text-zinc-500">{r.phone}</span></div>
-                                                            {r.warnings.map((w, k) => <div key={k} className="text-rose-600 dark:text-rose-400">{w}</div>)}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )
+                                        <SpreadsheetGrid
+                                            columns={SHEET_COLUMNS}
+                                            rows={sheetRows}
+                                            onChange={(rows) => { setSheetRows(rows); setSheetEdited(true); }}
+                                            rowLabels={sheetRows.map((r, i) => r._row ?? `+${i + 1}`)}
+                                            errors={Object.fromEntries(sheetRows.map((r, i) => [i,
+                                                sheetErrors[i] || (!sheetEdited && r._warnings?.length ? { _row: r._warnings.join(' ') } : null),
+                                            ]).filter(([, e]) => e))}
+                                        />
                                     )}
 
                                     {previewTab === 'rows' && (
@@ -1177,7 +1161,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                     {file && (
                         <button
                             type="button"
-                            disabled={loading || invitations.length === 0 || issues.length > 0}
+                            disabled={loading || !canImport}
                             title={issues.length ? 'Corregí las observaciones en el Excel y volvé a subirlo' : ''}
                             onClick={handleSubmitImport}
                             className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md disabled:opacity-50 active:scale-95"
@@ -1187,7 +1171,7 @@ export default function ExcelUploadModal({ isOpen, onClose, event, eventId, curr
                             ) : (
                                 <>
                                     <Users className="w-4 h-4" />
-                                    <span>{issues.length ? `Hay ${issues.length} observaciones: corregí el Excel` : `Importar ${invitations.length} invitaciones`}</span>
+                                    <span>{sheetErrorCount ? `Corregí ${sheetErrorCount} filas en rojo` : pendingIssues ? `Hay ${pendingIssues} observaciones` : `Importar ${filledSheet.length} invitaciones (${sheetPeople(sheetRows)} personas)`}</span>
                                 </>
                             )}
                         </button>
