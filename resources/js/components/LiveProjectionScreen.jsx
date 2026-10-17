@@ -26,6 +26,7 @@ export default function LiveProjectionScreen({ eventId }) {
     const [isMuted, setIsMuted] = useState(false); // Unmuted by default for projector sound
     const [isPaused, setIsPaused] = useState(false);
     const [showQrModal, setShowQrModal] = useState(false);
+    const [showCameraQrModal, setShowCameraQrModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     const [showControls, setShowControls] = useState(true);
 
@@ -377,6 +378,16 @@ export default function LiveProjectionScreen({ eventId }) {
             } else if (e.key === 'c' || e.key === 'C') {
                 e.preventDefault();
                 triggerCelebration(true);
+            } else if (e.key === 'v' || e.key === 'V') {
+                e.preventDefault();
+                setShowCameraQrModal(prev => !prev);
+            } else if (e.key === 'q' || e.key === 'Q') {
+                e.preventDefault();
+                setShowQrModal(prev => !prev);
+            } else if (e.key === 'Escape') {
+                setShowCameraQrModal(false);
+                setShowQrModal(false);
+                setShowSettingsModal(false);
             }
         };
 
@@ -429,6 +440,8 @@ export default function LiveProjectionScreen({ eventId }) {
         try {
             setBroadcasterName(name || 'Cámara en Vivo');
             setLiveStreamNotice(`🔴 EN VIVO: Transmisión de ${name || 'el Salón'}`);
+            setShowCameraQrModal(false);
+            setShowQrModal(false);
             triggerCelebration(true);
 
             const pc = new RTCPeerConnection(RTC_CONFIG);
@@ -442,6 +455,8 @@ export default function LiveProjectionScreen({ eventId }) {
                 setIsLiveStreaming(true);
                 isLiveStreamingRef.current = true;
                 isLiveConnectingRef.current = false;
+                setShowCameraQrModal(false);
+                setShowQrModal(false);
 
                 if (liveVideoRef.current) {
                     liveVideoRef.current.srcObject = stream;
@@ -456,10 +471,24 @@ export default function LiveProjectionScreen({ eventId }) {
                     setIsLiveStreaming(true);
                     isLiveStreamingRef.current = true;
                     isLiveConnectingRef.current = false;
+                    setShowCameraQrModal(false);
+                    setShowQrModal(false);
                     if (liveVideoRef.current && liveStreamMediaRef.current) {
                         liveVideoRef.current.srcObject = liveStreamMediaRef.current;
                         liveVideoRef.current.play().catch(e => console.warn('ICE play:', e));
                     }
+                } else if (iceState === 'disconnected' || iceState === 'failed' || iceState === 'closed') {
+                    console.log('Projector ICE disconnected, ending live session');
+                    disconnectFromLiveStream();
+                }
+            };
+
+            pc.onconnectionstatechange = () => {
+                const connState = pc.connectionState;
+                console.log('Projector connection state:', connState);
+                if (connState === 'disconnected' || connState === 'failed' || connState === 'closed') {
+                    console.log('Projector connection disconnected, ending live session');
+                    disconnectFromLiveStream();
                 }
             };
 
@@ -603,6 +632,8 @@ export default function LiveProjectionScreen({ eventId }) {
 
     const uploadUrl = `${window.location.origin}/evento/${eventId}/dedicatoria`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(uploadUrl)}`;
+    const liveBroadcastUrl = `${window.location.origin}/evento/${eventId}/en-vivo`;
+    const cameraQrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(liveBroadcastUrl)}`;
 
     if (loading) {
         return (
@@ -691,6 +722,19 @@ export default function LiveProjectionScreen({ eventId }) {
                             <span className="text-xs font-bold hidden lg:inline">Transmitir a TV</span>
                         </button>
                     )}
+
+                    {/* Live Mobile Camera QR Trigger */}
+                    <button
+                        type="button"
+                        onClick={() => setShowCameraQrModal(true)}
+                        className="p-2.5 px-3.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white border border-rose-400/40 rounded-2xl transition-all hover:scale-105 shadow-xl flex items-center gap-2 cursor-pointer group"
+                        title="Conectar cámara de celular para transmitir en vivo a esta pantalla (Tecla V)"
+                    >
+                        <Radio className="w-4 h-4 text-white animate-pulse group-hover:scale-110 transition-transform" />
+                        <span className="text-xs font-black uppercase tracking-wider text-white hidden md:inline">
+                            Transmitir en Vivo (QR)
+                        </span>
+                    </button>
 
                     {/* Confetti Trigger */}
                     <button
@@ -1130,6 +1174,8 @@ export default function LiveProjectionScreen({ eventId }) {
                             <div>• <kbd className="text-amber-400 font-mono">← / →</kbd>: Saludo Anterior / Siguiente</div>
                             <div>• <kbd className="text-amber-400 font-mono">M</kbd>: Silenciar / Activar audio</div>
                             <div>• <kbd className="text-amber-400 font-mono">C</kbd>: Lluvia de confeti</div>
+                            <div>• <kbd className="text-amber-400 font-mono">V</kbd>: Transmitir en Vivo (QR Cámara)</div>
+                            <div>• <kbd className="text-amber-400 font-mono">Q</kbd>: QR para Dedicatorias</div>
                             <div>• <kbd className="text-amber-400 font-mono">F</kbd>: Pantalla completa</div>
                         </div>
 
@@ -1144,7 +1190,7 @@ export default function LiveProjectionScreen({ eventId }) {
                 </div>
             )}
 
-            {/* EXPANDED QR MODAL */}
+            {/* EXPANDED QR MODAL (GUEST DEDICATIONS) */}
             {showQrModal && (
                 <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
                     <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-8 max-w-sm w-full text-center space-y-6 shadow-2xl relative">
@@ -1173,6 +1219,47 @@ export default function LiveProjectionScreen({ eventId }) {
 
                         <div className="text-xs text-zinc-400 font-mono break-all px-3 py-1.5 bg-zinc-950 rounded-xl">
                             {uploadUrl}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* LIVE CAMERA QR MODAL (TRANSMITIR EN VIVO DESDE EL CELULAR) */}
+            {showCameraQrModal && (
+                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-zinc-900 border-2 border-rose-500/70 rounded-3xl p-8 max-w-sm w-full text-center space-y-5 shadow-[0_0_80px_rgba(244,63,94,0.4)] relative">
+                        <button
+                            onClick={() => setShowCameraQrModal(false)}
+                            className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-rose-400 flex items-center justify-center gap-1.5">
+                                <Radio className="w-3.5 h-3.5 animate-pulse" />
+                                Transmisión en Directo
+                            </span>
+                            <h3 className="text-2xl font-black text-white">
+                                Transmitir en Vivo
+                            </h3>
+                            <p className="text-xs text-zinc-300 leading-relaxed">
+                                Escaneá este código QR con la cámara de tu celular para transmitir en vivo a este proyector:
+                            </p>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-3xl inline-block shadow-2xl border-4 border-rose-500/80">
+                            <img src={cameraQrCodeUrl} alt="QR para cámara en vivo" className="w-64 h-64 mx-auto rounded-xl" />
+                        </div>
+
+                        <div className="p-3 bg-zinc-950/90 rounded-2xl border border-rose-500/30 text-[11px] text-zinc-300 space-y-1 text-left">
+                            <div className="font-bold text-rose-400 flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>Cambio 100% Automático</span>
+                            </div>
+                            <p className="text-[11px] text-zinc-400 leading-normal">
+                                Al presionar <strong>"Iniciar En Vivo al Proyector"</strong> en el celular, esta pantalla cambiará sola para mostrar el video. Al detenerlo, vuelve al muro o QR.
+                            </p>
                         </div>
                     </div>
                 </div>

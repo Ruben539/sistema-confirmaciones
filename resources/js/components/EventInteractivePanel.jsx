@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Sparkles, Music, Disc, Gift, Film, Camera, Tv, ExternalLink, Copy, Check, 
-    Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock, Radio, Cast 
+    Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock, Radio, Cast, X 
 } from 'lucide-react';
 import EventInvitationSettingsModal from './EventInvitationSettingsModal';
 import DigitalInvitationDemo from './DigitalInvitationDemo';
@@ -13,6 +13,7 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSongsOpen, setIsSongsOpen] = useState(false);
     const [isDedicationsOpen, setIsDedicationsOpen] = useState(false);
+    const [isLiveCameraModalOpen, setIsLiveCameraModalOpen] = useState(false);
 
     const [songsCount, setSongsCount] = useState(0);
     const [dedicationsCount, setDedicationsCount] = useState(0);
@@ -301,16 +302,15 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                         </a>
 
                         <div className="w-full flex items-center gap-2">
-                            <a
-                                href={liveBroadcastUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex-1 py-2.5 px-3 bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5"
-                                title="Abrir cámara del celular para transmitir en vivo a la pantalla"
+                            <button
+                                type="button"
+                                onClick={() => setIsLiveCameraModalOpen(true)}
+                                className="flex-1 py-2.5 px-3 bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                                title="Transmitir cámara del celular en vivo (abrir código QR)"
                             >
                                 <Radio className="w-4 h-4 animate-pulse" />
-                                <span>🔴 Transmitir Cámara</span>
-                            </a>
+                                <span>🔴 Transmitir Cámara (QR)</span>
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => handleCopy(liveBroadcastUrl, 'live_camera')}
@@ -493,6 +493,75 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                         fetchCounts();
                     }}
                 />
+            )}
+
+            {/* LIVE CAMERA QR MODAL FOR ORGANIZER */}
+            {isLiveCameraModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-rose-500/50 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-5 shadow-2xl relative">
+                        <button
+                            type="button"
+                            onClick={() => setIsLiveCameraModalOpen(false)}
+                            className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="space-y-1.5">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-rose-500 flex items-center justify-center gap-1.5">
+                                <Radio className="w-3.5 h-3.5 animate-pulse" />
+                                Transmisión en Vivo al Proyector
+                            </span>
+                            <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
+                                Transmitir Cámara en Vivo
+                            </h3>
+                            <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                                Escaneá este código QR con la cámara de tu celular (o envialo por WhatsApp al fotógrafo) para transmitir video en directo al proyector:
+                            </p>
+                        </div>
+
+                        <div className="p-4 bg-white rounded-3xl inline-block shadow-2xl border-4 border-rose-500/80">
+                            <img
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(liveBroadcastUrl)}`}
+                                alt="QR para transmitir en vivo"
+                                className="w-60 h-60 mx-auto rounded-xl"
+                            />
+                        </div>
+
+                        <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 text-left text-xs space-y-1.5">
+                            <div className="font-bold text-rose-500 flex items-center gap-1.5">
+                                <Sparkles className="w-4 h-4" />
+                                <span>¿Cómo funciona el proyector del salón?</span>
+                            </div>
+                            <ol className="text-[11px] text-zinc-600 dark:text-zinc-300 list-decimal list-inside space-y-1 leading-relaxed">
+                                <li>Escaneás este QR y abrís la cámara en el teléfono.</li>
+                                <li>Tocás <strong>"Iniciar En Vivo al Proyector"</strong>.</li>
+                                <li>El proyector del salón <strong>cambia automáticamente para mostrar tu video en pantalla gigante</strong>.</li>
+                                <li>Al tocar <strong>"Detener Transmisión"</strong>, vuelve solo a las fotos y dedicatorias de los invitados.</li>
+                            </ol>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                            <a
+                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`🔴 Enlace para transmitir en vivo a la pantalla gigante:\n${liveBroadcastUrl}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full sm:flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-transform active:scale-95 cursor-pointer"
+                            >
+                                <Share2 className="w-4 h-4" />
+                                <span>Enviar por WhatsApp</span>
+                            </a>
+                            <button
+                                type="button"
+                                onClick={() => handleCopy(liveBroadcastUrl, 'live_camera')}
+                                className="w-full sm:w-auto py-3 px-4 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                                {copiedUrl === 'live_camera' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                                <span>{copiedUrl === 'live_camera' ? '¡Copiado!' : 'Copiar Link'}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
