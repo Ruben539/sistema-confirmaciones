@@ -484,7 +484,13 @@ export default function LiveProjectionScreen({ eventId }) {
 
                 if (liveVideoRef.current) {
                     liveVideoRef.current.srcObject = stream;
-                    liveVideoRef.current.play().catch(e => console.warn('Auto play:', e));
+                    liveVideoRef.current.play().catch(e => {
+                        console.warn('Auto play failed (browser autoplay restriction), retrying muted:', e);
+                        if (liveVideoRef.current) {
+                            liveVideoRef.current.muted = true;
+                            liveVideoRef.current.play().catch(err => console.error('Final play error:', err));
+                        }
+                    });
                 }
             };
 
@@ -500,7 +506,13 @@ export default function LiveProjectionScreen({ eventId }) {
                     setShowQrModal(false);
                     if (liveVideoRef.current && liveStreamMediaRef.current) {
                         liveVideoRef.current.srcObject = liveStreamMediaRef.current;
-                        liveVideoRef.current.play().catch(e => console.warn('ICE play:', e));
+                        liveVideoRef.current.play().catch(e => {
+                            console.warn('ICE play failed, retrying muted:', e);
+                            if (liveVideoRef.current) {
+                                liveVideoRef.current.muted = true;
+                                liveVideoRef.current.play().catch(err => console.error('Final play error:', err));
+                            }
+                        });
                     }
                 } else if (iceState === 'disconnected' || iceState === 'failed' || iceState === 'closed') {
                     console.log('Projector ICE disconnected, ending live session');
@@ -853,7 +865,11 @@ export default function LiveProjectionScreen({ eventId }) {
                                     liveVideoRef.current = el;
                                     if (el && liveStreamMediaRef.current && el.srcObject !== liveStreamMediaRef.current) {
                                         el.srcObject = liveStreamMediaRef.current;
-                                        el.play().catch(e => console.warn('Callback ref play:', e));
+                                        el.play().catch(e => {
+                                            console.warn('Callback ref play failed, retrying muted:', e);
+                                            el.muted = true;
+                                            el.play().catch(err => console.error('Callback ref play error:', err));
+                                        });
                                     }
                                 }}
                                 autoPlay

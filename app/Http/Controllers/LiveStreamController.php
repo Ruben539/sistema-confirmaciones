@@ -29,9 +29,9 @@ class LiveStreamController extends Controller
             ]);
         }
 
-        // Check if heartbeat is expired (>20 seconds)
+        // Check if heartbeat is expired (>120 seconds grace period)
         $lastHeartbeat = $data['last_heartbeat'] ?? 0;
-        if (time() - $lastHeartbeat > 25) {
+        if (time() - $lastHeartbeat > 120) {
             Cache::forget($key);
             Cache::forget("{$key}_answer");
             Cache::forget("{$key}_ice_broadcaster");
@@ -45,6 +45,12 @@ class LiveStreamController extends Controller
                     'public_code' => $event->public_code,
                 ],
             ]);
+        }
+
+        // Auto-refresh heartbeat if broadcaster is polling status
+        if (request()->query('for') === 'broadcaster') {
+            $data['last_heartbeat'] = time();
+            Cache::put($key, $data, 1800);
         }
 
         // Also check if an answer exists
@@ -157,6 +163,15 @@ class LiveStreamController extends Controller
             $candidates = array_slice($candidates, -50);
         }
         Cache::put($key, $candidates, 1800);
+
+        if ($validated['sender'] === 'broadcaster') {
+            $mainKey = "live_stream_{$event->id}";
+            $streamData = Cache::get($mainKey);
+            if ($streamData) {
+                $streamData['last_heartbeat'] = time();
+                Cache::put($mainKey, $streamData, 1800);
+            }
+        }
 
         return response()->json([
             'success' => true,

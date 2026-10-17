@@ -298,7 +298,7 @@ export default function LiveBroadcastCamera({ eventId }) {
             let answerApplied = false;
             answerPollTimerRef.current = setInterval(async () => {
                 try {
-                    const { ok, json } = await apiFetch(`/api/events/${eventId}/live-stream/status`);
+                    const { ok, json } = await apiFetch(`/api/events/${eventId}/live-stream/status?for=broadcaster`);
                     if (ok && json?.active && json?.answer && !answerApplied && pc.signalingState === 'have-local-offer') {
                         answerApplied = true;
                         const remoteDesc = new RTCSessionDescription(json.answer);
