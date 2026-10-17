@@ -11,7 +11,11 @@ const RTC_CONFIG = {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
-    ]
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+    ],
+    iceCandidatePoolSize: 10,
 };
 
 export default function LiveProjectionScreen({ eventId }) {
@@ -51,8 +55,11 @@ export default function LiveProjectionScreen({ eventId }) {
     const videoRef = useRef(null);
     const liveVideoRef = useRef(null);
     const livePeerConnectionRef = useRef(null);
+    const liveStreamMediaRef = useRef(null);
     const liveCandidatesRef = useRef(new Set());
     const isLiveConnectingRef = useRef(false);
+    const isLiveStreamingRef = useRef(false);
+    const candIntervalRef = useRef(null);
     const timerRef = useRef(null);
     const progressIntervalRef = useRef(null);
     const mouseTimerRef = useRef(null);
@@ -429,21 +436,49 @@ export default function LiveProjectionScreen({ eventId }) {
             liveCandidatesRef.current = new Set();
 
             pc.ontrack = (event) => {
-                if (liveVideoRef.current && event.streams[0]) {
-                    liveVideoRef.current.srcObject = event.streams[0];
-                    setIsLiveStreaming(true);
-                    isLiveConnectingRef.current = false;
+                console.log('Projector ontrack:', event.track.kind, event.streams);
+                const stream = event.streams[0] || new MediaStream([event.track]);
+                liveStreamMediaRef.current = stream;
+                setIsLiveStreaming(true);
+                isLiveStreamingRef.current = true;
+                isLiveConnectingRef.current = false;
+
+                if (liveVideoRef.current) {
+                    liveVideoRef.current.srcObject = stream;
+                    liveVideoRef.current.play().catch(e => console.warn('Auto play:', e));
                 }
             };
 
+            pc.oniceconnectionstatechange = () => {
+                const iceState = pc.iceConnectionState;
+                console.log('Projector ICE state:', iceState);
+                if (iceState === 'connected' || iceState === 'completed') {
+                    setIsLiveStreaming(true);
+                    isLiveStreamingRef.current = true;
+                    isLiveConnectingRef.current = false;
+                    if (liveVideoRef.current && liveStreamMediaRef.current) {
+                        liveVideoRef.current.srcObject = liveStreamMediaRef.current;
+                        liveVideoRef.current.play().catch(e => console.warn('ICE play:', e));
+                    }
+                }
+            };
+
+            const localCandidates = [];
+            let answerSent = false;
+
             pc.onicecandidate = async (event) => {
                 if (event.candidate) {
+                    const candData = event.candidate.toJSON();
+                    if (!answerSent) {
+                        localCandidates.push(candData);
+                        return;
+                    }
                     try {
                         await apiFetch(`/api/events/${eventId}/live-stream/candidate`, {
                             method: 'POST',
                             body: JSON.stringify({
                                 sender: 'viewer',
-                                candidate: event.candidate.toJSON(),
+                                candidate: candData,
                             })
                         });
                     } catch (e) {
@@ -459,14 +494,28 @@ export default function LiveProjectionScreen({ eventId }) {
             await apiFetch(`/api/events/${eventId}/live-stream/answer`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    answer: { type: answer.type, sdp: answer.sdp }
+                    answer: { type: answer.type, sdp: answer.sdp },
+                    candidates: localCandidates,
                 })
             });
+            answerSent = true;
+
+            // Send any candidates gathered while answering
+            for (const c of localCandidates) {
+                apiFetch(`/api/events/${eventId}/live-stream/candidate`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        sender: 'viewer',
+                        candidate: c,
+                    })
+                }).catch(() => {});
+            }
 
             // Poll for Broadcaster ICE candidates
-            const candInterval = setInterval(async () => {
+            if (candIntervalRef.current) clearInterval(candIntervalRef.current);
+            candIntervalRef.current = setInterval(async () => {
                 if (!livePeerConnectionRef.current) {
-                    clearInterval(candInterval);
+                    if (candIntervalRef.current) clearInterval(candIntervalRef.current);
                     return;
                 }
                 try {
@@ -485,7 +534,7 @@ export default function LiveProjectionScreen({ eventId }) {
                         }
                     }
                 } catch (e) {}
-            }, 1500);
+            }, 1000);
 
         } catch (err) {
             console.error('Error connecting to live stream:', err);
@@ -495,15 +544,21 @@ export default function LiveProjectionScreen({ eventId }) {
     };
 
     const disconnectFromLiveStream = () => {
+        if (candIntervalRef.current) {
+            clearInterval(candIntervalRef.current);
+            candIntervalRef.current = null;
+        }
         if (livePeerConnectionRef.current) {
-            livePeerConnectionRef.current.close();
+            try { livePeerConnectionRef.current.close(); } catch (e) {}
             livePeerConnectionRef.current = null;
         }
         if (liveVideoRef.current) {
             liveVideoRef.current.srcObject = null;
         }
+        liveStreamMediaRef.current = null;
         isLiveConnectingRef.current = false;
-        if (isLiveStreaming) {
+        if (isLiveStreamingRef.current) {
+            isLiveStreamingRef.current = false;
             setIsLiveStreaming(false);
             setLiveStreamNotice('✨ Transmisión en vivo finalizada');
             triggerCelebration(true);
@@ -511,7 +566,7 @@ export default function LiveProjectionScreen({ eventId }) {
         }
     };
 
-    // Live Stream Polling Effect
+    // Live Stream Polling Effect (only depends on eventId to prevent premature disconnect)
     useEffect(() => {
         const checkLiveStream = async () => {
             try {
@@ -520,7 +575,7 @@ export default function LiveProjectionScreen({ eventId }) {
                     if (!isLiveConnectingRef.current && !livePeerConnectionRef.current) {
                         connectToLiveStream(json.offer, json.broadcaster_name);
                     }
-                } else if (!json?.active && (livePeerConnectionRef.current || isLiveStreaming)) {
+                } else if (!json?.active && (livePeerConnectionRef.current || isLiveStreamingRef.current)) {
                     disconnectFromLiveStream();
                 }
             } catch (err) {
@@ -529,12 +584,22 @@ export default function LiveProjectionScreen({ eventId }) {
         };
 
         checkLiveStream();
-        const livePoll = setInterval(checkLiveStream, 2500);
+        const livePoll = setInterval(checkLiveStream, 2000);
         return () => {
             clearInterval(livePoll);
             disconnectFromLiveStream();
         };
-    }, [eventId, isLiveStreaming]);
+    }, [eventId]);
+
+    // Ensure live video attaches when switching to live stream mode
+    useEffect(() => {
+        if (isLiveStreaming && liveVideoRef.current && liveStreamMediaRef.current) {
+            if (liveVideoRef.current.srcObject !== liveStreamMediaRef.current) {
+                liveVideoRef.current.srcObject = liveStreamMediaRef.current;
+            }
+            liveVideoRef.current.play().catch(e => console.warn('Live video play error:', e));
+        }
+    }, [isLiveStreaming, isMuted]);
 
     const uploadUrl = `${window.location.origin}/evento/${eventId}/dedicatoria`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(uploadUrl)}`;
@@ -693,7 +758,13 @@ export default function LiveProjectionScreen({ eventId }) {
                     <div className="w-full max-w-5xl h-full flex flex-col items-center justify-center animate-fade-in relative z-20">
                         <div className="relative w-full max-h-[72vh] flex items-center justify-center rounded-3xl overflow-hidden border-4 border-rose-500 shadow-[0_0_80px_rgba(244,63,94,0.45)] bg-black">
                             <video
-                                ref={liveVideoRef}
+                                ref={(el) => {
+                                    liveVideoRef.current = el;
+                                    if (el && liveStreamMediaRef.current && el.srcObject !== liveStreamMediaRef.current) {
+                                        el.srcObject = liveStreamMediaRef.current;
+                                        el.play().catch(e => console.warn('Callback ref play:', e));
+                                    }
+                                }}
                                 autoPlay
                                 playsInline
                                 muted={isMuted}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Film, Send, Sparkles, CheckCircle2, Heart, Upload, AlertCircle, RefreshCw } from 'lucide-react';
+import { Camera, Film, Send, Sparkles, CheckCircle2, Heart, Upload, AlertCircle, RefreshCw, Radio } from 'lucide-react';
 import { apiFetch } from '../api';
 
 export default function PublicDedicationPage({ eventId }) {
@@ -440,6 +440,17 @@ export default function PublicDedicationPage({ eventId }) {
                         </button>
                     </form>
                 )}
+
+                {/* Switch to Live Mobile Camera Stream for Cameraman/Host */}
+                <div className="pt-3 border-t border-zinc-800/80 text-center">
+                    <a
+                        href={`/evento/${eventId}/en-vivo`}
+                        className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-750 border border-zinc-700/80 text-zinc-300 hover:text-white text-xs font-bold transition-all shadow-sm"
+                    >
+                        <Radio className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                        <span>¿Sos el fotógrafo o anfitrión? <strong>Transmitir Cámara en Vivo</strong></span>
+                    </a>
+                </div>
             </div>
         </div>
     );

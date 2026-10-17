@@ -11,7 +11,11 @@ const RTC_CONFIG = {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
-    ]
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+    ],
+    iceCandidatePoolSize: 10,
 };
 
 export default function LiveBroadcastCamera({ eventId }) {
@@ -176,15 +180,23 @@ export default function LiveBroadcastCamera({ eventId }) {
                 pc.addTrack(track, stream);
             });
 
+            const pendingCandidates = [];
+            let isStartRegistered = false;
+
             // Send local ICE candidates to backend
             pc.onicecandidate = async (event) => {
                 if (event.candidate) {
+                    const candData = event.candidate.toJSON();
+                    if (!isStartRegistered) {
+                        pendingCandidates.push(candData);
+                        return;
+                    }
                     try {
                         await apiFetch(`/api/events/${eventId}/live-stream/candidate`, {
                             method: 'POST',
                             body: JSON.stringify({
                                 sender: 'broadcaster',
-                                candidate: event.candidate.toJSON(),
+                                candidate: candData,
                             })
                         });
                     } catch (e) {
@@ -193,14 +205,21 @@ export default function LiveBroadcastCamera({ eventId }) {
                 }
             };
 
-            // Monitor connection state
-            pc.onconnectionstatechange = () => {
-                if (pc.connectionState === 'connected') {
+            // Monitor connection state (both connectionState and iceConnectionState)
+            const handleStateUpdate = () => {
+                const connState = pc.connectionState;
+                const iceState = pc.iceConnectionState;
+                console.log('Broadcaster WebRTC state:', { connState, iceState });
+
+                if (connState === 'connected' || iceState === 'connected' || iceState === 'completed') {
                     setConnectionStatus('connected');
-                } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+                } else if (connState === 'failed' || iceState === 'failed') {
                     setConnectionStatus('waiting_viewer');
                 }
             };
+
+            pc.onconnectionstatechange = handleStateUpdate;
+            pc.oniceconnectionstatechange = handleStateUpdate;
 
             // Create Offer
             const offer = await pc.createOffer({
@@ -215,6 +234,7 @@ export default function LiveBroadcastCamera({ eventId }) {
                 body: JSON.stringify({
                     offer: { type: offer.type, sdp: offer.sdp },
                     broadcaster_name: broadcasterName || 'Cámara en Vivo',
+                    candidates: pendingCandidates,
                 })
             });
 
@@ -222,7 +242,19 @@ export default function LiveBroadcastCamera({ eventId }) {
                 throw new Error('Error al registrar la transmisión en el servidor');
             }
 
+            isStartRegistered = true;
             setConnectionStatus('waiting_viewer');
+
+            // Send any candidates that were generated while waiting for start response
+            for (const cand of pendingCandidates) {
+                apiFetch(`/api/events/${eventId}/live-stream/candidate`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        sender: 'broadcaster',
+                        candidate: cand,
+                    })
+                }).catch(() => {});
+            }
 
             // Timer for duration
             durationTimerRef.current = setInterval(() => {
@@ -238,7 +270,7 @@ export default function LiveBroadcastCamera({ eventId }) {
                 }
             }, 5000);
 
-            // Poll for Answer and Viewer ICE candidates every 1.5s
+            // Poll for Answer and Viewer ICE candidates every 1s
             let answerApplied = false;
             answerPollTimerRef.current = setInterval(async () => {
                 try {
@@ -269,7 +301,7 @@ export default function LiveBroadcastCamera({ eventId }) {
                 } catch (err) {
                     console.error('Polling error:', err);
                 }
-            }, 1500);
+            }, 1000);
 
         } catch (err) {
             console.error('Error starting live broadcast:', err);

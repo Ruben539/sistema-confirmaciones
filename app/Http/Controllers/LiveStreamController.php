@@ -76,6 +76,7 @@ class LiveStreamController extends Controller
         $validated = $request->validate([
             'offer' => 'required|array',
             'broadcaster_name' => 'nullable|string|max:100',
+            'candidates' => 'nullable|array',
         ]);
 
         $key = "live_stream_{$event->id}";
@@ -94,6 +95,10 @@ class LiveStreamController extends Controller
         Cache::forget("{$key}_ice_broadcaster");
         Cache::forget("{$key}_ice_viewer");
 
+        if (!empty($validated['candidates'])) {
+            Cache::put("{$key}_ice_broadcaster", $validated['candidates'], 1800);
+        }
+
         return response()->json([
             'success' => true,
             'active' => true,
@@ -109,6 +114,7 @@ class LiveStreamController extends Controller
         $event = Event::findByPublicCodeOrFail($code);
         $validated = $request->validate([
             'answer' => 'required|array',
+            'candidates' => 'nullable|array',
         ]);
 
         $key = "live_stream_{$event->id}";
@@ -116,6 +122,12 @@ class LiveStreamController extends Controller
             'answer' => $validated['answer'],
             'answered_at' => time(),
         ], 1800);
+
+        if (!empty($validated['candidates'])) {
+            $existing = Cache::get("{$key}_ice_viewer", []);
+            $merged = array_merge($existing, $validated['candidates']);
+            Cache::put("{$key}_ice_viewer", $merged, 1800);
+        }
 
         return response()->json([
             'success' => true,
