@@ -90,10 +90,15 @@ class LiveStreamController extends Controller
 
         $key = "live_stream_{$event->id}";
 
+        $offer = $validated['offer'];
+        if (isset($offer['sdp'])) {
+            $offer['sdp'] = $this->cleanSdp($offer['sdp']);
+        }
+
         // Save session in Cache for 30 minutes
         $data = [
             'active' => true,
-            'offer' => $validated['offer'],
+            'offer' => $offer,
             'broadcaster_name' => $validated['broadcaster_name'] ?: 'Cámara en Vivo',
             'started_at' => time(),
             'last_heartbeat' => time(),
@@ -126,9 +131,14 @@ class LiveStreamController extends Controller
             'candidates' => 'nullable|array',
         ]);
 
+        $answer = $validated['answer'];
+        if (isset($answer['sdp'])) {
+            $answer['sdp'] = $this->cleanSdp($answer['sdp']);
+        }
+
         $key = "live_stream_{$event->id}";
         Cache::put("{$key}_answer", [
-            'answer' => $validated['answer'],
+            'answer' => $answer,
             'answered_at' => time(),
         ], 1800);
 
@@ -229,5 +239,16 @@ class LiveStreamController extends Controller
             'active' => false,
             'message' => 'Transmisión finalizada',
         ]);
+    }
+
+    /**
+     * Clean and normalize raw SDP to strict RFC 4566 CRLF line endings.
+     */
+    private function cleanSdp($sdp): string
+    {
+        if (!is_string($sdp)) return '';
+        $lines = preg_split('/\r\n|\r|\n/', trim($sdp));
+        $cleanLines = array_filter(array_map('trim', $lines), fn($l) => $l !== '');
+        return implode("\r\n", $cleanLines) . "\r\n";
     }
 }

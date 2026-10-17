@@ -31,6 +31,13 @@ const RTC_CONFIG = {
     iceCandidatePoolSize: 10,
 };
 
+const normalizeSdp = (sdp) => {
+    if (!sdp || typeof sdp !== 'string') return sdp;
+    const lines = sdp.split(/\r\n|\r|\n/);
+    const cleanLines = lines.map(line => line.trim()).filter(line => line.length > 0);
+    return cleanLines.join('\r\n') + '\r\n';
+};
+
 export default function LiveProjectionScreen({ eventId }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -463,18 +470,19 @@ export default function LiveProjectionScreen({ eventId }) {
             livePeerConnectionRef.current = pc;
             liveCandidatesRef.current = new Set();
 
-            // Explicitly declare transceivers to receive incoming audio & video immediately
-            try {
-                pc.addTransceiver('video', { direction: 'recvonly' });
-                pc.addTransceiver('audio', { direction: 'recvonly' });
-            } catch (e) {
-                console.warn('Transceiver add error:', e);
-            }
-
             pc.ontrack = (event) => {
                 console.log('Projector ontrack:', event.track.kind, event.streams);
-                const stream = event.streams[0] || new MediaStream([event.track]);
-                liveStreamMediaRef.current = stream;
+                let stream = event.streams[0];
+                if (!stream) {
+                    if (!liveStreamMediaRef.current) {
+                        liveStreamMediaRef.current = new MediaStream();
+                    }
+                    liveStreamMediaRef.current.addTrack(event.track);
+                    stream = liveStreamMediaRef.current;
+                } else {
+                    liveStreamMediaRef.current = stream;
+                }
+
                 setIsLiveStreaming(true);
                 setIsLiveConnecting(false);
                 isLiveStreamingRef.current = true;
@@ -494,10 +502,15 @@ export default function LiveProjectionScreen({ eventId }) {
                 }
             };
 
+            let disconnectTimer = null;
             pc.oniceconnectionstatechange = () => {
                 const iceState = pc.iceConnectionState;
                 console.log('Projector ICE state:', iceState);
                 if (iceState === 'connected' || iceState === 'completed') {
+                    if (disconnectTimer) {
+                        clearTimeout(disconnectTimer);
+                        disconnectTimer = null;
+                    }
                     setIsLiveStreaming(true);
                     setIsLiveConnecting(false);
                     isLiveStreamingRef.current = true;
@@ -507,16 +520,23 @@ export default function LiveProjectionScreen({ eventId }) {
                     if (liveVideoRef.current && liveStreamMediaRef.current) {
                         liveVideoRef.current.srcObject = liveStreamMediaRef.current;
                         liveVideoRef.current.play().catch(e => {
-                            console.warn('ICE play failed, retrying muted:', e);
                             if (liveVideoRef.current) {
                                 liveVideoRef.current.muted = true;
-                                liveVideoRef.current.play().catch(err => console.error('Final play error:', err));
+                                liveVideoRef.current.play().catch(err => console.error('ICE muted play error:', err));
                             }
                         });
                     }
-                } else if (iceState === 'disconnected' || iceState === 'failed' || iceState === 'closed') {
-                    console.log('Projector ICE disconnected, ending live session');
+                } else if (iceState === 'failed' || iceState === 'closed') {
+                    console.log('Projector ICE failed/closed, ending live session');
                     disconnectFromLiveStream();
+                } else if (iceState === 'disconnected') {
+                    if (!disconnectTimer) {
+                        disconnectTimer = setTimeout(() => {
+                            if (pc.iceConnectionState === 'disconnected') {
+                                disconnectFromLiveStream();
+                            }
+                        }, 8000);
+                    }
                 }
             };
 
@@ -524,12 +544,16 @@ export default function LiveProjectionScreen({ eventId }) {
                 const connState = pc.connectionState;
                 console.log('Projector connection state:', connState);
                 if (connState === 'connected') {
+                    if (disconnectTimer) {
+                        clearTimeout(disconnectTimer);
+                        disconnectTimer = null;
+                    }
                     setIsLiveStreaming(true);
                     setIsLiveConnecting(false);
                     isLiveStreamingRef.current = true;
                     isLiveConnectingRef.current = false;
-                } else if (connState === 'disconnected' || connState === 'failed' || connState === 'closed') {
-                    console.log('Projector connection disconnected, ending live session');
+                } else if (connState === 'failed' || connState === 'closed') {
+                    console.log('Projector connection failed/closed, ending live session');
                     disconnectFromLiveStream();
                 }
             };
@@ -558,14 +582,18 @@ export default function LiveProjectionScreen({ eventId }) {
                 }
             };
 
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const cleanOffer = {
+                type: offer.type,
+                sdp: normalizeSdp(offer.sdp),
+            };
+            await pc.setRemoteDescription(new RTCSessionDescription(cleanOffer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
             await apiFetch(`/api/events/${eventId}/live-stream/answer`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    answer: { type: answer.type, sdp: answer.sdp },
+                    answer: { type: answer.type, sdp: normalizeSdp(answer.sdp) },
                     candidates: localCandidates,
                 })
             });

@@ -31,6 +31,13 @@ const RTC_CONFIG = {
     iceCandidatePoolSize: 10,
 };
 
+const normalizeSdp = (sdp) => {
+    if (!sdp || typeof sdp !== 'string') return sdp;
+    const lines = sdp.split(/\r\n|\r|\n/);
+    const cleanLines = lines.map(line => line.trim()).filter(line => line.length > 0);
+    return cleanLines.join('\r\n') + '\r\n';
+};
+
 export default function LiveBroadcastCamera({ eventId }) {
     const [event, setEvent] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -256,7 +263,7 @@ export default function LiveBroadcastCamera({ eventId }) {
             const { ok } = await apiFetch(`/api/events/${eventId}/live-stream/start`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    offer: { type: offer.type, sdp: offer.sdp },
+                    offer: { type: offer.type, sdp: normalizeSdp(offer.sdp) },
                     broadcaster_name: broadcasterName || 'Cámara en Vivo',
                     candidates: pendingCandidates,
                 })
@@ -301,7 +308,11 @@ export default function LiveBroadcastCamera({ eventId }) {
                     const { ok, json } = await apiFetch(`/api/events/${eventId}/live-stream/status?for=broadcaster`);
                     if (ok && json?.active && json?.answer && !answerApplied && pc.signalingState === 'have-local-offer') {
                         answerApplied = true;
-                        const remoteDesc = new RTCSessionDescription(json.answer);
+                        const cleanAnswer = {
+                            type: json.answer.type,
+                            sdp: normalizeSdp(json.answer.sdp),
+                        };
+                        const remoteDesc = new RTCSessionDescription(cleanAnswer);
                         await pc.setRemoteDescription(remoteDesc);
                     }
 
