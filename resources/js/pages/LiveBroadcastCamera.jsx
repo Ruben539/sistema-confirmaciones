@@ -107,6 +107,23 @@ export default function LiveBroadcastCamera({ eventId }) {
         }
     }, [loading, facingMode]);
 
+    // Notify backend immediately if broadcaster navigates away or closes tab
+    useEffect(() => {
+        const handleUnload = () => {
+            if (isBroadcasting) {
+                try {
+                    navigator.sendBeacon(`/api/events/${eventId}/live-stream/stop`);
+                } catch (e) {}
+            }
+        };
+        window.addEventListener('beforeunload', handleUnload);
+        window.addEventListener('pagehide', handleUnload);
+        return () => {
+            window.removeEventListener('beforeunload', handleUnload);
+            window.removeEventListener('pagehide', handleUnload);
+        };
+    }, [eventId, isBroadcasting]);
+
     const startCamera = async (mode) => {
         try {
             if (stream) {

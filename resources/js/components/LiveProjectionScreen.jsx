@@ -470,6 +470,21 @@ export default function LiveProjectionScreen({ eventId }) {
             livePeerConnectionRef.current = pc;
             liveCandidatesRef.current = new Set();
 
+            const playLiveVideo = () => {
+                if (liveVideoRef.current && liveStreamMediaRef.current) {
+                    liveVideoRef.current.srcObject = liveStreamMediaRef.current;
+                    liveVideoRef.current.muted = isMuted;
+                    liveVideoRef.current.play().catch(e => {
+                        console.warn('Auto play failed with sound, retrying muted:', e);
+                        if (liveVideoRef.current) {
+                            liveVideoRef.current.muted = true;
+                            setIsMuted(true);
+                            liveVideoRef.current.play().catch(err => console.error('Final play error:', err));
+                        }
+                    });
+                }
+            };
+
             pc.ontrack = (event) => {
                 console.log('Projector ontrack:', event.track.kind, event.streams);
                 let stream = event.streams[0];
@@ -490,16 +505,7 @@ export default function LiveProjectionScreen({ eventId }) {
                 setShowCameraQrModal(false);
                 setShowQrModal(false);
 
-                if (liveVideoRef.current) {
-                    liveVideoRef.current.srcObject = stream;
-                    liveVideoRef.current.play().catch(e => {
-                        console.warn('Auto play failed (browser autoplay restriction), retrying muted:', e);
-                        if (liveVideoRef.current) {
-                            liveVideoRef.current.muted = true;
-                            liveVideoRef.current.play().catch(err => console.error('Final play error:', err));
-                        }
-                    });
-                }
+                playLiveVideo();
             };
 
             let disconnectTimer = null;
@@ -517,15 +523,7 @@ export default function LiveProjectionScreen({ eventId }) {
                     isLiveConnectingRef.current = false;
                     setShowCameraQrModal(false);
                     setShowQrModal(false);
-                    if (liveVideoRef.current && liveStreamMediaRef.current) {
-                        liveVideoRef.current.srcObject = liveStreamMediaRef.current;
-                        liveVideoRef.current.play().catch(e => {
-                            if (liveVideoRef.current) {
-                                liveVideoRef.current.muted = true;
-                                liveVideoRef.current.play().catch(err => console.error('ICE muted play error:', err));
-                            }
-                        });
-                    }
+                    playLiveVideo();
                 } else if (iceState === 'failed' || iceState === 'closed') {
                     console.log('Projector ICE failed/closed, ending live session');
                     disconnectFromLiveStream();
@@ -535,7 +533,7 @@ export default function LiveProjectionScreen({ eventId }) {
                             if (pc.iceConnectionState === 'disconnected') {
                                 disconnectFromLiveStream();
                             }
-                        }, 8000);
+                        }, 5000);
                     }
                 }
             };
@@ -668,21 +666,25 @@ export default function LiveProjectionScreen({ eventId }) {
             livePeerConnectionRef.current = null;
         }
         if (liveVideoRef.current) {
-            liveVideoRef.current.srcObject = null;
+            try {
+                liveVideoRef.current.pause();
+                liveVideoRef.current.srcObject = null;
+            } catch (e) {}
         }
         liveStreamMediaRef.current = null;
+
+        // Unconditionally reset all live flags
         isLiveConnectingRef.current = false;
         setIsLiveConnecting(false);
-        if (isLiveStreamingRef.current) {
-            isLiveStreamingRef.current = false;
-            setIsLiveStreaming(false);
-            setLiveStreamNotice('✨ Transmisión en vivo finalizada');
-            triggerCelebration(true);
-            setTimeout(() => setLiveStreamNotice(null), 6000);
-        }
+        isLiveStreamingRef.current = false;
+        setIsLiveStreaming(false);
+
+        setLiveStreamNotice('✨ Transmisión en vivo finalizada');
+        triggerCelebration(true);
+        setTimeout(() => setLiveStreamNotice(null), 5000);
     };
 
-    // Live Stream Polling Effect (only depends on eventId to prevent premature disconnect)
+    // Live Stream Polling Effect (promptly disconnects when active === false)
     useEffect(() => {
         const checkLiveStream = async () => {
             try {
@@ -691,8 +693,10 @@ export default function LiveProjectionScreen({ eventId }) {
                     if (!isLiveConnectingRef.current && !livePeerConnectionRef.current) {
                         connectToLiveStream(json.offer, json.broadcaster_name, json.broadcaster_candidates);
                     }
-                } else if (!json?.active && (livePeerConnectionRef.current || isLiveStreamingRef.current || isLiveConnectingRef.current)) {
-                    disconnectFromLiveStream();
+                } else if (!json?.active) {
+                    if (livePeerConnectionRef.current || isLiveStreamingRef.current || isLiveConnectingRef.current || isLiveStreaming || isLiveConnecting) {
+                        disconnectFromLiveStream();
+                    }
                 }
             } catch (err) {
                 console.error('Error checking live stream:', err);
@@ -700,20 +704,33 @@ export default function LiveProjectionScreen({ eventId }) {
         };
 
         checkLiveStream();
-        const livePoll = setInterval(checkLiveStream, 2000);
+        const livePoll = setInterval(checkLiveStream, 1500);
         return () => {
             clearInterval(livePoll);
             disconnectFromLiveStream();
         };
-    }, [eventId]);
+    }, [eventId, isLiveStreaming, isLiveConnecting]);
 
-    // Ensure live video attaches when switching to live stream mode
+    const toggleLiveAudio = () => {
+        const nextMuted = !isMuted;
+        setIsMuted(nextMuted);
+        if (liveVideoRef.current) {
+            liveVideoRef.current.muted = nextMuted;
+            if (!nextMuted) {
+                liveVideoRef.current.volume = 1.0;
+                liveVideoRef.current.play().catch(e => console.warn('Unmute play error:', e));
+            }
+        }
+    };
+
+    // Ensure live video attaches and plays smoothly when switching to live stream mode
     useEffect(() => {
         if (isLiveStreaming && liveVideoRef.current && liveStreamMediaRef.current) {
             if (liveVideoRef.current.srcObject !== liveStreamMediaRef.current) {
                 liveVideoRef.current.srcObject = liveStreamMediaRef.current;
             }
-            liveVideoRef.current.play().catch(e => console.warn('Live video play error:', e));
+            liveVideoRef.current.muted = isMuted;
+            liveVideoRef.current.play().catch(() => {});
         }
     }, [isLiveStreaming, isMuted]);
 
@@ -833,20 +850,20 @@ export default function LiveProjectionScreen({ eventId }) {
                         <PartyPopper className="w-5 h-5" />
                     </button>
 
-                    {/* Audio mute toggle for videos */}
+                    {/* Audio mute toggle for videos and live camera */}
                     <button
                         type="button"
-                        onClick={() => setIsMuted(!isMuted)}
+                        onClick={toggleLiveAudio}
                         className={`p-3 rounded-2xl border transition-all hover:scale-105 shadow-xl flex items-center gap-2 cursor-pointer ${
                             isMuted 
-                                ? 'bg-zinc-900/80 border-zinc-700 text-zinc-400' 
-                                : 'bg-amber-500 text-zinc-950 border-amber-400 font-bold shadow-amber-500/30'
+                                ? 'bg-zinc-900/80 border-rose-500/50 text-rose-400 animate-pulse' 
+                                : 'bg-emerald-500 text-zinc-950 border-emerald-400 font-black shadow-emerald-500/30'
                         }`}
-                        title={isMuted ? 'Activar audio de videos (Tecla M)' : 'Silenciar audio de videos (Tecla M)'}
+                        title={isMuted ? 'Activar audio en vivo (Tecla M)' : 'Silenciar audio en vivo (Tecla M)'}
                     >
-                        {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5 animate-pulse" />}
-                        <span className="text-xs font-bold hidden md:inline">
-                            {isMuted ? 'Audio Silenciado' : 'Audio en Vivo'}
+                        {isMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 animate-pulse text-zinc-950" />}
+                        <span className="text-xs font-black hidden md:inline">
+                            {isMuted ? '🔇 Activar Sonido' : '🔊 Sonido en Vivo'}
                         </span>
                     </button>
 
@@ -930,12 +947,27 @@ export default function LiveProjectionScreen({ eventId }) {
                                 <Radio className="w-4 h-4 animate-spin-slow" />
                                 <span>🔴 EN DIRECTO · {broadcasterName || 'CÁMARA DEL SALÓN'}</span>
                             </div>
-                            {/* Audio Indicator */}
-                            {isMuted && (
-                                <div className="absolute top-5 right-5 px-3 py-1.5 rounded-full bg-black/80 text-amber-400 font-bold text-xs flex items-center gap-1.5 border border-white/20 z-30">
+                            {/* Audio Indicator / Quick Unmute Button */}
+                            {isMuted ? (
+                                <button
+                                    type="button"
+                                    onClick={toggleLiveAudio}
+                                    className="absolute top-5 right-5 px-4 py-2 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-2 shadow-2xl border-2 border-white/40 cursor-pointer animate-pulse z-30 transition-transform active:scale-95"
+                                    title="Haz clic para activar el sonido en vivo del salón"
+                                >
                                     <VolumeX className="w-4 h-4" />
-                                    <span>Silenciado (Pulsa M para activar sonido)</span>
-                                </div>
+                                    <span>🔇 Toca para Activar Audio</span>
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={toggleLiveAudio}
+                                    className="absolute top-5 right-5 px-3 py-1.5 rounded-full bg-emerald-600/90 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 border border-white/30 z-30 cursor-pointer shadow-lg transition-transform active:scale-95"
+                                    title="Silenciar audio en vivo"
+                                >
+                                    <Volume2 className="w-4 h-4 animate-pulse" />
+                                    <span>🔊 Audio en Vivo</span>
+                                </button>
                             )}
                         </div>
                         <div className="mt-4 text-center max-w-lg px-6 py-2.5 rounded-2xl bg-black/80 backdrop-blur-xl border border-rose-500/40 text-xs font-bold text-rose-300 animate-pulse">
