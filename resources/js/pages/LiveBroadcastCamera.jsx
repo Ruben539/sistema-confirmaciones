@@ -10,10 +10,23 @@ const RTC_CONFIG = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:openrelay.metered.ca:80' },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
     ],
     iceCandidatePoolSize: 10,
 };
@@ -292,8 +305,24 @@ export default function LiveBroadcastCamera({ eventId }) {
                         await pc.setRemoteDescription(remoteDesc);
                     }
 
-                    // Fetch ICE candidates from Viewer (projector)
-                    if (answerApplied) {
+                    // Process ICE candidates from Viewer (projector) delivered directly in status
+                    const viewerCands = json?.viewer_candidates || [];
+                    if (answerApplied && Array.isArray(viewerCands) && viewerCands.length > 0) {
+                        for (const cand of viewerCands) {
+                            const candStr = JSON.stringify(cand);
+                            if (!processedCandidatesRef.current.has(candStr)) {
+                                processedCandidatesRef.current.add(candStr);
+                                try {
+                                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                                } catch (err) {
+                                    console.warn('Error adding ICE candidate:', err);
+                                }
+                            }
+                        }
+                    }
+
+                    // Also fetch ICE candidates from fallback endpoint if needed
+                    if (answerApplied && viewerCands.length === 0) {
                         const candRes = await apiFetch(`/api/events/${eventId}/live-stream/candidates?for=broadcaster`);
                         if (candRes.ok && Array.isArray(candRes.json?.candidates)) {
                             for (const cand of candRes.json.candidates) {

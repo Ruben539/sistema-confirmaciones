@@ -49,6 +49,8 @@ class LiveStreamController extends Controller
 
         // Also check if an answer exists
         $answerData = Cache::get("{$key}_answer");
+        $broadcasterCandidates = Cache::get("{$key}_ice_broadcaster", []);
+        $viewerCandidates = Cache::get("{$key}_ice_viewer", []);
 
         return response()->json([
             'active' => true,
@@ -61,6 +63,8 @@ class LiveStreamController extends Controller
             'broadcaster_name' => $data['broadcaster_name'] ?? 'Cámara en Vivo',
             'offer' => $data['offer'] ?? null,
             'answer' => $answerData['answer'] ?? null,
+            'broadcaster_candidates' => $broadcasterCandidates,
+            'viewer_candidates' => $viewerCandidates,
             'started_at' => $data['started_at'] ?? time(),
         ]);
     }

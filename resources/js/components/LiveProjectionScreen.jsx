@@ -10,10 +10,23 @@ const RTC_CONFIG = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:openrelay.metered.ca:80' },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject',
+        },
     ],
     iceCandidatePoolSize: 10,
 };
@@ -49,6 +62,7 @@ export default function LiveProjectionScreen({ eventId }) {
 
     // WebRTC Live Stream Camera Broadcast states
     const [isLiveStreaming, setIsLiveStreaming] = useState(false);
+    const [isLiveConnecting, setIsLiveConnecting] = useState(false);
     const [broadcasterName, setBroadcasterName] = useState('');
     const [liveStreamNotice, setLiveStreamNotice] = useState(null);
     const [supportsCast, setSupportsCast] = useState(false);
@@ -433,9 +447,10 @@ export default function LiveProjectionScreen({ eventId }) {
     };
 
     // 8. WebRTC Live Stream Receiver (Mobile Camera to Projector)
-    const connectToLiveStream = async (offer, name) => {
+    const connectToLiveStream = async (offer, name, initialBroadcasterCandidates) => {
         if (isLiveConnectingRef.current || livePeerConnectionRef.current) return;
         isLiveConnectingRef.current = true;
+        setIsLiveConnecting(true);
 
         try {
             setBroadcasterName(name || 'Cámara en Vivo');
@@ -448,11 +463,20 @@ export default function LiveProjectionScreen({ eventId }) {
             livePeerConnectionRef.current = pc;
             liveCandidatesRef.current = new Set();
 
+            // Explicitly declare transceivers to receive incoming audio & video immediately
+            try {
+                pc.addTransceiver('video', { direction: 'recvonly' });
+                pc.addTransceiver('audio', { direction: 'recvonly' });
+            } catch (e) {
+                console.warn('Transceiver add error:', e);
+            }
+
             pc.ontrack = (event) => {
                 console.log('Projector ontrack:', event.track.kind, event.streams);
                 const stream = event.streams[0] || new MediaStream([event.track]);
                 liveStreamMediaRef.current = stream;
                 setIsLiveStreaming(true);
+                setIsLiveConnecting(false);
                 isLiveStreamingRef.current = true;
                 isLiveConnectingRef.current = false;
                 setShowCameraQrModal(false);
@@ -469,6 +493,7 @@ export default function LiveProjectionScreen({ eventId }) {
                 console.log('Projector ICE state:', iceState);
                 if (iceState === 'connected' || iceState === 'completed') {
                     setIsLiveStreaming(true);
+                    setIsLiveConnecting(false);
                     isLiveStreamingRef.current = true;
                     isLiveConnectingRef.current = false;
                     setShowCameraQrModal(false);
@@ -486,7 +511,12 @@ export default function LiveProjectionScreen({ eventId }) {
             pc.onconnectionstatechange = () => {
                 const connState = pc.connectionState;
                 console.log('Projector connection state:', connState);
-                if (connState === 'disconnected' || connState === 'failed' || connState === 'closed') {
+                if (connState === 'connected') {
+                    setIsLiveStreaming(true);
+                    setIsLiveConnecting(false);
+                    isLiveStreamingRef.current = true;
+                    isLiveConnectingRef.current = false;
+                } else if (connState === 'disconnected' || connState === 'failed' || connState === 'closed') {
                     console.log('Projector connection disconnected, ending live session');
                     disconnectFromLiveStream();
                 }
@@ -540,6 +570,21 @@ export default function LiveProjectionScreen({ eventId }) {
                 }).catch(() => {});
             }
 
+            // Immediately add any broadcaster candidates sent in status
+            if (Array.isArray(initialBroadcasterCandidates)) {
+                for (const cand of initialBroadcasterCandidates) {
+                    const candStr = JSON.stringify(cand);
+                    if (!liveCandidatesRef.current.has(candStr)) {
+                        liveCandidatesRef.current.add(candStr);
+                        try {
+                            await pc.addIceCandidate(new RTCIceCandidate(cand));
+                        } catch (e) {
+                            console.warn('Initial candidate add error:', e);
+                        }
+                    }
+                }
+            }
+
             // Poll for Broadcaster ICE candidates
             if (candIntervalRef.current) clearInterval(candIntervalRef.current);
             candIntervalRef.current = setInterval(async () => {
@@ -568,6 +613,7 @@ export default function LiveProjectionScreen({ eventId }) {
         } catch (err) {
             console.error('Error connecting to live stream:', err);
             isLiveConnectingRef.current = false;
+            setIsLiveConnecting(false);
             disconnectFromLiveStream();
         }
     };
@@ -586,6 +632,7 @@ export default function LiveProjectionScreen({ eventId }) {
         }
         liveStreamMediaRef.current = null;
         isLiveConnectingRef.current = false;
+        setIsLiveConnecting(false);
         if (isLiveStreamingRef.current) {
             isLiveStreamingRef.current = false;
             setIsLiveStreaming(false);
@@ -602,9 +649,9 @@ export default function LiveProjectionScreen({ eventId }) {
                 const { ok, json } = await apiFetch(`/api/events/${eventId}/live-stream/status`);
                 if (ok && json?.active && json?.offer) {
                     if (!isLiveConnectingRef.current && !livePeerConnectionRef.current) {
-                        connectToLiveStream(json.offer, json.broadcaster_name);
+                        connectToLiveStream(json.offer, json.broadcaster_name, json.broadcaster_candidates);
                     }
-                } else if (!json?.active && (livePeerConnectionRef.current || isLiveStreamingRef.current)) {
+                } else if (!json?.active && (livePeerConnectionRef.current || isLiveStreamingRef.current || isLiveConnectingRef.current)) {
                     disconnectFromLiveStream();
                 }
             } catch (err) {
@@ -798,7 +845,7 @@ export default function LiveProjectionScreen({ eventId }) {
 
             {/* MAIN PROJECTION STAGE */}
             <main className="relative z-10 flex-1 flex items-center justify-center p-4 md:p-8">
-                {isLiveStreaming ? (
+                {isLiveStreaming || isLiveConnecting ? (
                     <div className="w-full max-w-5xl h-full flex flex-col items-center justify-center animate-fade-in relative z-20">
                         <div className="relative w-full max-h-[72vh] flex items-center justify-center rounded-3xl overflow-hidden border-4 border-rose-500 shadow-[0_0_80px_rgba(244,63,94,0.45)] bg-black">
                             <video
@@ -812,16 +859,36 @@ export default function LiveProjectionScreen({ eventId }) {
                                 autoPlay
                                 playsInline
                                 muted={isMuted}
-                                className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl"
+                                className={`max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl transition-opacity duration-500 ${isLiveStreaming ? 'opacity-100' : 'opacity-0'}`}
                             />
+                            {/* Animated Connecting Radar HUD while awaiting WebRTC packets */}
+                            {!isLiveStreaming && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 space-y-4 bg-zinc-950/95 backdrop-blur-xl z-30">
+                                    <div className="relative">
+                                        <div className="w-20 h-20 rounded-full border-4 border-rose-500/20 border-t-rose-500 animate-spin" />
+                                        <Radio className="w-8 h-8 text-rose-500 absolute inset-0 m-auto animate-pulse" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <h3 className="text-xl md:text-2xl font-black text-white uppercase tracking-wider">
+                                            Sintonizando Cámara en Vivo
+                                        </h3>
+                                        <p className="text-xs text-rose-300 font-medium">
+                                            Conectando señal de {broadcasterName || 'Cámara Móvil'}...
+                                        </p>
+                                    </div>
+                                    <div className="text-[11px] text-zinc-400 font-mono bg-zinc-900/80 px-4 py-1.5 rounded-full border border-white/10">
+                                        Estableciendo conexión WebRTC ultra rápida...
+                                    </div>
+                                </div>
+                            )}
                             {/* Live Indicator Badge on top-left of video */}
-                            <div className="absolute top-5 left-5 px-4 py-2 rounded-full bg-rose-600/95 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-2xl animate-pulse border border-white/30">
+                            <div className="absolute top-5 left-5 px-4 py-2 rounded-full bg-rose-600/95 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-2xl animate-pulse border border-white/30 z-30">
                                 <Radio className="w-4 h-4 animate-spin-slow" />
                                 <span>🔴 EN DIRECTO · {broadcasterName || 'CÁMARA DEL SALÓN'}</span>
                             </div>
                             {/* Audio Indicator */}
                             {isMuted && (
-                                <div className="absolute top-5 right-5 px-3 py-1.5 rounded-full bg-black/80 text-amber-400 font-bold text-xs flex items-center gap-1.5 border border-white/20">
+                                <div className="absolute top-5 right-5 px-3 py-1.5 rounded-full bg-black/80 text-amber-400 font-bold text-xs flex items-center gap-1.5 border border-white/20 z-30">
                                     <VolumeX className="w-4 h-4" />
                                     <span>Silenciado (Pulsa M para activar sonido)</span>
                                 </div>
