@@ -28,6 +28,7 @@ import EventInteractivePanel from './components/EventInteractivePanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
 import PublicDedicationPage from './components/PublicDedicationPage';
+import LiveBroadcastCamera from './pages/LiveBroadcastCamera';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
 import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users } from 'lucide-react';
@@ -886,9 +887,10 @@ function App() {
     const projectionMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/proyeccion$/);
     const publicDedicationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/dedicatoria$/);
     const publicInvitationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/invitacion$/);
+    const liveBroadcastMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/en-vivo$/);
     const demoInvitationMatch = path === '/demo/invitacion';
 
-    const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch || demoInvitationMatch;
+    const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch || liveBroadcastMatch || demoInvitationMatch;
 
     useEffect(() => {
         if (!isPublicRoute) {
@@ -942,6 +944,10 @@ function App() {
 
     if (publicDedicationMatch && publicDedicationMatch[1]) {
         return <PublicDedicationPage eventId={publicDedicationMatch[1]} />;
+    }
+
+    if (liveBroadcastMatch && liveBroadcastMatch[1]) {
+        return <LiveBroadcastCamera eventId={liveBroadcastMatch[1]} />;
     }
 
     if (!authChecked) {

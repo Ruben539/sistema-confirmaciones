@@ -16,6 +16,7 @@ use App\Http\Controllers\EventTypeController;
 use App\Http\Controllers\SpotifyController;
 use App\Http\Controllers\WhatsAppCloudWebhookController;
 use App\Http\Controllers\AiListController;
+use App\Http\Controllers\LiveStreamController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -52,6 +53,15 @@ Route::prefix('api')->group(function () {
 
     // Pantalla gigante de proyección (consulta cada 10s)
     Route::get('/events/{code}/live-feed', [EventController::class, 'getLiveProjectionFeed'])->middleware('throttle:60,1');
+
+    // Transmisión de Cámara en Vivo (WebRTC)
+    Route::get('/events/{code}/live-stream/status', [LiveStreamController::class, 'status'])->middleware('throttle:120,1');
+    Route::post('/events/{code}/live-stream/start', [LiveStreamController::class, 'start'])->middleware('throttle:30,1');
+    Route::post('/events/{code}/live-stream/answer', [LiveStreamController::class, 'answer'])->middleware('throttle:60,1');
+    Route::post('/events/{code}/live-stream/candidate', [LiveStreamController::class, 'addCandidate'])->middleware('throttle:300,1');
+    Route::get('/events/{code}/live-stream/candidates', [LiveStreamController::class, 'getCandidates'])->middleware('throttle:300,1');
+    Route::post('/events/{code}/live-stream/heartbeat', [LiveStreamController::class, 'heartbeat'])->middleware('throttle:120,1');
+    Route::post('/events/{code}/live-stream/stop', [LiveStreamController::class, 'stop'])->middleware('throttle:30,1');
 
     // Spotify: lo usan la invitación pública y el panel
     Route::get('/spotify/resolve', [SpotifyController::class, 'resolve'])->middleware('throttle:120,1');

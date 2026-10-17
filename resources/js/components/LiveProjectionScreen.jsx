@@ -2,9 +2,17 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
     Sparkles, Maximize2, Minimize2, Volume2, VolumeX, QrCode, Heart, 
     Camera, Film, RefreshCw, X, Play, Pause, ChevronLeft, ChevronRight, 
-    PartyPopper, Sliders, Check, Wand2, Zap, Clock
+    PartyPopper, Sliders, Check, Wand2, Zap, Clock, Cast, Radio
 } from 'lucide-react';
 import { apiFetch } from '../api';
+
+const RTC_CONFIG = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+    ]
+};
 
 export default function LiveProjectionScreen({ eventId }) {
     const [data, setData] = useState(null);
@@ -34,7 +42,17 @@ export default function LiveProjectionScreen({ eventId }) {
     const [progressPercent, setProgressPercent] = useState(0);
     const [newDedicationNotice, setNewDedicationNotice] = useState(null);
 
+    // WebRTC Live Stream Camera Broadcast states
+    const [isLiveStreaming, setIsLiveStreaming] = useState(false);
+    const [broadcasterName, setBroadcasterName] = useState('');
+    const [liveStreamNotice, setLiveStreamNotice] = useState(null);
+    const [supportsCast, setSupportsCast] = useState(false);
+
     const videoRef = useRef(null);
+    const liveVideoRef = useRef(null);
+    const livePeerConnectionRef = useRef(null);
+    const liveCandidatesRef = useRef(new Set());
+    const isLiveConnectingRef = useRef(false);
     const timerRef = useRef(null);
     const progressIntervalRef = useRef(null);
     const mouseTimerRef = useRef(null);
@@ -378,6 +396,146 @@ export default function LiveProjectionScreen({ eventId }) {
         }
     };
 
+    // 7. Smart TV / Chromecast Cast Integration
+    useEffect(() => {
+        if (typeof window !== 'undefined' && Boolean(window.PresentationRequest)) {
+            setSupportsCast(true);
+        }
+    }, []);
+
+    const handleCastToTV = () => {
+        if (window.PresentationRequest) {
+            try {
+                const request = new PresentationRequest([window.location.href]);
+                request.start().catch((err) => console.log('Cast cancelled:', err));
+            } catch (e) {
+                console.warn('PresentationRequest error:', e);
+            }
+        }
+    };
+
+    // 8. WebRTC Live Stream Receiver (Mobile Camera to Projector)
+    const connectToLiveStream = async (offer, name) => {
+        if (isLiveConnectingRef.current || livePeerConnectionRef.current) return;
+        isLiveConnectingRef.current = true;
+
+        try {
+            setBroadcasterName(name || 'Cámara en Vivo');
+            setLiveStreamNotice(`🔴 EN VIVO: Transmisión de ${name || 'el Salón'}`);
+            triggerCelebration(true);
+
+            const pc = new RTCPeerConnection(RTC_CONFIG);
+            livePeerConnectionRef.current = pc;
+            liveCandidatesRef.current = new Set();
+
+            pc.ontrack = (event) => {
+                if (liveVideoRef.current && event.streams[0]) {
+                    liveVideoRef.current.srcObject = event.streams[0];
+                    setIsLiveStreaming(true);
+                    isLiveConnectingRef.current = false;
+                }
+            };
+
+            pc.onicecandidate = async (event) => {
+                if (event.candidate) {
+                    try {
+                        await apiFetch(`/api/events/${eventId}/live-stream/candidate`, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                sender: 'viewer',
+                                candidate: event.candidate.toJSON(),
+                            })
+                        });
+                    } catch (e) {
+                        console.error('Error sending viewer candidate:', e);
+                    }
+                }
+            };
+
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            await apiFetch(`/api/events/${eventId}/live-stream/answer`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    answer: { type: answer.type, sdp: answer.sdp }
+                })
+            });
+
+            // Poll for Broadcaster ICE candidates
+            const candInterval = setInterval(async () => {
+                if (!livePeerConnectionRef.current) {
+                    clearInterval(candInterval);
+                    return;
+                }
+                try {
+                    const candRes = await apiFetch(`/api/events/${eventId}/live-stream/candidates?for=viewer`);
+                    if (candRes.ok && Array.isArray(candRes.json?.candidates)) {
+                        for (const cand of candRes.json.candidates) {
+                            const candStr = JSON.stringify(cand);
+                            if (!liveCandidatesRef.current.has(candStr)) {
+                                liveCandidatesRef.current.add(candStr);
+                                try {
+                                    await pc.addIceCandidate(new RTCIceCandidate(cand));
+                                } catch (e) {
+                                    console.warn('Error adding ICE candidate:', e);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }, 1500);
+
+        } catch (err) {
+            console.error('Error connecting to live stream:', err);
+            isLiveConnectingRef.current = false;
+            disconnectFromLiveStream();
+        }
+    };
+
+    const disconnectFromLiveStream = () => {
+        if (livePeerConnectionRef.current) {
+            livePeerConnectionRef.current.close();
+            livePeerConnectionRef.current = null;
+        }
+        if (liveVideoRef.current) {
+            liveVideoRef.current.srcObject = null;
+        }
+        isLiveConnectingRef.current = false;
+        if (isLiveStreaming) {
+            setIsLiveStreaming(false);
+            setLiveStreamNotice('✨ Transmisión en vivo finalizada');
+            triggerCelebration(true);
+            setTimeout(() => setLiveStreamNotice(null), 6000);
+        }
+    };
+
+    // Live Stream Polling Effect
+    useEffect(() => {
+        const checkLiveStream = async () => {
+            try {
+                const { ok, json } = await apiFetch(`/api/events/${eventId}/live-stream/status`);
+                if (ok && json?.active && json?.offer) {
+                    if (!isLiveConnectingRef.current && !livePeerConnectionRef.current) {
+                        connectToLiveStream(json.offer, json.broadcaster_name);
+                    }
+                } else if (!json?.active && (livePeerConnectionRef.current || isLiveStreaming)) {
+                    disconnectFromLiveStream();
+                }
+            } catch (err) {
+                console.error('Error checking live stream:', err);
+            }
+        };
+
+        checkLiveStream();
+        const livePoll = setInterval(checkLiveStream, 2500);
+        return () => {
+            clearInterval(livePoll);
+            disconnectFromLiveStream();
+        };
+    }, [eventId, isLiveStreaming]);
+
     const uploadUrl = `${window.location.origin}/evento/${eventId}/dedicatoria`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(uploadUrl)}`;
 
@@ -425,6 +583,17 @@ export default function LiveProjectionScreen({ eventId }) {
                 </div>
             )}
 
+            {/* LIVE STREAM NOTIFICATION BANNER */}
+            {liveStreamNotice && (
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+                    <div className="px-6 py-3 rounded-full bg-gradient-to-r from-rose-600 via-red-500 to-amber-500 text-white font-black text-sm uppercase tracking-wider shadow-2xl flex items-center gap-2 border-2 border-white/80">
+                        <Radio className="w-5 h-5 text-white animate-spin-slow" />
+                        <span>{liveStreamNotice}</span>
+                        <Radio className="w-5 h-5 text-white animate-spin-slow" />
+                    </div>
+                </div>
+            )}
+
             {/* TOP BAR: EVENT HEADER & LIVE INDICATOR */}
             <header className={`relative z-40 px-8 py-5 flex items-center justify-between bg-gradient-to-b from-black/90 via-black/40 to-transparent transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="flex items-center gap-3">
@@ -445,6 +614,19 @@ export default function LiveProjectionScreen({ eventId }) {
                 </div>
 
                 <div className="flex items-center gap-2.5">
+                    {/* Smart TV / Chromecast Button */}
+                    {supportsCast && (
+                        <button
+                            type="button"
+                            onClick={handleCastToTV}
+                            className="p-3 bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700/60 rounded-2xl text-amber-400 transition-all hover:scale-105 shadow-xl flex items-center gap-2 cursor-pointer"
+                            title="Transmitir a Smart TV / Chromecast"
+                        >
+                            <Cast className="w-5 h-5" />
+                            <span className="text-xs font-bold hidden lg:inline">Transmitir a TV</span>
+                        </button>
+                    )}
+
                     {/* Confetti Trigger */}
                     <button
                         type="button"
@@ -507,7 +689,34 @@ export default function LiveProjectionScreen({ eventId }) {
 
             {/* MAIN PROJECTION STAGE */}
             <main className="relative z-10 flex-1 flex items-center justify-center p-4 md:p-8">
-                {dedications.length === 0 ? (
+                {isLiveStreaming ? (
+                    <div className="w-full max-w-5xl h-full flex flex-col items-center justify-center animate-fade-in relative z-20">
+                        <div className="relative w-full max-h-[72vh] flex items-center justify-center rounded-3xl overflow-hidden border-4 border-rose-500 shadow-[0_0_80px_rgba(244,63,94,0.45)] bg-black">
+                            <video
+                                ref={liveVideoRef}
+                                autoPlay
+                                playsInline
+                                muted={isMuted}
+                                className="max-h-[72vh] max-w-full rounded-2xl object-contain shadow-2xl"
+                            />
+                            {/* Live Indicator Badge on top-left of video */}
+                            <div className="absolute top-5 left-5 px-4 py-2 rounded-full bg-rose-600/95 text-white font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-2xl animate-pulse border border-white/30">
+                                <Radio className="w-4 h-4 animate-spin-slow" />
+                                <span>🔴 EN DIRECTO · {broadcasterName || 'CÁMARA DEL SALÓN'}</span>
+                            </div>
+                            {/* Audio Indicator */}
+                            {isMuted && (
+                                <div className="absolute top-5 right-5 px-3 py-1.5 rounded-full bg-black/80 text-amber-400 font-bold text-xs flex items-center gap-1.5 border border-white/20">
+                                    <VolumeX className="w-4 h-4" />
+                                    <span>Silenciado (Pulsa M para activar sonido)</span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="mt-4 text-center max-w-lg px-6 py-2.5 rounded-2xl bg-black/80 backdrop-blur-xl border border-rose-500/40 text-xs font-bold text-rose-300 animate-pulse">
+                            ✨ Transmisión en directo desde el salón · En vivo ✨
+                        </div>
+                    </div>
+                ) : dedications.length === 0 ? (
                     <div className="text-center max-w-xl p-10 rounded-3xl bg-zinc-900/80 border border-amber-500/30 backdrop-blur-2xl shadow-2xl space-y-6">
                         <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-400 to-rose-500 text-zinc-950 flex items-center justify-center mx-auto shadow-2xl animate-pulse">
                             <Camera className="w-10 h-10" />

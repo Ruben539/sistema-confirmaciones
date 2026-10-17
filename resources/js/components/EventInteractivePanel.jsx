@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Sparkles, Music, Disc, Gift, Film, Camera, Tv, ExternalLink, Copy, Check, 
-    Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock 
+    Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock, Radio, Cast 
 } from 'lucide-react';
 import EventInvitationSettingsModal from './EventInvitationSettingsModal';
 import DigitalInvitationDemo from './DigitalInvitationDemo';
@@ -93,6 +93,7 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
 
     const publicInvitationUrl = `${window.location.origin}/evento/${event.public_code}/invitacion`;
     const projectionUrl = `${window.location.origin}/evento/${event.public_code}/proyeccion`;
+    const liveBroadcastUrl = `${window.location.origin}/evento/${event.public_code}/en-vivo`;
     const dedicationUploadUrl = `${window.location.origin}/evento/${event.public_code}/dedicatoria`;
 
     const handleCopy = (url, key) => {
@@ -279,7 +280,7 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                         </div>
                     </div>
 
-                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
+                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center gap-2">
                         <button
                             type="button"
                             onClick={() => setIsDedicationsOpen(true)}
@@ -298,6 +299,17 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                             <Tv className="w-4 h-4" />
                             <span>Proyector F11</span>
                         </a>
+
+                        <a
+                            href={liveBroadcastUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-2.5 px-3 bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5"
+                            title="Abrir cámara del celular para transmitir en vivo a la pantalla"
+                        >
+                            <Radio className="w-4 h-4 animate-pulse" />
+                            <span>🔴 Transmitir Cámara en Vivo (Celular)</span>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -315,7 +327,7 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Public Invitation Link */}
                     <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 flex flex-col justify-between gap-3">
                         <div>
@@ -366,6 +378,38 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1.5 bg-zinc-200 dark:bg-zinc-700 rounded-xl text-zinc-700 dark:text-white hover:bg-zinc-300"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                            </a>
+                        </div>
+                    </div>
+
+                    {/* Live Mobile Camera Broadcast Link */}
+                    <div className="p-4 rounded-2xl bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 flex flex-col justify-between gap-3">
+                        <div>
+                            <span className="text-[10px] font-black uppercase text-rose-600 dark:text-rose-400 tracking-wider flex items-center gap-1">
+                                <Radio className="w-3 h-3 text-rose-500 animate-pulse" />
+                                Cámara en Vivo (Celular)
+                            </span>
+                            <div className="text-xs font-bold text-zinc-900 dark:text-white mt-0.5 truncate">
+                                {liveBroadcastUrl}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => handleCopy(liveBroadcastUrl, 'live_camera')}
+                                className="flex-1 py-1.5 px-3 bg-white dark:bg-zinc-700 border border-rose-300 dark:border-zinc-600 rounded-xl text-xs font-bold text-zinc-700 dark:text-white flex items-center justify-center gap-1 shadow-sm hover:bg-rose-50"
+                            >
+                                {copiedUrl === 'live_camera' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                <span>{copiedUrl === 'live_camera' ? 'Copiado' : 'Copiar Link'}</span>
+                            </button>
+                            <a
+                                href={liveBroadcastUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 bg-rose-500 text-white rounded-xl hover:bg-rose-600 shadow-sm"
+                                title="Abrir cámara en vivo"
                             >
                                 <ExternalLink className="w-4 h-4" />
                             </a>

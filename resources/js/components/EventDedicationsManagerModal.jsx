@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Film, Camera, MessageSquare, Trash2, CheckCircle, EyeOff, Tv, ExternalLink, AlertCircle } from 'lucide-react';
+import { X, Film, Camera, MessageSquare, Trash2, CheckCircle, EyeOff, Tv, ExternalLink, AlertCircle, Radio } from 'lucide-react';
 import { apiFetch } from '../api';
 
 export default function EventDedicationsManagerModal({ event, onClose }) {
@@ -102,6 +102,18 @@ export default function EventDedicationsManagerModal({ event, onClose }) {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {/* Open Live Camera Broadcast */}
+                        <a
+                            href={`/evento/${event.public_code}/en-vivo`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center gap-1.5 transition-all hover:scale-105"
+                            title="Abrir cámara del celular para transmitir en vivo"
+                        >
+                            <Radio className="w-4 h-4 animate-pulse" />
+                            <span className="hidden sm:inline">Cámara en Vivo</span>
+                        </a>
+
                         {/* Open Big Screen / Projector */}
                         <a
                             href={liveProjectionUrl}
