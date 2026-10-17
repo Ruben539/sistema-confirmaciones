@@ -883,12 +883,11 @@ function App() {
 
     const path = window.location.pathname;
     const rsvpMatch = path.match(/^\/confirmar\/(.+)$/);
-    // Public links use the event's random public_code, never the sequential id
-    const projectionMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/proyeccion$/);
-    const publicDedicationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/dedicatoria$/);
-    const publicInvitationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/invitacion$/);
-    const liveBroadcastMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/en-vivo$/);
-    const demoInvitationMatch = path === '/demo/invitacion';
+    const projectionMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/proyeccion\/?$/);
+    const publicDedicationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/dedicatoria\/?$/);
+    const publicInvitationMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/invitacion\/?$/);
+    const liveBroadcastMatch = path.match(/^\/evento\/([A-Za-z0-9]+)\/en-vivo\/?$/);
+    const demoInvitationMatch = path === '/demo/invitacion' || path === '/demo/invitacion/';
 
     const isPublicRoute = rsvpMatch || projectionMatch || publicDedicationMatch || publicInvitationMatch || liveBroadcastMatch || demoInvitationMatch;
 

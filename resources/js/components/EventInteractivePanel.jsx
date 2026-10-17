@@ -300,16 +300,36 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                             <span>Proyector F11</span>
                         </a>
 
-                        <a
-                            href={liveBroadcastUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full py-2.5 px-3 bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5"
-                            title="Abrir cámara del celular para transmitir en vivo a la pantalla"
-                        >
-                            <Radio className="w-4 h-4 animate-pulse" />
-                            <span>🔴 Transmitir Cámara en Vivo (Celular)</span>
-                        </a>
+                        <div className="w-full flex items-center gap-2">
+                            <a
+                                href={liveBroadcastUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 py-2.5 px-3 bg-gradient-to-r from-rose-500 via-red-500 to-amber-500 hover:from-rose-600 hover:to-amber-600 text-white font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5"
+                                title="Abrir cámara del celular para transmitir en vivo a la pantalla"
+                            >
+                                <Radio className="w-4 h-4 animate-pulse" />
+                                <span>🔴 Transmitir Cámara</span>
+                            </a>
+                            <button
+                                type="button"
+                                onClick={() => handleCopy(liveBroadcastUrl, 'live_camera')}
+                                className="py-2.5 px-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold text-xs rounded-xl border border-zinc-300 dark:border-zinc-700 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                                title="Copiar enlace de la cámara para WhatsApp"
+                            >
+                                {copiedUrl === 'live_camera' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                <span>{copiedUrl === 'live_camera' ? '¡Copiado!' : 'Copiar'}</span>
+                            </button>
+                            <a
+                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`🔴 Enlace para transmitir en vivo a la pantalla gigante:\n${liveBroadcastUrl}`)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md flex items-center justify-center transition-all hover:scale-105 shrink-0"
+                                title="Enviar link al WhatsApp del camarógrafo o anfitrión"
+                            >
+                                <Share2 className="w-4 h-4" />
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>

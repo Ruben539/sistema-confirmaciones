@@ -71,7 +71,6 @@ class LiveStreamController extends Controller
     public function start(Request $request, $code)
     {
         $event = Event::findByPublicCodeOrFail($code);
-        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'offer' => 'required|array',

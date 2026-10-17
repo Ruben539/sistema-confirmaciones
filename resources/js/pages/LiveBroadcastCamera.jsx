@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
     Radio, Camera, Video, VideoOff, Mic, MicOff, RefreshCw, 
     Sparkles, AlertCircle, ArrowLeft, Tv, ExternalLink, Zap, 
-    ShieldCheck, Check, Copy
+    ShieldCheck, Check, Copy, Share2
 } from 'lucide-react';
 import { apiFetch } from '../api';
 
@@ -55,12 +55,23 @@ export default function LiveBroadcastCamera({ eventId }) {
 
     const fetchEventInfo = async () => {
         try {
-            const { ok, json } = await apiFetch(`/api/events/${eventId}/public-invitation`);
-            if (ok && json?.event) {
-                setEvent(json.event);
-            } else {
-                setError('Evento no encontrado.');
+            // First check live-stream status (public WebRTC endpoint, never blocked by add-on checks or auth)
+            const streamRes = await apiFetch(`/api/events/${eventId}/live-stream/status`);
+            if (streamRes.ok && streamRes.json?.event) {
+                setEvent(streamRes.json.event);
+                setLoading(false);
+                return;
             }
+
+            // Fallback to public invitation
+            const invRes = await apiFetch(`/api/events/${eventId}/public-invitation`);
+            if (invRes.ok && invRes.json?.event) {
+                setEvent(invRes.json.event);
+                setLoading(false);
+                return;
+            }
+
+            setError('Evento no encontrado.');
         } catch (err) {
             console.error(err);
             setError('Error al conectar con el evento.');
@@ -462,29 +473,34 @@ export default function LiveBroadcastCamera({ eventId }) {
                 </div>
             )}
 
-            {/* PROJECTOR REMINDER HELPER (if not broadcasting) */}
+            {/* CAMERA LINK SHARING HELPER (if not broadcasting) */}
             {!isBroadcasting && (
-                <div className="relative z-10 px-4 py-3 mx-4 rounded-2xl bg-black/60 backdrop-blur-md border border-white/15 text-center space-y-2 max-w-sm mx-auto">
-                    <div className="text-[11px] text-zinc-200">
-                        Abrí el proyector en la pantalla del salón para recibir tu transmisión en vivo:
+                <div className="relative z-10 px-4 py-3 mx-4 rounded-2xl bg-black/75 backdrop-blur-md border border-white/15 text-center space-y-2.5 max-w-sm mx-auto">
+                    <div className="text-[11px] text-zinc-300 font-medium">
+                        ¿Querés abrir esta cámara en otro celular o enviársela a alguien?
                     </div>
                     <div className="flex items-center justify-center gap-2">
                         <button
                             type="button"
-                            onClick={handleCopyProjectionLink}
-                            className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-black text-xs flex items-center gap-1.5 transition-transform active:scale-95 shadow cursor-pointer"
+                            onClick={() => {
+                                navigator.clipboard.writeText(window.location.href);
+                                setCopiedUrl(true);
+                                setTimeout(() => setCopiedUrl(false), 2500);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-1.5 transition-transform active:scale-95 shadow cursor-pointer"
                         >
                             {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>{copiedUrl ? '¡Link Copiado!' : 'Copiar Link Proyector'}</span>
+                            <span>{copiedUrl ? '¡Link Copiado!' : 'Copiar Link Cámara'}</span>
                         </button>
                         <a
-                            href={projectionUrl}
+                            href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`🔴 Enlace para transmitir cámara en vivo a la pantalla gigante:\n${window.location.href}`)}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs flex items-center"
-                            title="Abrir proyector en otra pestaña"
+                            className="p-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs flex items-center gap-1 font-bold shadow transition-transform active:scale-95"
+                            title="Compartir enlace de cámara por WhatsApp"
                         >
-                            <ExternalLink className="w-4 h-4" />
+                            <Share2 className="w-3.5 h-3.5" />
+                            <span>WhatsApp</span>
                         </a>
                     </div>
                 </div>

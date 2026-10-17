@@ -171,7 +171,6 @@ class RsvpController extends Controller
     {
         $guest = Guest::with('event')->where('token', $token)->firstOrFail();
         $event = $guest->event;
-        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'message' => 'nullable|string|max:1000',
@@ -212,7 +211,6 @@ class RsvpController extends Controller
     public function uploadPublicDedication(Request $request, $code)
     {
         $event = \App\Models\Event::findByPublicCodeOrFail($code);
-        $event->ensureDigitalInvitation();
 
         $validated = $request->validate([
             'author_name' => 'required|string|max:120',
@@ -267,7 +265,6 @@ class RsvpController extends Controller
     public function publicInvitation($code)
     {
         $event = \App\Models\Event::findByPublicCodeOrFail($code);
-        $event->ensureDigitalInvitation();
 
         $dedications = [];
         try {

@@ -664,7 +664,6 @@ class EventController extends Controller
     public function getLiveProjectionFeed($code)
     {
         $event = Event::findByPublicCodeOrFail($code);
-        $event->ensureDigitalInvitation();
         $dedications = [];
         try {
             if (\Illuminate\Support\Facades\Schema::hasTable('event_dedications')) {
