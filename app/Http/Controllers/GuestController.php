@@ -850,6 +850,12 @@ class GuestController extends Controller
         }
 
         $previousStatus = $guest->status;
+        if (isset($validated['status'])) {
+            if ($validated['status'] === 'pending') {
+                $validated['conversation_state'] = 'awaiting_attendance';
+            }
+            Cache::forget("chat_closed:{$guest->id}");
+        }
         $guest->update($validated);
 
         if (isset($validated['status']) && in_array($validated['status'], ['confirmed', 'attended'])) {
@@ -1103,7 +1109,11 @@ class GuestController extends Controller
         }
 
         // Mark as queued (the job keeps it on success and clears it if the bot rejects it)
-        $guest->update(['reminder_sent_at' => now()]);
+        $guest->update([
+            'reminder_sent_at' => now(),
+            'conversation_state' => 'awaiting_attendance',
+        ]);
+        Cache::forget("chat_closed:{$guest->id}");
         \App\Jobs\SendWhatsAppMessageJob::dispatch($guest->id, 'reminder');
 
         return response()->json([
@@ -1468,21 +1478,29 @@ class GuestController extends Controller
         // A new bulk send lifts any previous cancellation for this event
         Cache::forget(SendWhatsAppMessageJob::cancelKey($eventId));
 
+        $this->trackBulk($eventId, $mode, $guests->pluck('id')->all());
+
         // Stagger jobs with random gaps; the job itself enforces the real per-number pacing,
         // daily limit and sending window (see WhatsAppThrottle)
         $delay = 0;
         foreach ($guests as $guest) {
             if ($mode === 'reminder') {
                 // Marked as queued: the job keeps it on success and clears it if it can't be sent
-                $guest->update(['reminder_sent_at' => now()]);
+                $guest->update([
+                    'reminder_sent_at' => now(),
+                    'conversation_state' => 'awaiting_attendance',
+                ]);
+            } else {
+                $guest->update([
+                    'conversation_state' => 'awaiting_attendance',
+                ]);
             }
+            Cache::forget("chat_closed:{$guest->id}");
             SendWhatsAppMessageJob::dispatch($guest->id, $mode)->delay(now()->addSeconds($delay));
             $delay += \App\Services\WhatsAppThrottle::randomGap();
         }
 
         $count = $guests->count();
-
-        $this->trackBulk($eventId, $mode, $guests->pluck('id')->all());
 
         // How many can go out today, by the event's channel (the bot's safe quota and/or the official limit)
         $channelMode = $event->whatsapp_channel ?: 'auto';
@@ -1552,8 +1570,8 @@ class GuestController extends Controller
         Cache::put("bulk:{$eventId}", [
             'mode' => $mode,
             'ids' => $join ? array_values(array_unique(array_merge($previous['ids'], $ids))) : array_values($ids),
-            'started' => $join ? $previous['started'] : now()->timestamp,
-        ], now()->addDays(4));
+            'started' => $join ? $previous['started'] : now()->subMinute()->timestamp,
+        ], now()->addDays(1));
     }
 
     private function bulkProgress($eventId): array
@@ -1567,16 +1585,50 @@ class GuestController extends Controller
         }
 
         $since = \Carbon\Carbon::createFromTimestamp($bulk['started']);
+        $bufferSince = $since->copy()->subMinutes(5);
         $ids = $bulk['ids'];
-        // Sent = an outgoing message logged for the guest after the start (invitation or reminder)
-        $sent = \App\Models\GuestMessage::whereIn('guest_id', $ids)->where('direction', 'out')->where('author', 'bot')
-            ->where('created_at', '>=', $since)->distinct()->count('guest_id');
+
+        // Auto-expire bulk progress after 2 hours
+        if ($since->lt(now()->subHours(2))) {
+            Cache::forget("bulk:{$eventId}");
+            return ['active' => false];
+        }
+
+        // Sent = an outgoing message logged for the guest or guest's sent timestamp
+        $sentMessageIds = \App\Models\GuestMessage::whereIn('guest_id', $ids)
+            ->where('direction', 'out')
+            ->where('created_at', '>=', $bufferSince)
+            ->distinct()
+            ->pluck('guest_id')
+            ->all();
+
+        $guestSentIds = [];
+        if ($bulk['mode'] === 'reminder') {
+            $guestSentIds = Guest::whereIn('id', $ids)
+                ->where('reminder_sent_at', '>=', $bufferSince)
+                ->where('reminder_count', '>', 0)
+                ->pluck('id')
+                ->all();
+        } else {
+            $guestSentIds = Guest::whereIn('id', $ids)
+                ->where('whatsapp_status', 'sent')
+                ->where('last_sent_at', '>=', $bufferSince)
+                ->pluck('id')
+                ->all();
+        }
+
+        $sentIds = array_values(array_unique(array_merge($sentMessageIds, $guestSentIds)));
+        $sent = count($sentIds);
+
         $failed = \App\Models\GuestActivity::whereIn('guest_id', $ids)
             ->whereIn('action', ['invitation_failed', 'reminder_failed', 'send_uncertain'])
-            ->where('created_at', '>=', $since)->distinct()->count('guest_id');
+            ->where('created_at', '>=', $bufferSince)
+            ->distinct()
+            ->count('guest_id');
+
         // Guests that no longer need it (answered meanwhile, removed...) don't wait for anything
         $skipped = $bulk['mode'] === 'reminder'
-            ? Guest::whereIn('id', $ids)->where('status', '!=', 'pending')->count()
+            ? Guest::whereIn('id', $ids)->where('status', '!=', 'pending')->whereNotIn('id', $sentIds)->count()
             : count($ids) - Guest::whereIn('id', $ids)->count();
 
         $total = count($ids);

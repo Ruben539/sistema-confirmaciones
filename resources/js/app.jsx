@@ -31,7 +31,7 @@ import PublicDedicationPage from './components/PublicDedicationPage';
 import LiveBroadcastCamera from './pages/LiveBroadcastCamera';
 import GuestRsvp from './pages/GuestRsvp';
 import Login from './pages/Login';
-import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users } from 'lucide-react';
+import { FileSpreadsheet, Heart, Sparkles, Plus, Calendar, MapPin, ShieldCheck, UserCheck, Users, X } from 'lucide-react';
 
 function Dashboard({ user, onLogout }) {
     const [events, setEvents] = useState([]);
@@ -500,28 +500,54 @@ function Dashboard({ user, onLogout }) {
                         const nextText = bulkProgress.waiting
                             || (next ? `Próximo envío a las ${next.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} (pausa anti-bloqueo)` : 'Enviando ahora…');
                         return (
-                            <button
-                                onClick={() => setIsWhatsAppModalOpen(true)}
-                                className="fixed bottom-6 left-6 z-40 w-80 max-w-[calc(100vw-3rem)] px-4 py-3 rounded-2xl bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-900 shadow-2xl text-left space-y-2"
-                                title="Ver el envío"
+                            <div
+                                className="fixed bottom-6 left-6 z-40 w-80 max-w-[calc(100vw-3rem)] p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-900 shadow-2xl text-left space-y-2 group"
                             >
                                 <div className="flex items-center justify-between gap-2 text-xs">
-                                    <span className="flex items-center gap-2 font-black text-zinc-900 dark:text-white">
+                                    <button
+                                        onClick={() => setIsWhatsAppModalOpen(true)}
+                                        className="flex items-center gap-2 font-black text-zinc-900 dark:text-white hover:text-emerald-600 transition-colors text-left"
+                                        title="Ver el envío"
+                                    >
                                         <span className="relative flex h-2.5 w-2.5">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                                             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                                         </span>
                                         {label}
-                                    </span>
-                                    <span className="font-black text-emerald-600">{bulkProgress.percent}%</span>
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-black text-emerald-600">{bulkProgress.percent}%</span>
+                                        <button
+                                            type="button"
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                setBulkProgress(null);
+                                                if (activeEvent?.id) {
+                                                    try {
+                                                        await apiFetch(`/api/events/${activeEvent.id}/cancel-bulk-queue`, { method: 'POST' });
+                                                    } catch (err) {}
+                                                }
+                                            }}
+                                            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                            title="Cerrar y detener envío"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="h-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950 overflow-hidden">
-                                    <div className="h-full bg-emerald-500 transition-all" style={{ width: `${bulkProgress.percent}%` }} />
+                                <div
+                                    onClick={() => setIsWhatsAppModalOpen(true)}
+                                    className="cursor-pointer space-y-2"
+                                    title="Ver el envío"
+                                >
+                                    <div className="h-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950 overflow-hidden">
+                                        <div className="h-full bg-emerald-500 transition-all" style={{ width: `${bulkProgress.percent}%` }} />
+                                    </div>
+                                    <div className="text-[11px] text-zinc-500">
+                                        {bulkProgress.sent} de {bulkProgress.total} enviados{bulkProgress.failed ? ` · ${bulkProgress.failed} con error` : ''} · {nextText}
+                                    </div>
                                 </div>
-                                <div className="text-[11px] text-zinc-500">
-                                    {bulkProgress.sent} de {bulkProgress.total} enviados{bulkProgress.failed ? ` · ${bulkProgress.failed} con error` : ''} · {nextText}
-                                </div>
-                            </button>
+                            </div>
                         );
                     })()}
 

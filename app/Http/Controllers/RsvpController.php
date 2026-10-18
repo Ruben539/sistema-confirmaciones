@@ -551,21 +551,9 @@ class RsvpController extends Controller
         // the bot doesn't interrupt that conversation with automatic notices
         $humanChat = \App\Models\GuestMessage::where('guest_id', $guest->id)->where('author', 'planner')
             ->where('created_at', '>=', now()->subDay())->exists();
-        if ($humanChat && ($guest->conversation_state ?? null) === 'completed') {
+        if ($humanChat && ($guest->conversation_state ?? null) === 'completed' && $guest->status !== 'pending') {
             $this->needsPerson = true;
             return response()->json(['processed' => false, 'reason' => 'Chat with a person from the panel']);
-        }
-
-        if (($guest->conversation_state ?? null) === 'completed') {
-            // Once (per day): it's an automatic chat and it's over, with who to contact. Then nothing more.
-            if (\Illuminate\Support\Facades\Cache::add("chat_closed:{$guest->id}", true, now()->addDay())) {
-                return response()->json([
-                    'processed' => true,
-                    'reason' => 'Conversation finished: automatic notice',
-                    'reply' => GuestMessages::chatFinished($guest, $event),
-                ]);
-            }
-            return response()->json(['processed' => false, 'reason' => 'Conversation finished: no answer']);
         }
 
         if ($event && !$event->is_enabled) {
@@ -595,7 +583,12 @@ class RsvpController extends Controller
                 'media_url' => $media,
             ]));
         }
+
         $currentState = $guest->conversation_state ?? 'awaiting_attendance';
+        // A guest with pending status is always awaiting attendance, even if state was completed earlier
+        if ($guest->status === 'pending') {
+            $currentState = 'awaiting_attendance';
+        }
 
         // 1. Escenario: Si la fecha del evento ya pasó
         if ($event && $event->event_date) {
@@ -620,10 +613,20 @@ class RsvpController extends Controller
             $isAttending = in_array($guest->status, ['confirmed', 'attended']);
             $deadline = $event?->rsvpDeadline();
             $canChange = $guest->status !== 'attended' && (!$deadline || now()->lessThanOrEqualTo($deadline));
-            $saysYes = in_array($msgClean, ['1', '1️⃣', 'si', 'sí', 'confirmo']);
-            $saysNo = in_array($msgClean, ['2', '2️⃣', 'no']);
 
-            if ($canChange && (($saysYes && !$isAttending) || ($saysNo && $isAttending))) {
+            // Detect decline or confirm intent for guests changing their mind
+            $strongDeclineCheck = (bool) preg_match('/(no (voy|vamos) a (poder|ir|asistir|estar)|no (podre|podré|podremos|podria|podría|podriamos|podríamos) (ir|asistir|estar|acompa)|no poder (asistir|ir|estar|acompa)|no podemos (ir|asistir|estar)|(me|nos) es imposible|imposible (asistir|ir)|lamentablemente no|no (asistiremos|iremos|ire|iré)\b)/iu', $msgClean);
+            $isShortAnswerCheck = mb_strlen($msgClean) <= 15 && !preg_match('/^no s[eé]\b/u', $msgClean);
+            $changeToNo = $strongDeclineCheck
+                || in_array($msgClean, ['2', '2️⃣', 'no', 'cancelar', 'rechazar', 'no podre', 'no podré', 'no voy', 'no asisto', 'no asistire', 'no asistiré'])
+                || ($isShortAnswerCheck && preg_match('/^(2\b|2️⃣|cancelar|rechazar|no\b)/iu', $msgClean))
+                || preg_match('/\b(no puedo|no podre|no podré|no voy|no asisto|no asistire|no asistiré|no podremos)\b/iu', $msgClean);
+
+            $changeToYes = in_array($msgClean, ['1', '1️⃣', 'confirmar', 'confirmo', 'confirm', 'confirn', 'si', 'sí', 'asistire', 'asistiré', 'asisto', 'voy', 'claro', 'obvio'])
+                || ($isShortAnswerCheck && preg_match('/^(1\b|1️⃣|confirm|confirn|si\b|sí\b|asist|voy\b)/iu', $msgClean))
+                || preg_match('/\b(confirmar|confirmo|confirmamos|confirmacion|confirmación|confirm|confirn|asistire|asistiré|asisto|asistiremos)\b/i', $msgClean);
+
+            if ($canChange && (($changeToYes && !$isAttending) || ($changeToNo && $isAttending))) {
                 // Changed their mind before the deadline: process it as a new answer (steps 3 / 4 below)
                 $currentState = 'awaiting_attendance';
             } else {
@@ -662,20 +665,18 @@ class RsvpController extends Controller
                     ]);
                 }
 
-                // Any other comment: thank them warmly ONCE (then stay quiet for a while) and flag it for a
-                // person (the planner, in "Mensajes"), instead of repeating the automatic card on every message
+                // Any other comment after answering: it's an automatic chat and it's over, with who to contact.
+                // Answer once per day, then silence, and flag for the planner in the panel.
                 $this->needsPerson = true;
-                if (!\Illuminate\Support\Facades\Cache::add("guest_ack:{$guest->id}", true, now()->addHours(6))) {
-                    return response()->json(['processed' => true, 'reason' => 'Comment after answering (already acknowledged)']);
+                if (\Illuminate\Support\Facades\Cache::add("chat_closed:{$guest->id}", true, now()->addDay())) {
+                    return response()->json([
+                        'processed' => true,
+                        'reason' => 'Conversation finished: automatic notice',
+                        'reply' => GuestMessages::chatFinished($guest, $event),
+                    ]);
                 }
 
-                $reply = GuestMessages::thanksForComment($guest, $event, $isAttending);
-
-                return response()->json([
-                    'processed' => true,
-                    'reason' => 'Comment after answering',
-                    'reply' => $reply,
-                ]);
+                return response()->json(['processed' => false, 'reason' => 'Conversation finished: no answer']);
             }
         }
 

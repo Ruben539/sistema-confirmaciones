@@ -21,7 +21,7 @@ return [
     // false = no automatic WhatsApp at all: the bot doesn't answer and nothing is sent by itself (invitations,
     // reminders, passes, corrections, notices). Only messages written by hand in the panel's "WhatsApp" module
     // go out; incoming messages are still saved so they can be read and answered there.
-    'automation' => (bool) env('WHATSAPP_AUTOMATION_ENABLED', false),
+    'automation' => (bool) env('WHATSAPP_AUTOMATION_ENABLED', true),
 
     'cloud' => [
         // false = everything goes through the Baileys bot, even with the Cloud credentials loaded
