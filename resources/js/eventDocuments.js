@@ -633,17 +633,13 @@ export const buildTableTentsDocument = ({
                     ${renderFloralMotif(cfg.floralMotif)}
 
                     <div class="tent-content-layer">
-                        <!-- Número de mesa SIEMPRE CENTRADO EN EL MEDIO -->
-                        <div class="face-number-wrap">
+                        <!-- Bloque central unificado: Número + Nombre/Iniciales bajo el número + Fecha -->
+                        <div class="tent-center-stack">
                             ${tableHeader ? `<div class="table-tag" style="color:${cfg.primaryColor};">${esc(tableHeader)}</div>` : ''}
                             <div class="table-number font-number-${cfg.fontNumber} ${tableMain.length > 4 ? 'table-text-long' : ''}" style="color:${cfg.numberColor};">${esc(tableMain)}</div>
-                        </div>
-
-                        <!-- Iniciales de los novios o nombre del evento + Fecha en la base inferior -->
-                        <div class="face-bottom-wrap">
-                            <div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>
+                            ${cfg.title ? `<div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>` : ''}
                             ${cfg.subtitle ? `<div class="event-date">${esc(cfg.subtitle)}</div>` : ''}
-                            ${cfg.monogram ? `<div class="monogram-badge" style="color:${cfg.primaryColor}; margin-top: 1mm;">${esc(cfg.monogram)}</div>` : (renderIconSvg() ? `<div class="face-footer" style="margin-top: 1mm;">${renderIconSvg()}</div>` : '')}
+                            ${(cfg.icon && cfg.icon !== 'none') ? `<div class="face-footer">${renderIconSvg()}</div>` : ''}
                         </div>
                     </div>
                 </div>
@@ -919,13 +915,18 @@ export const buildTableTentsDocument = ({
             position: relative;
             box-sizing: border-box;
             overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             text-align: center;
         }
         .tent-content-layer {
-            position: absolute;
-            inset: 0;
+            position: relative;
             width: 100%;
             height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             pointer-events: none;
             z-index: 2;
         }
@@ -966,7 +967,7 @@ export const buildTableTentsDocument = ({
         }
         .floral-wreath-wrap {
             position: absolute;
-            top: 48%;
+            top: 42%;
             left: 50%;
             transform: translate(-50%, -50%);
             width: 48mm;
@@ -1068,31 +1069,21 @@ export const buildTableTentsDocument = ({
             font-weight: normal;
         }
 
-        .face-number-wrap {
-            position: absolute;
-            top: 48%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+        .tent-center-stack {
             width: 90%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            margin: 0;
-            padding: 0;
+            margin: 0 auto;
+            transform: translateY(-3mm);
         }
-        .face-bottom-wrap {
-            position: absolute;
-            bottom: 5mm;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
+        .couple-title {
+            margin-top: 1.5mm;
+            margin-bottom: 0.5mm;
+            max-width: 92%;
+            word-wrap: break-word;
         }
 
         .table-tag {

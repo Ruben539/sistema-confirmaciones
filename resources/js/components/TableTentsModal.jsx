@@ -375,7 +375,7 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
         }
         if (floralMotif === 'wreath') {
             return (
-                <div className="absolute top-[48%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 pointer-events-none z-0">
+                <div className="absolute top-[42%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 pointer-events-none z-0">
                     <svg viewBox="0 0 160 160" fill="none" className="w-full h-full">
                         <circle cx="80" cy="80" r="64" stroke={primaryColor} strokeWidth="1.5" strokeDasharray="4 2" opacity="0.6"/>
                         <circle cx="80" cy="80" r="58" stroke="#52735b" strokeWidth="1" opacity="0.45"/>
@@ -411,7 +411,7 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
         const numDisplay = tableObj?.name.replace(/mesa\s+/i, '') || '4';
         return (
             <div 
-                className={`h-[110px] p-1.5 rounded relative overflow-hidden flex flex-col justify-between text-center transition-all ${
+                className={`h-[110px] p-1.5 rounded relative overflow-hidden flex items-center justify-center text-center transition-all ${
                     isBack ? 'transform rotate-180' : ''
                 } ${
                     borderStyle === 'double' ? 'border-2' :
@@ -438,10 +438,10 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                 {/* Built-in Floral Motif */}
                 {renderFloralMotifPreview()}
 
-                {/* Número de mesa SIEMPRE CENTRADO EN EL MEDIO */}
-                <div className="absolute top-[48%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center z-10 pointer-events-none">
+                {/* Bloque Central Unificado: Número + Nombre/Iniciales bajo el número + Fecha */}
+                <div className="relative z-10 w-full flex flex-col items-center justify-center text-center -translate-y-1 pointer-events-none px-1">
                     {prefix && (
-                        <div className="text-[5.5px] uppercase tracking-widest font-black leading-none mb-1" style={{ color: primaryColor }}>
+                        <div className="text-[5.5px] uppercase tracking-widest font-black leading-none mb-0.5" style={{ color: primaryColor }}>
                             {prefix}
                         </div>
                     )}
@@ -455,20 +455,27 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                     >
                         {numDisplay}
                     </div>
-                </div>
 
-                {/* Iniciales / Nombre y fecha en la parte inferior */}
-                <div className="absolute bottom-1.5 left-0 right-0 text-center z-10 px-1 pointer-events-none">
+                    {/* Nombre o Iniciales DIRECTAMENTE bajo el número, bien alineados */}
                     <div 
-                        className={`truncate font-bold leading-tight ${
+                        className={`truncate font-bold leading-tight mt-1 max-w-[95%] ${
                             fontTitle === 'cursive' ? 'font-serif italic text-[11px]' : fontTitle === 'sans' ? 'font-sans text-[8px]' : 'font-serif uppercase tracking-wider text-[8px]'
                         }`}
                         style={{ color: primaryColor }}
                     >
                         {title}
                     </div>
-                    {subtitle && <div className="text-[5px] text-zinc-500 truncate mt-0.5 leading-none">{subtitle}</div>}
-                    <div className="text-[4px] uppercase text-zinc-400 tracking-wider mt-0.5 leading-none">{faceLabel}</div>
+
+                    {/* Fecha del evento directamente bajo el nombre */}
+                    {subtitle && (
+                        <div className="text-[5px] text-zinc-500 truncate mt-0.5 leading-none max-w-[95%]">
+                            {subtitle}
+                        </div>
+                    )}
+
+                    <div className="text-[4px] uppercase text-zinc-400 tracking-wider mt-1 leading-none">
+                        {faceLabel}
+                    </div>
                 </div>
             </div>
         );
