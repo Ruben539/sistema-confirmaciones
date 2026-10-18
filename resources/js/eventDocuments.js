@@ -361,7 +361,7 @@ export const buildTableTentsDocument = ({
     tables,
     selectedTableIds = null,
     includeGuests = true,
-    style = 'classic',
+    style = 'botanical',
     config = {},
 }) => {
     let sorted = [...tables].sort(byTableName);
@@ -372,22 +372,220 @@ export const buildTableTentsDocument = ({
         sorted = [...tables].sort(byTableName);
     }
 
+    // Wedding initials helper (e.g., Marcos y Sabrina -> M & S)
+    const computeEventTitle = () => {
+        if (config.title) return config.title;
+        const raw = event?.couple_names || '';
+        if (raw) {
+            const parts = raw.split(/\s*(?:&|y|e|\+)\s*/i).map(s => s.trim()).filter(Boolean);
+            if (parts.length >= 2) {
+                return `${parts[0].charAt(0).toUpperCase()} & ${parts[1].charAt(0).toUpperCase()}`;
+            }
+        }
+        return eventName(event);
+    };
+
     // Merge configuration with defaults
     const cfg = {
-        title: config.title ?? eventName(event),
+        title: config.title ?? computeEventTitle(),
         subtitle: config.subtitle ?? formatDate(event?.event_date),
         prefix: config.prefix ?? 'MESA',
         baseText: config.baseText ?? '¡Gracias por celebrar con nosotros!',
-        includeGuests: config.includeGuests ?? includeGuests,
-        fontTitle: config.fontTitle ?? (style === 'classic' ? 'cursive' : style === 'modern' ? 'sans' : 'serif'),
-        fontNumber: config.fontNumber ?? (style === 'modern' ? 'sans' : 'serif'),
-        primaryColor: config.primaryColor ?? (style === 'classic' ? '#b58d3d' : style === 'modern' ? '#18181b' : '#3b5e43'),
-        numberColor: config.numberColor ?? (style === 'classic' ? '#18181b' : style === 'modern' ? '#09090b' : '#1c2a1f'),
+        size: config.size ?? 'standard', // 'standard' (2 por hoja A4, 10.5x14cm) | 'large' (1 por hoja A4)
+        floralMotif: config.floralMotif ?? (config.borderStyle === 'botanical' || style === 'botanical' ? 'eucalyptus' : 'none'),
+        bgImage: config.bgImage ?? null,
+        bgImageOpacity: config.bgImageOpacity ?? 0.85,
+        fontTitle: config.fontTitle ?? 'cursive',
+        fontNumber: config.fontNumber ?? (config.borderStyle === 'botanical' || style === 'botanical' ? 'brush' : 'serif'),
+        primaryColor: config.primaryColor ?? (style === 'botanical' ? '#557b63' : style === 'classic' ? '#b58d3d' : '#18181b'),
+        numberColor: config.numberColor ?? '#1c1c1e',
         textColor: config.textColor ?? '#27272a',
-        bgColor: config.bgColor ?? '#ffffff',
-        borderStyle: config.borderStyle ?? (style === 'modern' ? 'single' : 'double'),
-        icon: config.icon ?? 'rings', // 'rings' | 'heart' | 'botanical' | 'toast' | 'star' | 'monogram' | 'none'
+        bgColor: config.bgColor ?? (style === 'botanical' ? '#faf7f2' : '#ffffff'),
+        borderStyle: config.borderStyle ?? (style === 'botanical' ? 'botanical' : 'double'),
+        icon: config.icon ?? 'none',
         monogram: config.monogram ?? '',
+    };
+
+    const isStandardSize = cfg.size === 'standard';
+
+    // 1. Botanical Eucalyptus Vector Artwork
+    const EUCALYPTUS_SVGS = `
+        <div class="floral-motif-wrap">
+            <svg class="floral-corner floral-corner-bl" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M-8,140 C22,126 42,98 48,60 C52,32 44,14 38,0" stroke="#52735b" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/>
+                <path d="M22,106 C38,94 46,82 55,75" stroke="#52735b" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
+                <path d="M40,66 C54,60 66,57 80,59" stroke="#52735b" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>
+                <ellipse cx="14" cy="112" rx="18" ry="10" transform="rotate(-28 14 112)" fill="#537a5f" fill-opacity="0.75"/>
+                <ellipse cx="14" cy="112" rx="13" ry="7" transform="rotate(-28 14 112)" fill="#7ba087" fill-opacity="0.7"/>
+                <ellipse cx="34" cy="90" rx="16" ry="9" transform="rotate(-42 34 90)" fill="#688c74" fill-opacity="0.75"/>
+                <ellipse cx="34" cy="90" rx="11" ry="6" transform="rotate(-42 34 90)" fill="#91b39c" fill-opacity="0.7"/>
+                <ellipse cx="46" cy="68" rx="14" ry="8" transform="rotate(-58 46 68)" fill="#4c7057" fill-opacity="0.8"/>
+                <ellipse cx="46" cy="68" rx="9" ry="5" transform="rotate(-58 46 68)" fill="#749a80" fill-opacity="0.75"/>
+                <ellipse cx="68" cy="58" rx="13" ry="7" transform="rotate(12 68 58)" fill="#6f947a" fill-opacity="0.75"/>
+                <ellipse cx="42" cy="36" rx="12" ry="7" transform="rotate(-72 42 36)" fill="#84a991" fill-opacity="0.8"/>
+                <ellipse cx="39" cy="16" rx="10" ry="5" transform="rotate(-82 39 16)" fill="#9cbfa8" fill-opacity="0.8"/>
+                <circle cx="30" cy="99" r="2.2" fill="#46664f" opacity="0.7"/>
+                <circle cx="33" cy="95" r="1.8" fill="#46664f" opacity="0.7"/>
+                <circle cx="54" cy="62" r="2" fill="#46664f" opacity="0.7"/>
+            </svg>
+            <svg class="floral-corner floral-corner-br" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M138,140 C108,126 88,98 82,60 C78,32 86,14 92,0" stroke="#52735b" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/>
+                <path d="M108,106 C92,94 84,82 75,75" stroke="#52735b" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
+                <path d="M90,66 C76,60 64,57 50,59" stroke="#52735b" stroke-width="1.1" stroke-linecap="round" opacity="0.5"/>
+                <ellipse cx="116" cy="112" rx="18" ry="10" transform="rotate(28 116 112)" fill="#537a5f" fill-opacity="0.75"/>
+                <ellipse cx="116" cy="112" rx="13" ry="7" transform="rotate(28 116 112)" fill="#7ba087" fill-opacity="0.7"/>
+                <ellipse cx="96" cy="90" rx="16" ry="9" transform="rotate(42 96 90)" fill="#688c74" fill-opacity="0.75"/>
+                <ellipse cx="96" cy="90" rx="11" ry="6" transform="rotate(42 96 90)" fill="#91b39c" fill-opacity="0.7"/>
+                <ellipse cx="84" cy="68" rx="14" ry="8" transform="rotate(58 84 68)" fill="#4c7057" fill-opacity="0.8"/>
+                <ellipse cx="84" cy="68" rx="9" ry="5" transform="rotate(58 84 68)" fill="#749a80" fill-opacity="0.75"/>
+                <ellipse cx="62" cy="58" rx="13" ry="7" transform="rotate(-12 62 58)" fill="#6f947a" fill-opacity="0.75"/>
+                <ellipse cx="88" cy="36" rx="12" ry="7" transform="rotate(72 88 36)" fill="#84a991" fill-opacity="0.8"/>
+                <ellipse cx="91" cy="16" rx="10" ry="5" transform="rotate(82 91 16)" fill="#9cbfa8" fill-opacity="0.8"/>
+                <circle cx="100" cy="99" r="2.2" fill="#46664f" opacity="0.7"/>
+                <circle cx="97" cy="95" r="1.8" fill="#46664f" opacity="0.7"/>
+                <circle cx="76" cy="62" r="2" fill="#46664f" opacity="0.7"/>
+            </svg>
+            <svg class="floral-bottom-garland" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="50" cy="34" rx="17" ry="9" transform="rotate(-12 50 34)" fill="#688c74" fill-opacity="0.7"/>
+                <ellipse cx="80" cy="32" rx="19" ry="9" transform="rotate(4 80 32)" fill="#537a5f" fill-opacity="0.65"/>
+                <ellipse cx="110" cy="34" rx="17" ry="9" transform="rotate(16 110 34)" fill="#7da189" fill-opacity="0.7"/>
+                <ellipse cx="64" cy="27" rx="13" ry="7" transform="rotate(-6 64 27)" fill="#95b8a0" fill-opacity="0.75"/>
+                <ellipse cx="96" cy="27" rx="13" ry="7" transform="rotate(10 96 27)" fill="#87ab93" fill-opacity="0.75"/>
+            </svg>
+        </div>
+    `;
+
+    // 2. Romantic Blush Roses Artwork
+    const ROSES_SVGS = `
+        <div class="floral-motif-wrap">
+            <svg class="floral-corner floral-corner-bl" viewBox="0 0 140 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="20" cy="118" rx="20" ry="10" transform="rotate(-30 20 118)" fill="#688a70" fill-opacity="0.75"/>
+                <ellipse cx="44" cy="98" rx="18" ry="9" transform="rotate(-48 44 98)" fill="#7d9e85" fill-opacity="0.8"/>
+                <ellipse cx="60" cy="74" rx="15" ry="8" transform="rotate(-62 60 74)" fill="#58775f" fill-opacity="0.8"/>
+                <g transform="translate(32, 105)">
+                    <circle cx="0" cy="0" r="16" fill="#f4c6cb" fill-opacity="0.9"/>
+                    <path d="M-10,-4 C-8,-12 4,-14 10,-8 C14,-2 12,8 6,12 C0,14 -8,12 -12,4 Z" fill="#e5989f" fill-opacity="0.85"/>
+                    <path d="M-6,-2 C-4,-8 4,-8 6,-3 C8,2 4,6 0,6 C-4,6 -7,2 -6,-2 Z" fill="#cf7079" fill-opacity="0.9"/>
+                    <circle cx="0" cy="0" r="3.5" fill="#b8525c"/>
+                </g>
+                <g transform="translate(62, 85)">
+                    <circle cx="0" cy="0" r="11" fill="#f7d4d8" fill-opacity="0.9"/>
+                    <path d="M-6,-3 C-4,-8 4,-8 6,-2 C7,3 3,7 0,7 C-4,6 -6,1 -6,-3 Z" fill="#e08890" fill-opacity="0.85"/>
+                    <circle cx="0" cy="0" r="2.5" fill="#b8525c"/>
+                </g>
+                <path d="M50,85 C65,70 78,60 88,58" stroke="#58775f" stroke-width="1.2" stroke-linecap="round"/>
+                <ellipse cx="82" cy="59" rx="8" ry="4" transform="rotate(-15 82 59)" fill="#93b29b" fill-opacity="0.8"/>
+                <circle cx="48" cy="72" r="2.5" fill="#d97c84"/>
+                <circle cx="53" cy="68" r="2" fill="#d97c84"/>
+            </svg>
+            <svg class="floral-corner floral-corner-br" viewBox="0 0 140 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="120" cy="118" rx="20" ry="10" transform="rotate(30 120 118)" fill="#688a70" fill-opacity="0.75"/>
+                <ellipse cx="96" cy="98" rx="18" ry="9" transform="rotate(48 96 98)" fill="#7d9e85" fill-opacity="0.8"/>
+                <ellipse cx="80" cy="74" rx="15" ry="8" transform="rotate(62 80 74)" fill="#58775f" fill-opacity="0.8"/>
+                <g transform="translate(108, 105)">
+                    <circle cx="0" cy="0" r="16" fill="#f4c6cb" fill-opacity="0.9"/>
+                    <path d="M10,-4 C8,-12 -4,-14 -10,-8 C-14,-2 -12,8 -6,12 C0,14 8,12 12,4 Z" fill="#e5989f" fill-opacity="0.85"/>
+                    <path d="M6,-2 C4,-8 -4,-8 -6,-3 C-8,2 -4,6 0,6 C4,6 7,2 6,-2 Z" fill="#cf7079" fill-opacity="0.9"/>
+                    <circle cx="0" cy="0" r="3.5" fill="#b8525c"/>
+                </g>
+                <g transform="translate(78, 85)">
+                    <circle cx="0" cy="0" r="11" fill="#f7d4d8" fill-opacity="0.9"/>
+                    <path d="M6,-3 C4,-8 -4,-8 -6,-2 C-7,3 -3,7 0,7 C4,6 6,1 6,-3 Z" fill="#e08890" fill-opacity="0.85"/>
+                    <circle cx="0" cy="0" r="2.5" fill="#b8525c"/>
+                </g>
+                <path d="M90,85 C75,70 62,60 52,58" stroke="#58775f" stroke-width="1.2" stroke-linecap="round"/>
+                <ellipse cx="58" cy="59" rx="8" ry="4" transform="rotate(15 58 59)" fill="#93b29b" fill-opacity="0.8"/>
+                <circle cx="92" cy="72" r="2.5" fill="#d97c84"/>
+                <circle cx="87" cy="68" r="2" fill="#d97c84"/>
+            </svg>
+        </div>
+    `;
+
+    // 3. Elegant Olive Sprigs Artwork
+    const OLIVE_SVGS = `
+        <div class="floral-motif-wrap">
+            <svg class="floral-corner floral-corner-bl" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M-5,135 C20,120 40,95 46,60 C50,30 42,12 36,0" stroke="#5a684b" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
+                <ellipse cx="22" cy="112" rx="16" ry="6" transform="rotate(-40 22 112)" fill="#788764" fill-opacity="0.8"/>
+                <ellipse cx="38" cy="88" rx="15" ry="6" transform="rotate(-52 38 88)" fill="#8c9c76" fill-opacity="0.85"/>
+                <ellipse cx="48" cy="64" rx="14" ry="5.5" transform="rotate(-65 48 64)" fill="#687856" fill-opacity="0.85"/>
+                <ellipse cx="42" cy="38" rx="12" ry="5" transform="rotate(-75 42 38)" fill="#8c9c76" fill-opacity="0.85"/>
+                <ellipse cx="38" cy="16" rx="10" ry="4.5" transform="rotate(-85 38 16)" fill="#a0b08b" fill-opacity="0.9"/>
+                <ellipse cx="28" cy="100" rx="4" ry="5.5" transform="rotate(-20 28 100)" fill="#353b2d" opacity="0.85"/>
+                <ellipse cx="45" cy="52" rx="3.5" ry="5" transform="rotate(-30 45 52)" fill="#353b2d" opacity="0.85"/>
+            </svg>
+            <svg class="floral-corner floral-corner-br" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M135,135 C110,120 90,95 84,60 C80,30 88,12 94,0" stroke="#5a684b" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
+                <ellipse cx="108" cy="112" rx="16" ry="6" transform="rotate(40 108 112)" fill="#788764" fill-opacity="0.8"/>
+                <ellipse cx="92" cy="88" rx="15" ry="6" transform="rotate(52 92 88)" fill="#8c9c76" fill-opacity="0.85"/>
+                <ellipse cx="82" cy="64" rx="14" ry="5.5" transform="rotate(65 82 64)" fill="#687856" fill-opacity="0.85"/>
+                <ellipse cx="88" cy="38" rx="12" ry="5" transform="rotate(75 88 38)" fill="#8c9c76" fill-opacity="0.85"/>
+                <ellipse cx="92" cy="16" rx="10" ry="4.5" transform="rotate(85 92 16)" fill="#a0b08b" fill-opacity="0.9"/>
+                <ellipse cx="102" cy="100" rx="4" ry="5.5" transform="rotate(20 102 100)" fill="#353b2d" opacity="0.85"/>
+                <ellipse cx="85" cy="52" rx="3.5" ry="5" transform="rotate(30 85 52)" fill="#353b2d" opacity="0.85"/>
+            </svg>
+        </div>
+    `;
+
+    // 4. Circular Floral Wreath around the table number
+    const WREATH_SVGS = `
+        <div class="floral-wreath-wrap">
+            <svg viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
+                <circle cx="80" cy="80" r="64" stroke="${cfg.primaryColor}" stroke-width="1.2" stroke-dasharray="4 2" opacity="0.6"/>
+                <circle cx="80" cy="80" r="58" stroke="#52735b" stroke-width="1" opacity="0.45"/>
+                <ellipse cx="80" cy="20" rx="7" ry="3.5" fill="#7ba087" opacity="0.85"/>
+                <ellipse cx="68" cy="23" rx="6" ry="3" transform="rotate(-25 68 23)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="92" cy="23" rx="6" ry="3" transform="rotate(25 92 23)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="80" cy="140" rx="7" ry="3.5" fill="#7ba087" opacity="0.85"/>
+                <ellipse cx="68" cy="137" rx="6" ry="3" transform="rotate(25 68 137)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="92" cy="137" rx="6" ry="3" transform="rotate(-25 92 137)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="20" cy="80" rx="3.5" ry="7" fill="#7ba087" opacity="0.85"/>
+                <ellipse cx="23" cy="68" rx="3" ry="6" transform="rotate(25 23 68)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="23" cy="92" rx="3" ry="6" transform="rotate(-25 23 92)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="140" cy="80" rx="3.5" ry="7" fill="#7ba087" opacity="0.85"/>
+                <ellipse cx="137" cy="68" rx="3" ry="6" transform="rotate(-25 137 68)" fill="#5a7b64" opacity="0.8"/>
+                <ellipse cx="137" cy="92" rx="3" ry="6" transform="rotate(25 137 92)" fill="#5a7b64" opacity="0.8"/>
+                <circle cx="48" cy="36" r="2.5" fill="${cfg.primaryColor}"/>
+                <circle cx="112" cy="36" r="2.5" fill="${cfg.primaryColor}"/>
+                <circle cx="48" cy="124" r="2.5" fill="${cfg.primaryColor}"/>
+                <circle cx="112" cy="124" r="2.5" fill="${cfg.primaryColor}"/>
+            </svg>
+        </div>
+    `;
+
+    // 5. Warm Terracotta Boho & Pampa Grass
+    const BOHO_SVGS = `
+        <div class="floral-motif-wrap">
+            <svg class="floral-corner floral-corner-bl" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0,130 Q35,100 50,55" stroke="#b67d58" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+                <path d="M40,75 Q55,50 68,30" stroke="#cf9d7c" stroke-width="1.4" stroke-linecap="round" opacity="0.75"/>
+                <path d="M25,100 Q48,85 70,78" stroke="#a06e49" stroke-width="1.3" opacity="0.6"/>
+                <ellipse cx="50" cy="50" rx="18" ry="6" transform="rotate(-55 50 50)" fill="#dfbaa1" fill-opacity="0.85"/>
+                <ellipse cx="64" cy="34" rx="16" ry="5.5" transform="rotate(-65 64 34)" fill="#edd5c5" fill-opacity="0.9"/>
+                <ellipse cx="32" cy="80" rx="17" ry="7" transform="rotate(-40 32 80)" fill="#c9916b" fill-opacity="0.8"/>
+                <ellipse cx="62" cy="74" rx="14" ry="5" transform="rotate(-15 62 74)" fill="#dfbaa1" fill-opacity="0.85"/>
+                <path d="M12,120 L28,88 M16,122 L36,94 M20,124 L42,102" stroke="#8d6447" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+            </svg>
+            <svg class="floral-corner floral-corner-br" viewBox="0 0 130 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M130,130 Q95,100 80,55" stroke="#b67d58" stroke-width="1.8" stroke-linecap="round" opacity="0.7"/>
+                <path d="M90,75 Q75,50 62,30" stroke="#cf9d7c" stroke-width="1.4" stroke-linecap="round" opacity="0.75"/>
+                <path d="M105,100 Q82,85 60,78" stroke="#a06e49" stroke-width="1.3" opacity="0.6"/>
+                <ellipse cx="80" cy="50" rx="18" ry="6" transform="rotate(55 80 50)" fill="#dfbaa1" fill-opacity="0.85"/>
+                <ellipse cx="66" cy="34" rx="16" ry="5.5" transform="rotate(65 66 34)" fill="#edd5c5" fill-opacity="0.9"/>
+                <ellipse cx="98" cy="80" rx="17" ry="7" transform="rotate(40 98 80)" fill="#c9916b" fill-opacity="0.8"/>
+                <ellipse cx="68" cy="74" rx="14" ry="5" transform="rotate(15 68 74)" fill="#dfbaa1" fill-opacity="0.85"/>
+                <path d="M118,120 L102,88 M114,122 L94,94 M110,124 L88,102" stroke="#8d6447" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+            </svg>
+        </div>
+    `;
+
+    const renderFloralMotif = (motif) => {
+        if (motif === 'eucalyptus') return EUCALYPTUS_SVGS;
+        if (motif === 'roses') return ROSES_SVGS;
+        if (motif === 'olive') return OLIVE_SVGS;
+        if (motif === 'wreath') return WREATH_SVGS;
+        if (motif === 'boho') return BOHO_SVGS;
+        return '';
     };
 
     // Render decorative icon SVG
@@ -412,114 +610,143 @@ export const buildTableTentsDocument = ({
         return `<svg class="tent-icon" viewBox="0 0 32 20" fill="none" stroke="${cfg.primaryColor}" stroke-width="2" width="22" height="14"><circle cx="11" cy="10" r="7"/><circle cx="21" cy="10" r="7"/></svg>`;
     };
 
-    const pagesHtml = sorted.map(t => {
-        const guests = [...(t.guests || [])].sort(byName);
-
+    // Render a single face (front or back rotated 180deg)
+    const renderFace = (table, faceType) => {
         // Parse table title & number
         let tableHeader = cfg.prefix || '';
-        let tableMain = t.name;
-        const match = t.name.match(/^mesa\s+(.+)$/i);
+        let tableMain = table.name;
+        const match = table.name.match(/^mesa\s+(.+)$/i);
         if (match) {
             tableMain = match[1];
-        } else if (/principal|honor|novios/i.test(t.name)) {
+        } else if (/principal|honor|novios/i.test(table.name)) {
             tableHeader = 'MESA';
-            tableMain = t.name.toUpperCase();
+            tableMain = table.name.toUpperCase();
         }
-
-        // Build guest list columns HTML
-        let guestsHtml = '';
-        if (cfg.includeGuests && guests.length > 0) {
-            const guestItems = guests.map(g => {
-                const companion = g.companions ? ` <small class="comp">(+ ${esc(g.companions)})</small>` : (seatsOf(g) > 1 ? ` <small class="comp">(+${seatsOf(g) - 1})</small>` : '');
-                return `<div class="g-item">• ${esc(g.name)}${companion}</div>`;
-            });
-            const isTwoCol = guestItems.length > 5;
-            guestsHtml = `
-                <div class="guest-list-box ${isTwoCol ? 'two-col' : 'one-col'}">
-                    ${guestItems.join('')}
-                </div>
-            `;
-        } else {
-            guestsHtml = `
-                <div class="welcome-quote">
-                    <p class="quote-text">¡Bienvenidos a nuestra celebración!</p>
-                    <div class="ornament" style="color:${cfg.primaryColor};">❦</div>
-                </div>
-            `;
-        }
-
-        const renderFace = (faceType) => `
-            <div class="tent-face ${faceType === 'back' ? 'tent-face-back' : 'tent-face-front'} border-${cfg.borderStyle}">
-                <div class="tent-inner" style="background-color:${cfg.bgColor};">
-                    <div class="face-header">
-                        <div class="icon-wrap">${renderIconSvg()}</div>
-                        <div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>
-                        ${cfg.subtitle ? `<div class="event-date">${esc(cfg.subtitle)}</div>` : ''}
-                    </div>
-
-                    <div class="face-center">
-                        ${tableHeader ? `<div class="table-tag" style="color:${cfg.primaryColor};">${esc(tableHeader)}</div>` : ''}
-                        <div class="table-number font-number-${cfg.fontNumber} ${tableMain.length > 4 ? 'table-text-long' : ''}" style="color:${cfg.numberColor};">${esc(tableMain)}</div>
-                    </div>
-
-                    <div class="face-body">
-                        ${guestsHtml}
-                    </div>
-
-                    <div class="face-footer">
-                        <span class="subtle-tag" style="color:${cfg.primaryColor};">✦ &nbsp; ${esc(cfg.title)} &nbsp; ✦</span>
-                    </div>
-                </div>
-            </div>
-        `;
 
         return `
-            <div class="tent-page">
-                <!-- Solapa superior de pegado -->
-                <div class="tent-flap">
-                    <div class="flap-content">
-                        <span>✂ Pestaña de pegado / ensamble (doblar hacia adentro y fijar a la base)</span>
-                    </div>
-                </div>
+            <div class="tent-face ${faceType === 'back' ? 'tent-face-back' : 'tent-face-front'} border-${cfg.borderStyle}">
+                <div class="tent-inner" style="background-color:${cfg.bgColor};">
+                    ${cfg.bgImage ? `
+                        <div class="custom-bg-layer" style="background-image: url('${cfg.bgImage}'); opacity: ${cfg.bgImageOpacity};"></div>
+                    ` : ''}
 
-                <!-- Línea de pliegue 1 -->
-                <div class="guide-line fold-step-1">
-                    <span>- - - - - - - - Doblar hacia adentro (Pestaña) - - - - - - - -</span>
-                </div>
+                    ${renderFloralMotif(cfg.floralMotif)}
 
-                <!-- Cara Posterior (invertida 180° para verse derecha al plegar en carpa) -->
-                ${renderFace('back')}
+                    <div class="tent-content-layer">
+                        <!-- Número de mesa grande y prominente -->
+                        <div class="face-number-wrap">
+                            ${tableHeader ? `<div class="table-tag" style="color:${cfg.primaryColor};">${esc(tableHeader)}</div>` : ''}
+                            <div class="table-number font-number-${cfg.fontNumber} ${tableMain.length > 4 ? 'table-text-long' : ''}" style="color:${cfg.numberColor};">${esc(tableMain)}</div>
+                        </div>
 
-                <!-- Línea de pliegue 2: Vértice superior del triángulo -->
-                <div class="guide-line apex-line">
-                    <span class="apex-badge">▲ ▲ ▲ Doblar aquí (Cúspide / Vértice superior del triángulo) ▲ ▲ ▲</span>
-                </div>
+                        <!-- Iniciales de los novios o nombre del evento + Fecha -->
+                        <div class="face-couple-wrap">
+                            <div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>
+                            ${cfg.subtitle ? `<div class="event-date">${esc(cfg.subtitle)}</div>` : ''}
+                        </div>
 
-                <!-- Cara Frontal (al derecho) -->
-                ${renderFace('front')}
-
-                <!-- Línea de pliegue 3: Base del triángulo -->
-                <div class="guide-line fold-step-3">
-                    <span>▼ ▼ ▼ Doblar hacia adentro (Base inferior del triángulo) ▼ ▼ ▼</span>
-                </div>
-
-                <!-- Base de apoyo horizontal -->
-                <div class="tent-base" style="background-color:${cfg.bgColor === '#ffffff' ? '#fafafa' : cfg.bgColor};">
-                    <div class="base-content">
-                        <div class="base-title">BASE DE APOYO (apoya plano sobre el mantel)</div>
-                        <div class="base-thanks" style="color:${cfg.textColor};">${esc(cfg.title)} · ${esc(cfg.baseText)}</div>
+                        <!-- Pie sutil / Monograma / Ícono -->
+                        <div class="face-footer">
+                            ${cfg.monogram ? `<span class="monogram-badge" style="color:${cfg.primaryColor};">${esc(cfg.monogram)}</span>` : (renderIconSvg() ? renderIconSvg() : `<span class="subtle-tag" style="color:${cfg.primaryColor}; opacity:0.6;">❦</span>`)}
+                        </div>
                     </div>
                 </div>
             </div>
         `;
-    }).join('');
+    };
+
+    // Render a single complete folding column/strip
+    const renderSingleTentColumn = (table) => `
+        <div class="tent-strip">
+            <!-- Solapa superior de pegado -->
+            <div class="tent-flap">
+                <div class="flap-content">
+                    <span>✂ Pestaña de pegado (doblar hacia adentro)</span>
+                </div>
+            </div>
+
+            <!-- Línea de pliegue 1 -->
+            <div class="guide-line fold-step-1">
+                <span>- - - - Doblar hacia adentro - - - -</span>
+            </div>
+
+            <!-- Cara Posterior (invertida 180° para verse derecha al plegar en carpa) -->
+            ${renderFace(table, 'back')}
+
+            <!-- Línea de pliegue 2: Vértice superior del triángulo -->
+            <div class="guide-line apex-line">
+                <span class="apex-badge">▲ ▲ ▲ Doblar aquí (Cúspide superior) ▲ ▲ ▲</span>
+            </div>
+
+            <!-- Cara Frontal (al derecho) -->
+            ${renderFace(table, 'front')}
+
+            <!-- Línea de pliegue 3: Base del triángulo -->
+            <div class="guide-line fold-step-3">
+                <span>▼ ▼ ▼ Doblar hacia adentro (Base) ▼ ▼ ▼</span>
+            </div>
+
+            <!-- Base de apoyo horizontal -->
+            <div class="tent-base" style="background-color:${cfg.bgColor === '#ffffff' ? '#fafafa' : cfg.bgColor};">
+                <div class="base-content">
+                    <div class="base-title">BASE DE APOYO · APOYA PLANO SOBRE EL MANTEL</div>
+                    <div class="base-thanks" style="color:${cfg.textColor};">${esc(cfg.title)} · ${esc(cfg.baseText)}</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Render empty placeholder column if odd number of tables in 2-per-sheet mode
+    const renderEmptyColumn = () => `
+        <div class="tent-strip tent-strip-empty">
+            <div class="empty-col-inner">
+                <div class="empty-note">
+                    <p>Espacio reservado (número impar de mesas)</p>
+                    <span>Podés usar esta sección para notas del salón o mesa de niños</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    let pagesHtml = '';
+
+    if (isStandardSize) {
+        // Mode Standard: 2 complete tents per A4 sheet side-by-side (10.5 x 14 cm tabletop size)
+        const pairs = [];
+        for (let i = 0; i < sorted.length; i += 2) {
+            pairs.push([sorted[i], sorted[i + 1] || null]);
+        }
+
+        pagesHtml = pairs.map(([tA, tB]) => `
+            <div class="tent-sheet-standard">
+                <div class="tent-col">
+                    ${renderSingleTentColumn(tA)}
+                </div>
+                <div class="center-cut-divider">
+                    <div class="cut-line"></div>
+                    <div class="cut-badge">✂ Cortar por la línea central (2 carteles de mesa por hoja A4) ✂</div>
+                    <div class="cut-line"></div>
+                </div>
+                <div class="tent-col">
+                    ${tB ? renderSingleTentColumn(tB) : renderEmptyColumn()}
+                </div>
+            </div>
+        `).join('');
+    } else {
+        // Mode Large: 1 tent per A4 sheet (full width 21 cm)
+        pagesHtml = sorted.map(t => `
+            <div class="tent-page-large">
+                ${renderSingleTentColumn(t)}
+            </div>
+        `).join('');
+    }
 
     const stylesCss = `
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Great+Vibes&family=Montserrat:wght@400;600;700;900&family=Playfair+Display:ital,wght@0,600;0,700;0,900;1,400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Alex+Brush&family=Caveat:wght@600;700&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Great+Vibes&family=Montserrat:wght@400;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,900;1,400&display=swap');
 
         @page {
             size: A4 portrait;
-            margin: 6mm 10mm;
+            margin: 4mm 5mm;
         }
         * { box-sizing: border-box; }
         body {
@@ -527,31 +754,108 @@ export const buildTableTentsDocument = ({
             padding: 0;
             background: #ffffff;
             color: ${cfg.textColor};
-            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
-        .tent-page {
-            width: 100%;
-            height: 284mm;
+
+        /* Standard 2 per sheet layout (10.5 x 14 cm table centerpieces) */
+        .tent-sheet-standard {
+            width: 200mm;
+            height: 289mm;
+            display: flex;
+            justify-content: space-between;
+            page-break-after: always;
+            break-after: page;
+            margin: 0 auto;
+            position: relative;
+            background: #ffffff;
+        }
+        .tent-sheet-standard:last-child {
+            page-break-after: avoid;
+            break-after: avoid;
+        }
+        .tent-col {
+            width: 96mm;
+            height: 289mm;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+        }
+
+        /* Central Cut Divider */
+        .center-cut-divider {
+            width: 8mm;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .cut-line {
+            flex: 1;
+            width: 0;
+            border-left: 1px dashed #a1a1aa;
+        }
+        .cut-badge {
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            font-size: 6.5pt;
+            color: #71717a;
+            letter-spacing: 1px;
+            padding: 10px 0;
+            white-space: nowrap;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        /* Large single page layout */
+        .tent-page-large {
+            width: 195mm;
+            height: 289mm;
             page-break-after: always;
             break-after: page;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            margin: 0 auto;
             position: relative;
-            box-sizing: border-box;
             background: #ffffff;
         }
-        .tent-page:last-child {
+        .tent-page-large:last-child {
             page-break-after: avoid;
             break-after: avoid;
         }
 
+        .tent-strip {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .tent-strip-empty {
+            border: 1px dashed #e4e4e7;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .empty-note {
+            text-align: center;
+            color: #a1a1aa;
+            font-size: 8pt;
+        }
+        .empty-note p { font-weight: 700; margin: 0 0 4px; }
+        .empty-note span { font-size: 7pt; }
+
         /* Guías de doblado y solapa */
         .tent-flap {
-            height: 18mm;
-            background: repeating-linear-gradient(45deg, #fbfbfb, #fbfbfb 10px, #f4f4f5 10px, #f4f4f5 20px);
+            height: 14mm;
+            background: repeating-linear-gradient(45deg, #fbfbfb, #fbfbfb 8px, #f4f4f5 8px, #f4f4f5 16px);
             border: 1px dashed #a1a1aa;
             border-bottom: none;
             border-radius: 6px 6px 0 0;
@@ -560,18 +864,18 @@ export const buildTableTentsDocument = ({
             justify-content: center;
         }
         .flap-content {
-            font-size: 8pt;
+            font-size: 7pt;
             color: #71717a;
             letter-spacing: 0.5px;
             text-transform: uppercase;
             font-weight: 600;
         }
         .guide-line {
-            height: 4mm;
+            height: 3.5mm;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 7pt;
+            font-size: 6pt;
             color: #71717a;
             position: relative;
         }
@@ -586,7 +890,7 @@ export const buildTableTentsDocument = ({
         }
         .guide-line span {
             background: #fff;
-            padding: 0 8px;
+            padding: 0 6px;
             position: relative;
             z-index: 2;
             letter-spacing: 0.5px;
@@ -597,17 +901,17 @@ export const buildTableTentsDocument = ({
         .apex-badge {
             color: ${cfg.primaryColor} !important;
             font-weight: 700;
-            font-size: 7.5pt;
+            font-size: 6.5pt;
         }
 
         /* Caras de la carpa (Front & Back) */
         .tent-face {
-            height: 108mm;
+            height: 114mm;
             position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 4mm;
+            padding: 2mm;
         }
         .tent-face-back {
             transform: rotate(180deg);
@@ -616,24 +920,84 @@ export const buildTableTentsDocument = ({
             width: 100%;
             height: 100%;
             border-radius: 8px;
+            position: relative;
+            box-sizing: border-box;
+            overflow: hidden;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             align-items: center;
             text-align: center;
-            padding: 10px 16px 8px;
+            padding: 8px 12px 6px;
+        }
+        .tent-content-layer {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
             position: relative;
-            box-sizing: border-box;
+            z-index: 2;
+        }
+
+        /* Custom Background Image Layer */
+        .custom-bg-layer {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Floral Motifs Layer */
+        .floral-motif-wrap {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 1;
+        }
+        .floral-corner {
+            position: absolute;
+            bottom: -2px;
+            width: 48mm;
+            height: 48mm;
+        }
+        .floral-corner-bl { left: -4px; }
+        .floral-corner-br { right: -4px; }
+        .floral-bottom-garland {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 44mm;
+            height: 14mm;
+        }
+        .floral-wreath-wrap {
+            position: absolute;
+            top: 36%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 46mm;
+            height: 46mm;
+            pointer-events: none;
+            z-index: 1;
         }
 
         /* Estilos de Marco */
         .border-double .tent-inner {
             border: 2px solid ${cfg.primaryColor};
             outline: 1px solid ${cfg.primaryColor};
-            outline-offset: -5px;
+            outline-offset: -4px;
         }
         .border-single .tent-inner {
             border: 2px solid ${cfg.primaryColor};
+        }
+        .border-botanical .tent-inner {
+            border: 1px solid rgba(85, 123, 99, 0.25);
+            box-shadow: inset 0 0 0 3px rgba(85, 123, 99, 0.08);
         }
         .border-corners .tent-inner {
             border: 1px solid rgba(0,0,0,0.08);
@@ -643,8 +1007,8 @@ export const buildTableTentsDocument = ({
         .border-corners .tent-inner::after {
             content: '';
             position: absolute;
-            width: 20px;
-            height: 20px;
+            width: 16px;
+            height: 16px;
             border-color: ${cfg.primaryColor};
             border-style: solid;
         }
@@ -658,7 +1022,7 @@ export const buildTableTentsDocument = ({
         }
         .border-rounded .tent-inner {
             border: 2px solid ${cfg.primaryColor};
-            border-radius: 18px;
+            border-radius: 16px;
         }
         .border-none .tent-inner {
             border: none;
@@ -666,28 +1030,35 @@ export const buildTableTentsDocument = ({
 
         /* Tipografías del Título */
         .font-title-cursive {
-            font-family: 'Great Vibes', cursive;
-            font-size: 22pt;
+            font-family: 'Alex Brush', 'Great Vibes', cursive;
+            font-size: 20pt;
             line-height: 1.1;
             letter-spacing: 0.5px;
             font-weight: normal;
         }
         .font-title-serif {
             font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
-            font-size: 13pt;
+            font-size: 11pt;
             font-weight: 700;
             letter-spacing: 2px;
             text-transform: uppercase;
         }
         .font-title-sans {
             font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
-            font-size: 11pt;
+            font-size: 10pt;
             font-weight: 800;
             letter-spacing: 2px;
             text-transform: uppercase;
         }
 
         /* Tipografías del Número */
+        .font-number-brush {
+            font-family: 'Caveat', cursive;
+            font-size: 64pt;
+            line-height: 0.88;
+            font-weight: 700;
+            letter-spacing: -1px;
+        }
         .font-number-serif {
             font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
             font-size: 44pt;
@@ -697,24 +1068,40 @@ export const buildTableTentsDocument = ({
         }
         .font-number-sans {
             font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
-            font-size: 46pt;
+            font-size: 44pt;
             line-height: 1;
             font-weight: 900;
         }
         .font-number-cursive {
-            font-family: 'Great Vibes', cursive;
-            font-size: 48pt;
+            font-family: 'Great Vibes', 'Alex Brush', cursive;
+            font-size: 50pt;
             line-height: 1;
             font-weight: normal;
         }
 
+        .face-number-wrap {
+            margin-top: 4mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .face-couple-wrap {
+            margin-top: 1mm;
+            margin-bottom: 2mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
         .table-tag {
             font-family: 'Montserrat', Arial, sans-serif;
-            font-size: 8.5pt;
-            letter-spacing: 4px;
+            font-size: 7.5pt;
+            letter-spacing: 3px;
             font-weight: 800;
             text-transform: uppercase;
-            margin-bottom: 2px;
+            margin-bottom: 0px;
         }
         .table-text-long {
             font-size: 22pt !important;
@@ -722,8 +1109,8 @@ export const buildTableTentsDocument = ({
         }
         .event-date {
             font-size: 7.5pt;
-            color: #71717a;
-            margin-top: 1px;
+            color: #52525b;
+            margin-top: 2px;
             letter-spacing: 0.5px;
             font-family: 'Montserrat', Arial, sans-serif;
         }
@@ -734,81 +1121,24 @@ export const buildTableTentsDocument = ({
             justify-content: center;
         }
         .monogram-badge {
-            font-family: 'Great Vibes', cursive;
-            font-size: 18pt;
+            font-family: 'Alex Brush', 'Great Vibes', cursive;
+            font-size: 16pt;
             line-height: 1;
             letter-spacing: 1px;
         }
 
-        /* Comensales / Lista de invitados */
-        .face-body {
-            width: 100%;
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 4px 0;
-            overflow: hidden;
-        }
-        .guest-list-box {
-            width: 100%;
-            max-width: 96%;
-            background: rgba(0, 0, 0, 0.02);
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 6px;
-            padding: 5px 8px;
-            text-align: left;
-        }
-        .guest-list-box.two-col {
-            column-count: 2;
-            column-gap: 14px;
-        }
-        .guest-list-box.one-col {
-            text-align: center;
-        }
-        .g-item {
-            font-size: 8pt;
-            color: ${cfg.textColor};
-            line-height: 1.3;
-            break-inside: avoid;
-            font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-        }
-        .comp {
-            font-size: 7pt;
-            color: #71717a;
-            font-weight: normal;
-        }
-
-        .welcome-quote {
-            padding: 4px 10px;
-        }
-        .quote-text {
-            font-size: 9pt;
-            font-style: italic;
-            color: #52525b;
-            margin: 0;
-            font-family: Georgia, serif;
-        }
-        .ornament {
-            font-size: 13pt;
-            margin-top: 2px;
-        }
-
         .face-footer {
-            font-size: 6.5pt;
+            font-size: 6pt;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
             font-family: 'Montserrat', Arial, sans-serif;
-            opacity: 0.85;
+            opacity: 0.8;
+            margin-bottom: 3mm;
         }
 
         /* Base de apoyo */
         .tent-base {
-            height: 38mm;
+            height: 36mm;
             border: 1px dashed #a1a1aa;
             border-top: none;
             border-radius: 0 0 6px 6px;
@@ -816,10 +1146,10 @@ export const buildTableTentsDocument = ({
             align-items: center;
             justify-content: center;
             text-align: center;
-            padding: 4px 16px;
+            padding: 4px 10px;
         }
         .base-title {
-            font-size: 7.5pt;
+            font-size: 6.5pt;
             font-weight: 700;
             color: #52525b;
             letter-spacing: 1px;
@@ -827,7 +1157,7 @@ export const buildTableTentsDocument = ({
             font-family: 'Montserrat', Arial, sans-serif;
         }
         .base-thanks {
-            font-size: 9pt;
+            font-size: 8pt;
             font-weight: 600;
             margin-top: 2px;
             font-family: Georgia, serif;
