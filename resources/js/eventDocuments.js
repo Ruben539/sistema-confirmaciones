@@ -351,3 +351,501 @@ export const exportGuestsExcel = ({ event, allGuests, tables, unassigned }) => {
     const safeName = eventName(event).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '');
     XLSX.writeFile(wb, `Invitados_${safeName || 'Evento'}.xlsx`);
 };
+
+// ---------------------------------------------------------------------------
+// 6. Triangular Table Tents / Centerpieces with base (3D Foldable)
+// ---------------------------------------------------------------------------
+
+export const buildTableTentsDocument = ({
+    event,
+    tables,
+    selectedTableIds = null,
+    includeGuests = true,
+    style = 'classic',
+    config = {},
+}) => {
+    let sorted = [...tables].sort(byTableName);
+    if (selectedTableIds && selectedTableIds.length > 0) {
+        sorted = sorted.filter(t => selectedTableIds.includes(t.id));
+    }
+    if (sorted.length === 0) {
+        sorted = [...tables].sort(byTableName);
+    }
+
+    // Merge configuration with defaults
+    const cfg = {
+        title: config.title ?? eventName(event),
+        subtitle: config.subtitle ?? formatDate(event?.event_date),
+        prefix: config.prefix ?? 'MESA',
+        baseText: config.baseText ?? '¡Gracias por celebrar con nosotros!',
+        includeGuests: config.includeGuests ?? includeGuests,
+        fontTitle: config.fontTitle ?? (style === 'classic' ? 'cursive' : style === 'modern' ? 'sans' : 'serif'),
+        fontNumber: config.fontNumber ?? (style === 'modern' ? 'sans' : 'serif'),
+        primaryColor: config.primaryColor ?? (style === 'classic' ? '#b58d3d' : style === 'modern' ? '#18181b' : '#3b5e43'),
+        numberColor: config.numberColor ?? (style === 'classic' ? '#18181b' : style === 'modern' ? '#09090b' : '#1c2a1f'),
+        textColor: config.textColor ?? '#27272a',
+        bgColor: config.bgColor ?? '#ffffff',
+        borderStyle: config.borderStyle ?? (style === 'modern' ? 'single' : 'double'),
+        icon: config.icon ?? 'rings', // 'rings' | 'heart' | 'botanical' | 'toast' | 'star' | 'monogram' | 'none'
+        monogram: config.monogram ?? '',
+    };
+
+    // Render decorative icon SVG
+    const renderIconSvg = () => {
+        if (cfg.icon === 'none') return '';
+        if (cfg.icon === 'monogram' && cfg.monogram) {
+            return `<div class="monogram-badge" style="color:${cfg.primaryColor};">${esc(cfg.monogram)}</div>`;
+        }
+        if (cfg.icon === 'heart') {
+            return `<svg class="tent-icon" viewBox="0 0 24 24" fill="${cfg.primaryColor}" width="16" height="16"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`;
+        }
+        if (cfg.icon === 'botanical') {
+            return `<svg class="tent-icon" viewBox="0 0 24 24" fill="none" stroke="${cfg.primaryColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><path d="M12 2a10 10 0 0 1 10 10c0 5.52-4.48 10-10 10S2 17.52 2 12c0-2.76 1.12-5.26 2.93-7.07"/><path d="M8 14c1.5-1.5 3.5-2 6-2"/><path d="M9 9c1-1 2.5-1.5 4.5-1.5"/><path d="M14 6c.5-.5 1.5-.8 2.5-.8"/></svg>`;
+        }
+        if (cfg.icon === 'toast') {
+            return `<svg class="tent-icon" viewBox="0 0 24 24" fill="none" stroke="${cfg.primaryColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M8 22h8"/><path d="M12 15v7"/><path d="m16 8 3 7h-6l3-7z"/><path d="m8 8-3 7h6l-3-7z"/><path d="M6 3h4l1 5H5l1-5z"/><path d="M14 3h4l1 5h-6l1-5z"/></svg>`;
+        }
+        if (cfg.icon === 'star') {
+            return `<span class="tent-icon" style="color:${cfg.primaryColor};font-size:14pt;line-height:1;">✦</span>`;
+        }
+        // Default: Wedding rings
+        return `<svg class="tent-icon" viewBox="0 0 32 20" fill="none" stroke="${cfg.primaryColor}" stroke-width="2" width="22" height="14"><circle cx="11" cy="10" r="7"/><circle cx="21" cy="10" r="7"/></svg>`;
+    };
+
+    const pagesHtml = sorted.map(t => {
+        const guests = [...(t.guests || [])].sort(byName);
+
+        // Parse table title & number
+        let tableHeader = cfg.prefix || '';
+        let tableMain = t.name;
+        const match = t.name.match(/^mesa\s+(.+)$/i);
+        if (match) {
+            tableMain = match[1];
+        } else if (/principal|honor|novios/i.test(t.name)) {
+            tableHeader = 'MESA';
+            tableMain = t.name.toUpperCase();
+        }
+
+        // Build guest list columns HTML
+        let guestsHtml = '';
+        if (cfg.includeGuests && guests.length > 0) {
+            const guestItems = guests.map(g => {
+                const companion = g.companions ? ` <small class="comp">(+ ${esc(g.companions)})</small>` : (seatsOf(g) > 1 ? ` <small class="comp">(+${seatsOf(g) - 1})</small>` : '');
+                return `<div class="g-item">• ${esc(g.name)}${companion}</div>`;
+            });
+            const isTwoCol = guestItems.length > 5;
+            guestsHtml = `
+                <div class="guest-list-box ${isTwoCol ? 'two-col' : 'one-col'}">
+                    ${guestItems.join('')}
+                </div>
+            `;
+        } else {
+            guestsHtml = `
+                <div class="welcome-quote">
+                    <p class="quote-text">¡Bienvenidos a nuestra celebración!</p>
+                    <div class="ornament" style="color:${cfg.primaryColor};">❦</div>
+                </div>
+            `;
+        }
+
+        const renderFace = (faceType) => `
+            <div class="tent-face ${faceType === 'back' ? 'tent-face-back' : 'tent-face-front'} border-${cfg.borderStyle}">
+                <div class="tent-inner" style="background-color:${cfg.bgColor};">
+                    <div class="face-header">
+                        <div class="icon-wrap">${renderIconSvg()}</div>
+                        <div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>
+                        ${cfg.subtitle ? `<div class="event-date">${esc(cfg.subtitle)}</div>` : ''}
+                    </div>
+
+                    <div class="face-center">
+                        ${tableHeader ? `<div class="table-tag" style="color:${cfg.primaryColor};">${esc(tableHeader)}</div>` : ''}
+                        <div class="table-number font-number-${cfg.fontNumber} ${tableMain.length > 4 ? 'table-text-long' : ''}" style="color:${cfg.numberColor};">${esc(tableMain)}</div>
+                    </div>
+
+                    <div class="face-body">
+                        ${guestsHtml}
+                    </div>
+
+                    <div class="face-footer">
+                        <span class="subtle-tag" style="color:${cfg.primaryColor};">✦ &nbsp; ${esc(cfg.title)} &nbsp; ✦</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        return `
+            <div class="tent-page">
+                <!-- Solapa superior de pegado -->
+                <div class="tent-flap">
+                    <div class="flap-content">
+                        <span>✂ Pestaña de pegado / ensamble (doblar hacia adentro y fijar a la base)</span>
+                    </div>
+                </div>
+
+                <!-- Línea de pliegue 1 -->
+                <div class="guide-line fold-step-1">
+                    <span>- - - - - - - - Doblar hacia adentro (Pestaña) - - - - - - - -</span>
+                </div>
+
+                <!-- Cara Posterior (invertida 180° para verse derecha al plegar en carpa) -->
+                ${renderFace('back')}
+
+                <!-- Línea de pliegue 2: Vértice superior del triángulo -->
+                <div class="guide-line apex-line">
+                    <span class="apex-badge">▲ ▲ ▲ Doblar aquí (Cúspide / Vértice superior del triángulo) ▲ ▲ ▲</span>
+                </div>
+
+                <!-- Cara Frontal (al derecho) -->
+                ${renderFace('front')}
+
+                <!-- Línea de pliegue 3: Base del triángulo -->
+                <div class="guide-line fold-step-3">
+                    <span>▼ ▼ ▼ Doblar hacia adentro (Base inferior del triángulo) ▼ ▼ ▼</span>
+                </div>
+
+                <!-- Base de apoyo horizontal -->
+                <div class="tent-base" style="background-color:${cfg.bgColor === '#ffffff' ? '#fafafa' : cfg.bgColor};">
+                    <div class="base-content">
+                        <div class="base-title">BASE DE APOYO (apoya plano sobre el mantel)</div>
+                        <div class="base-thanks" style="color:${cfg.textColor};">${esc(cfg.title)} · ${esc(cfg.baseText)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const stylesCss = `
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,400&family=Great+Vibes&family=Montserrat:wght@400;600;700;900&family=Playfair+Display:ital,wght@0,600;0,700;0,900;1,400&display=swap');
+
+        @page {
+            size: A4 portrait;
+            margin: 6mm 10mm;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: ${cfg.textColor};
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .tent-page {
+            width: 100%;
+            height: 284mm;
+            page-break-after: always;
+            break-after: page;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            box-sizing: border-box;
+            background: #ffffff;
+        }
+        .tent-page:last-child {
+            page-break-after: avoid;
+            break-after: avoid;
+        }
+
+        /* Guías de doblado y solapa */
+        .tent-flap {
+            height: 18mm;
+            background: repeating-linear-gradient(45deg, #fbfbfb, #fbfbfb 10px, #f4f4f5 10px, #f4f4f5 20px);
+            border: 1px dashed #a1a1aa;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .flap-content {
+            font-size: 8pt;
+            color: #71717a;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .guide-line {
+            height: 4mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 7pt;
+            color: #71717a;
+            position: relative;
+        }
+        .guide-line::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            border-bottom: 1px dashed #a1a1aa;
+            z-index: 1;
+        }
+        .guide-line span {
+            background: #fff;
+            padding: 0 8px;
+            position: relative;
+            z-index: 2;
+            letter-spacing: 0.5px;
+        }
+        .apex-line::before {
+            border-bottom: 2px dashed ${cfg.primaryColor};
+        }
+        .apex-badge {
+            color: ${cfg.primaryColor} !important;
+            font-weight: 700;
+            font-size: 7.5pt;
+        }
+
+        /* Caras de la carpa (Front & Back) */
+        .tent-face {
+            height: 108mm;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4mm;
+        }
+        .tent-face-back {
+            transform: rotate(180deg);
+        }
+        .tent-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            text-align: center;
+            padding: 10px 16px 8px;
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        /* Estilos de Marco */
+        .border-double .tent-inner {
+            border: 2px solid ${cfg.primaryColor};
+            outline: 1px solid ${cfg.primaryColor};
+            outline-offset: -5px;
+        }
+        .border-single .tent-inner {
+            border: 2px solid ${cfg.primaryColor};
+        }
+        .border-corners .tent-inner {
+            border: 1px solid rgba(0,0,0,0.08);
+            position: relative;
+        }
+        .border-corners .tent-inner::before,
+        .border-corners .tent-inner::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-color: ${cfg.primaryColor};
+            border-style: solid;
+        }
+        .border-corners .tent-inner::before {
+            top: 4px; left: 4px;
+            border-width: 2px 0 0 2px;
+        }
+        .border-corners .tent-inner::after {
+            bottom: 4px; right: 4px;
+            border-width: 0 2px 2px 0;
+        }
+        .border-rounded .tent-inner {
+            border: 2px solid ${cfg.primaryColor};
+            border-radius: 18px;
+        }
+        .border-none .tent-inner {
+            border: none;
+        }
+
+        /* Tipografías del Título */
+        .font-title-cursive {
+            font-family: 'Great Vibes', cursive;
+            font-size: 22pt;
+            line-height: 1.1;
+            letter-spacing: 0.5px;
+            font-weight: normal;
+        }
+        .font-title-serif {
+            font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+            font-size: 13pt;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .font-title-sans {
+            font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 11pt;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Tipografías del Número */
+        .font-number-serif {
+            font-family: 'Playfair Display', 'Cormorant Garamond', Georgia, serif;
+            font-size: 44pt;
+            line-height: 1;
+            font-weight: 900;
+            letter-spacing: -1px;
+        }
+        .font-number-sans {
+            font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 46pt;
+            line-height: 1;
+            font-weight: 900;
+        }
+        .font-number-cursive {
+            font-family: 'Great Vibes', cursive;
+            font-size: 48pt;
+            line-height: 1;
+            font-weight: normal;
+        }
+
+        .table-tag {
+            font-family: 'Montserrat', Arial, sans-serif;
+            font-size: 8.5pt;
+            letter-spacing: 4px;
+            font-weight: 800;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+        .table-text-long {
+            font-size: 22pt !important;
+            letter-spacing: 0 !important;
+        }
+        .event-date {
+            font-size: 7.5pt;
+            color: #71717a;
+            margin-top: 1px;
+            letter-spacing: 0.5px;
+            font-family: 'Montserrat', Arial, sans-serif;
+        }
+        .icon-wrap {
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .monogram-badge {
+            font-family: 'Great Vibes', cursive;
+            font-size: 18pt;
+            line-height: 1;
+            letter-spacing: 1px;
+        }
+
+        /* Comensales / Lista de invitados */
+        .face-body {
+            width: 100%;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 4px 0;
+            overflow: hidden;
+        }
+        .guest-list-box {
+            width: 100%;
+            max-width: 96%;
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 6px;
+            padding: 5px 8px;
+            text-align: left;
+        }
+        .guest-list-box.two-col {
+            column-count: 2;
+            column-gap: 14px;
+        }
+        .guest-list-box.one-col {
+            text-align: center;
+        }
+        .g-item {
+            font-size: 8pt;
+            color: ${cfg.textColor};
+            line-height: 1.3;
+            break-inside: avoid;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+        .comp {
+            font-size: 7pt;
+            color: #71717a;
+            font-weight: normal;
+        }
+
+        .welcome-quote {
+            padding: 4px 10px;
+        }
+        .quote-text {
+            font-size: 9pt;
+            font-style: italic;
+            color: #52525b;
+            margin: 0;
+            font-family: Georgia, serif;
+        }
+        .ornament {
+            font-size: 13pt;
+            margin-top: 2px;
+        }
+
+        .face-footer {
+            font-size: 6.5pt;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'Montserrat', Arial, sans-serif;
+            opacity: 0.85;
+        }
+
+        /* Base de apoyo */
+        .tent-base {
+            height: 38mm;
+            border: 1px dashed #a1a1aa;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 4px 16px;
+        }
+        .base-title {
+            font-size: 7.5pt;
+            font-weight: 700;
+            color: #52525b;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: 'Montserrat', Arial, sans-serif;
+        }
+        .base-thanks {
+            font-size: 9pt;
+            font-weight: 600;
+            margin-top: 2px;
+            font-family: Georgia, serif;
+        }
+    `;
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Carteles de Mesa (3D) - ${esc(cfg.title)}</title>
+    <style>${stylesCss}</style>
+</head>
+<body>
+    ${pagesHtml}
+</body>
+</html>`;
+
+    return html;
+};
+

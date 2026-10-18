@@ -1,9 +1,18 @@
 import React, { useState } from 'react';
-import { X, Printer, Map as MapIcon, ListOrdered, ChefHat, ClipboardCheck, FileSpreadsheet, AlertTriangle } from 'lucide-react';
+import { X, Printer, Map as MapIcon, ListOrdered, ChefHat, ClipboardCheck, FileSpreadsheet, AlertTriangle, Box } from 'lucide-react';
 import { apiFetch } from '../api';
-import { printHtml, buildPlanDocument, buildPlacementDocument, buildCateringDocument, buildReceptionDocument, exportGuestsExcel } from '../eventDocuments';
+import { printHtml, buildPlanDocument, buildPlacementDocument, buildCateringDocument, buildReceptionDocument, buildTableTentsDocument, exportGuestsExcel } from '../eventDocuments';
+import TableTentsModal from './TableTentsModal';
 
 const DOCUMENTS = [
+    {
+        id: 'tents',
+        icon: Box,
+        title: 'Carteles de mesa triangulares (3D con base)',
+        audience: 'Centros de mesa plegables',
+        description: 'Imprime números de mesa en prisma triangular con base plana para el mantel. Muestra el número e invitados en ambas caras.',
+        isTentsModal: true,
+    },
     {
         id: 'plan',
         icon: MapIcon,
@@ -40,6 +49,7 @@ const DOCUMENTS = [
 
 export default function ExportDocumentsModal({ isOpen, onClose, event, tables = [], unassigned = [], venueLayout = null, showToast }) {
     const [exportingExcel, setExportingExcel] = useState(false);
+    const [isTableTentsOpen, setIsTableTentsOpen] = useState(false);
 
     if (!isOpen) return null;
 
@@ -47,6 +57,10 @@ export default function ExportDocumentsModal({ isOpen, onClose, event, tables = 
     const data = { event, tables, unassigned, venueLayout };
 
     const handlePrint = (doc) => {
+        if (doc.isTentsModal) {
+            setIsTableTentsOpen(true);
+            return;
+        }
         printHtml(doc.build(data));
     };
 
@@ -145,6 +159,14 @@ export default function ExportDocumentsModal({ isOpen, onClose, event, tables = 
                     </div>
                 </div>
             </div>
+
+            <TableTentsModal
+                isOpen={isTableTentsOpen}
+                onClose={() => setIsTableTentsOpen(false)}
+                event={event}
+                tables={tables}
+                showToast={showToast}
+            />
         </div>
     );
 }
