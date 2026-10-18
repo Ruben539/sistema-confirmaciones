@@ -7,7 +7,8 @@ import TableExcelModal from './TableExcelModal';
 import TableTentsModal from './TableTentsModal';
 import { apiFetch } from '../api';
 
-export default function TableDistribution({ eventId, eventTitle, event, showToast, onOpenCreateEvent }) {
+export default function TableDistribution({ eventId, eventTitle, event, user, showToast, onOpenCreateEvent }) {
+    const isAdmin = user?.role === 'admin';
     const [data, setData] = useState({ tables: [], unassigned_guests: [], stats: {} });
     const [loading, setLoading] = useState(true);
     const [isExportOpen, setIsExportOpen] = useState(false);
@@ -374,14 +375,16 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2.5 lg:ml-auto">
-                        <button
-                            onClick={() => setIsTableTentsOpen(true)}
-                            title="Imprimir carteles de mesa triangulares (3D con base) para centros de mesa"
-                            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold transition-all border border-amber-200/80 dark:border-amber-800 shadow-xs"
-                        >
-                            <Box className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                            <span>Carteles de Mesa (3D)</span>
-                        </button>
+                        {isAdmin && (
+                            <button
+                                onClick={() => setIsTableTentsOpen(true)}
+                                title="Imprimir carteles de mesa triangulares (3D con base) para centros de mesa"
+                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold transition-all border border-amber-200/80 dark:border-amber-800 shadow-xs"
+                            >
+                                <Box className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                <span>Carteles de Mesa (3D)</span>
+                            </button>
+                        )}
 
                         <button
                             onClick={() => setIsTableExcelOpen(true)}
@@ -963,15 +966,19 @@ export default function TableDistribution({ eventId, eventTitle, event, showToas
                 unassigned={unassigned}
                 venueLayout={data.venue_layout}
                 showToast={showToast}
+                user={user}
             />
 
-            <TableTentsModal
-                isOpen={isTableTentsOpen}
-                onClose={() => setIsTableTentsOpen(false)}
-                event={event || { id: eventId, title: eventTitle }}
-                tables={tables}
-                showToast={showToast}
-            />
+            {isAdmin && (
+                <TableTentsModal
+                    isOpen={isTableTentsOpen}
+                    onClose={() => setIsTableTentsOpen(false)}
+                    event={event || { id: eventId, title: eventTitle }}
+                    tables={tables}
+                    showToast={showToast}
+                    user={user}
+                />
+            )}
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}

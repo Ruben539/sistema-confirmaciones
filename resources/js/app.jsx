@@ -618,6 +618,7 @@ function Dashboard({ user, onLogout }) {
                             eventId={activeEvent?.id}
                             eventTitle={activeEvent?.couple_names || activeEvent?.title}
                             event={activeEvent}
+                            user={user}
                             showToast={showToast}
                             onOpenCreateEvent={user?.role === 'admin' ? () => { setEditingEvent(null); setIsCreateEventModalOpen(true); } : null}
                         />

@@ -633,21 +633,17 @@ export const buildTableTentsDocument = ({
                     ${renderFloralMotif(cfg.floralMotif)}
 
                     <div class="tent-content-layer">
-                        <!-- Número de mesa grande y prominente -->
+                        <!-- Número de mesa SIEMPRE CENTRADO EN EL MEDIO -->
                         <div class="face-number-wrap">
                             ${tableHeader ? `<div class="table-tag" style="color:${cfg.primaryColor};">${esc(tableHeader)}</div>` : ''}
                             <div class="table-number font-number-${cfg.fontNumber} ${tableMain.length > 4 ? 'table-text-long' : ''}" style="color:${cfg.numberColor};">${esc(tableMain)}</div>
                         </div>
 
-                        <!-- Iniciales de los novios o nombre del evento + Fecha -->
-                        <div class="face-couple-wrap">
+                        <!-- Iniciales de los novios o nombre del evento + Fecha en la base inferior -->
+                        <div class="face-bottom-wrap">
                             <div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>
                             ${cfg.subtitle ? `<div class="event-date">${esc(cfg.subtitle)}</div>` : ''}
-                        </div>
-
-                        <!-- Pie sutil / Monograma / Ícono -->
-                        <div class="face-footer">
-                            ${cfg.monogram ? `<span class="monogram-badge" style="color:${cfg.primaryColor};">${esc(cfg.monogram)}</span>` : (renderIconSvg() ? renderIconSvg() : `<span class="subtle-tag" style="color:${cfg.primaryColor}; opacity:0.6;">❦</span>`)}
+                            ${cfg.monogram ? `<div class="monogram-badge" style="color:${cfg.primaryColor}; margin-top: 1mm;">${esc(cfg.monogram)}</div>` : (renderIconSvg() ? `<div class="face-footer" style="margin-top: 1mm;">${renderIconSvg()}</div>` : '')}
                         </div>
                     </div>
                 </div>
@@ -923,21 +919,14 @@ export const buildTableTentsDocument = ({
             position: relative;
             box-sizing: border-box;
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            align-items: center;
             text-align: center;
-            padding: 8px 12px 6px;
         }
         .tent-content-layer {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            align-items: center;
-            position: relative;
+            pointer-events: none;
             z-index: 2;
         }
 
@@ -977,11 +966,11 @@ export const buildTableTentsDocument = ({
         }
         .floral-wreath-wrap {
             position: absolute;
-            top: 36%;
+            top: 48%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 46mm;
-            height: 46mm;
+            width: 48mm;
+            height: 48mm;
             pointer-events: none;
             z-index: 1;
         }
@@ -1080,19 +1069,30 @@ export const buildTableTentsDocument = ({
         }
 
         .face-number-wrap {
-            margin-top: 4mm;
+            position: absolute;
+            top: 48%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            text-align: center;
+            margin: 0;
+            padding: 0;
         }
-        .face-couple-wrap {
-            margin-top: 1mm;
-            margin-bottom: 2mm;
+        .face-bottom-wrap {
+            position: absolute;
+            bottom: 5mm;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            text-align: center;
         }
 
         .table-tag {

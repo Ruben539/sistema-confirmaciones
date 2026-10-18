@@ -47,11 +47,14 @@ const DOCUMENTS = [
     },
 ];
 
-export default function ExportDocumentsModal({ isOpen, onClose, event, tables = [], unassigned = [], venueLayout = null, showToast }) {
+export default function ExportDocumentsModal({ isOpen, onClose, event, tables = [], unassigned = [], venueLayout = null, showToast, user }) {
     const [exportingExcel, setExportingExcel] = useState(false);
     const [isTableTentsOpen, setIsTableTentsOpen] = useState(false);
 
     if (!isOpen) return null;
+
+    const isAdmin = user?.role === 'admin';
+    const visibleDocs = DOCUMENTS.filter(doc => !doc.isTentsModal || isAdmin);
 
     const unseatedPeople = unassigned.reduce((acc, g) => acc + (g.seats ?? g.passes ?? 1), 0);
     const data = { event, tables, unassigned, venueLayout };
@@ -111,7 +114,7 @@ export default function ExportDocumentsModal({ isOpen, onClose, event, tables = 
                         </div>
                     )}
 
-                    {DOCUMENTS.map(doc => {
+                    {visibleDocs.map(doc => {
                         const Icon = doc.icon;
                         return (
                             <div key={doc.id} className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 flex items-center gap-4">
@@ -160,13 +163,16 @@ export default function ExportDocumentsModal({ isOpen, onClose, event, tables = 
                 </div>
             </div>
 
-            <TableTentsModal
-                isOpen={isTableTentsOpen}
-                onClose={() => setIsTableTentsOpen(false)}
-                event={event}
-                tables={tables}
-                showToast={showToast}
-            />
+            {isAdmin && (
+                <TableTentsModal
+                    isOpen={isTableTentsOpen}
+                    onClose={() => setIsTableTentsOpen(false)}
+                    event={event}
+                    tables={tables}
+                    showToast={showToast}
+                    user={user}
+                />
+            )}
         </div>
     );
 }
