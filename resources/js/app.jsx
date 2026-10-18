@@ -656,17 +656,17 @@ function Dashboard({ user, onLogout }) {
                                     eventTitle={activeEvent?.couple_names || activeEvent?.title}
                                     onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
                                     onOpenExcelModal={() => setActiveTab('ai-list')}
-                                    onOpenWhatsAppModal={botOn ? () => setIsWhatsAppModalOpen(true) : undefined}
+                                    onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
                                     onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
                                     onUpdateGuest={handleUpdateGuest}
                                     onDeleteGuest={handleDeleteGuest}
                                     onClearAll={handleClearAll}
                                     onMarkSent={handleMarkSent}
-                                    onResendQr={botOn ? handleResendQr : undefined}
-                                    onSendReminder={botOn ? handleSendReminder : undefined}
-                                    onRemindAllPending={botOn ? handleRemindAllPending : undefined}
-                                    onSendCorrections={botOn ? handleSendCorrections : undefined}
-                                    onSendCountCorrection={botOn ? handleSendCountCorrection : undefined}
+                                    onResendQr={handleResendQr}
+                                    onSendReminder={handleSendReminder}
+                                    onRemindAllPending={handleRemindAllPending}
+                                    onSendCorrections={handleSendCorrections}
+                                    onSendCountCorrection={handleSendCountCorrection}
                                     onMergeGuests={handleMergeGuests}
                                 />
                             </div>
@@ -769,17 +769,17 @@ function Dashboard({ user, onLogout }) {
                                         guests={guests}
                                         onOpenAddModal={() => { setEditingGuest(null); setIsAddModalOpen(true); }}
                                         onOpenExcelModal={() => setActiveTab('ai-list')}
-                                        onOpenWhatsAppModal={botOn ? () => setIsWhatsAppModalOpen(true) : undefined}
+                                        onOpenWhatsAppModal={() => setIsWhatsAppModalOpen(true)}
                                         onEditGuest={(guest) => { setEditingGuest(guest); setIsAddModalOpen(true); }}
                                         onUpdateGuest={handleUpdateGuest}
                                         onDeleteGuest={handleDeleteGuest}
                                         onClearAll={handleClearAll}
                                         onMarkSent={handleMarkSent}
-                                        onResendQr={botOn ? handleResendQr : undefined}
-                                        onSendReminder={botOn ? handleSendReminder : undefined}
-                                        onRemindAllPending={botOn ? handleRemindAllPending : undefined}
-                                        onSendCorrections={botOn ? handleSendCorrections : undefined}
-                                        onSendCountCorrection={botOn ? handleSendCountCorrection : undefined}
+                                        onResendQr={handleResendQr}
+                                        onSendReminder={handleSendReminder}
+                                        onRemindAllPending={handleRemindAllPending}
+                                        onSendCorrections={handleSendCorrections}
+                                        onSendCountCorrection={handleSendCountCorrection}
                                         onMergeGuests={handleMergeGuests}
                                     />
                                 </>
