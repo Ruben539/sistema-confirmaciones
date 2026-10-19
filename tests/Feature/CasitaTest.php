@@ -264,6 +264,24 @@ class CasitaTest extends TestCase
         $summary = $this->getJson('/api/casita/summary')->assertOk()->json();
         $this->assertSame(1, $summary['totals']['events']);
         $this->assertSame(2026, $summary['by_year'][0]['year']);
+        $this->assertSame([2026], $summary['years']);
+
+        // Guests come from the per-person lines; services leave out guests and the guarantee
+        $this->assertSame(280, $summary['totals']['guests']);
+        $this->assertSame(['Mozo Adicional'], array_column($summary['services'], 'name'));
+        $this->assertSame(1, $summary['by_month'][10]['events']);
+
+        // Upcoming in the next 30 days without a collected guarantee
+        $this->travelTo('2026-10-19');
+        $summary = $this->getJson('/api/casita/summary')->json();
+        $this->assertSame(1, $summary['upcoming_stats']['without_guarantee']);
+        $this->assertSame(19, $summary['upcoming'][0]['days_left']);
+
+        // A year filter limits the totals and brings the previous year to compare
+        $summary = $this->getJson('/api/casita/summary?year=2025')->json();
+        $this->assertSame(0, $summary['totals']['events']);
+        $this->assertSame(0, $summary['previous']['events']);
+        $this->assertSame(1, $summary['upcoming_stats']['count']);
     }
 
     public function test_logos_can_be_uploaded_shown_and_removed(): void
@@ -297,5 +315,36 @@ class CasitaTest extends TestCase
 
         $this->actingAs($admin)->deleteJson('/api/casita/logos/real')->assertOk()->assertJsonPath('logo.exists', false);
         $this->get('/api/casita/logos/real')->assertNotFound();
+    }
+
+    public function test_date_range_filters(): void
+    {
+        $admin = $this->admin();
+        $event = $this->createEvent($admin); // 2026-11-07
+        $this->postJson('/api/casita/events', ['client_name' => 'Otro', 'event_date' => '2025-11-08', 'items' => [
+            ['description' => 'Personas', 'unit_price' => 100000, 'quantity' => 10],
+        ]])->assertCreated();
+        $this->postJson("/api/casita/events/{$event['id']}/payments", ['paid_on' => '2026-05-01', 'kind' => 'garantia', 'amount' => 1000000]);
+        $this->postJson("/api/casita/events/{$event['id']}/payments", ['paid_on' => '2026-06-15', 'kind' => 'pago', 'amount' => 2000000]);
+
+        // Events: both ends included
+        $names = fn ($q) => array_column($this->getJson("/api/casita/events?{$q}")->assertOk()->json('events'), 'client_name');
+        $this->assertSame(['María y Michael'], $names('from=2026-11-07&to=2026-11-07'));
+        $this->assertSame(['Otro'], $names('to=2025-12-31'));
+        $this->assertCount(2, $names('from=2025-01-01'));
+        $this->getJson('/api/casita/events?from=2026-02-01&to=2026-01-01')->assertStatus(422);
+
+        // Payments by payment date
+        $payments = $this->getJson('/api/casita/payments?from=2026-06-01&to=2026-06-30')->assertOk()->json();
+        $this->assertSame([2000000], array_column($payments, 'amount'));
+
+        // Summary: the range wins over the year and compares with the same dates a year earlier
+        $summary = $this->getJson('/api/casita/summary?year=2025&from=2026-11-01&to=2026-11-30')->assertOk()->json();
+        $this->assertNull($summary['year']);
+        $this->assertSame(1, $summary['totals']['events']);
+        $this->assertSame(['Nov 26'], array_column($summary['by_month'], 'label'));
+        // November 2025 ("Otro") is the comparison, aligned with the same month
+        $this->assertSame(1, $summary['previous']['events']);
+        $this->assertSame(1, $summary['by_month_previous'][0]['events']);
     }
 }

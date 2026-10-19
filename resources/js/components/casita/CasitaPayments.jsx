@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Wallet, ShieldCheck, Search } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { gs, fmtDate, KIND_LABELS } from './casitaUtils';
-import { PageHeader, Card, Kpi, Empty, Field, inputCls } from './CasitaUi';
+import { PageHeader, Card, Kpi, Empty, Field, DateRange, appendRange, inputCls } from './CasitaUi';
 import { PaymentsCard } from './CasitaEventEditor';
 import CasitaEventPicker from './CasitaEventPicker';
 
@@ -18,15 +18,19 @@ export default function CasitaPayments({ mode = 'payments', showToast, onOpenEve
     const [search, setSearch] = useState('');
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
+    const [range, setRange] = useState({ from: '', to: '' });
 
     const load = async () => {
         setLoading(true);
-        const params = isGuarantees ? '?kind=garantia,sena,devolucion' : (kind ? `?kind=${kind}` : '');
-        const { ok, json } = await apiFetch(`/api/casita/payments${params}`);
+        const params = new URLSearchParams();
+        if (isGuarantees) params.set('kind', 'garantia,sena,devolucion');
+        else if (kind) params.set('kind', kind);
+        appendRange(params, range);
+        const { ok, json } = await apiFetch(`/api/casita/payments?${params}`);
         if (ok) setPayments(json);
         setLoading(false);
     };
-    useEffect(() => { load(); }, [kind, mode]);
+    useEffect(() => { load(); }, [kind, mode, range]);
 
     useEffect(() => {
         if (!selectedId) { setSelected(null); return; }
@@ -107,6 +111,10 @@ export default function CasitaPayments({ mode = 'payments', showToast, onOpenEve
                             {Object.entries(KIND_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                         </select>
                     )}
+                </div>
+                <div className="mb-4">
+                    <DateRange value={range} onChange={setRange} />
+                    {(range.from || range.to) && <p className="text-[11px] text-zinc-500 mt-1.5">Se filtra por la fecha del pago. Los totales de arriba son de este período.</p>}
                 </div>
 
                 {loading ? <Empty>Cargando…</Empty> : visible.length === 0 ? <Empty>No hay movimientos.</Empty> : isGuarantees ? (

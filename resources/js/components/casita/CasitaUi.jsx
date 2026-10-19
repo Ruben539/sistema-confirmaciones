@@ -45,17 +45,25 @@ export function Card({ title, actions, children, className = '' }) {
     );
 }
 
-export function Kpi({ label, value, hint, tone = 'zinc' }) {
+/** delta: change vs. the previous period in % (shown as a small ▲/▼ badge when it's a number). */
+export function Kpi({ label, value, hint, tone = 'zinc', delta, deltaHint }) {
     const tones = {
         zinc: 'text-zinc-900 dark:text-white',
         rose: 'text-rose-600 dark:text-rose-400',
         emerald: 'text-emerald-600 dark:text-emerald-400',
         amber: 'text-amber-600 dark:text-amber-400',
     };
+    const hasDelta = typeof delta === 'number' && Number.isFinite(delta);
     return (
         <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-rose-100 dark:border-zinc-800 p-5 shadow-sm">
             <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{label}</div>
             <div className={`text-xl font-black mt-1 tabular-nums ${tones[tone]}`}>{value}</div>
+            {hasDelta && (
+                <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+                    <span className={`font-black ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}%</span>
+                    {deltaHint && <span className="text-zinc-500">{deltaHint}</span>}
+                </div>
+            )}
             {hint && <div className="text-[11px] text-zinc-500 mt-1">{hint}</div>}
         </div>
     );
@@ -248,3 +256,55 @@ export function CatalogItemModal({ item, initialName = '', onClose, onSaved, sho
         document.body
     );
 }
+
+// ---------------------------------------------------------------------------
+// Date range filter (Desde / Hasta) with quick presets
+// ---------------------------------------------------------------------------
+
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const RANGE_PRESETS = [
+    ['Este mes', (t) => [new Date(t.getFullYear(), t.getMonth(), 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)]],
+    ['Mes pasado', (t) => [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]],
+    ['Últimos 3 meses', (t) => [new Date(t.getFullYear(), t.getMonth() - 2, 1), new Date(t.getFullYear(), t.getMonth() + 1, 0)]],
+    ['Este año', (t) => [new Date(t.getFullYear(), 0, 1), new Date(t.getFullYear(), 11, 31)]],
+];
+
+/** value: { from: 'yyyy-mm-dd' | '', to: 'yyyy-mm-dd' | '' } */
+export function DateRange({ value, onChange, presets = true }) {
+    const { from = '', to = '' } = value || {};
+    const active = from || to;
+    const dateCls = 'text-xs font-semibold rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white px-2.5 py-2 outline-none focus:ring-2 focus:ring-rose-500';
+    return (
+        <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-500">
+                Desde <input type="date" value={from} max={to || undefined} onChange={e => onChange({ from: e.target.value, to })} className={dateCls} />
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-500">
+                Hasta <input type="date" value={to} min={from || undefined} onChange={e => onChange({ from, to: e.target.value })} className={dateCls} />
+            </label>
+            {presets && RANGE_PRESETS.map(([label, make]) => {
+                const [f, t] = make(new Date()).map(isoOf);
+                const on = from === f && to === t;
+                return (
+                    <button key={label} type="button" onClick={() => onChange({ from: f, to: t })}
+                        className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold transition-all ${on ? 'bg-rose-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-rose-100 dark:hover:bg-zinc-700'}`}>
+                        {label}
+                    </button>
+                );
+            })}
+            {active && (
+                <button type="button" onClick={() => onChange({ from: '', to: '' })} className="flex items-center gap-1 px-2 py-1.5 rounded-full text-[11px] font-bold text-zinc-500 hover:text-rose-600" title="Quitar fechas">
+                    <X className="w-3.5 h-3.5" /> Quitar fechas
+                </button>
+            )}
+        </div>
+    );
+}
+
+/** Adds from/to to URLSearchParams when set. */
+export const appendRange = (params, range) => {
+    if (range?.from) params.set('from', range.from);
+    if (range?.to) params.set('to', range.to);
+    return params;
+};

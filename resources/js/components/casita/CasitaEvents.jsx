@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Plus, Search } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { gs, fmtDate, isPast } from './casitaUtils';
-import { PageHeader, Card, Empty, BalanceBadge, btnPrimary, inputCls } from './CasitaUi';
+import { PageHeader, Card, Empty, BalanceBadge, DateRange, appendRange, btnPrimary, inputCls } from './CasitaUi';
 import { LogosButton } from './CasitaLogos';
 
 export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
@@ -15,6 +15,8 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
     const [status, setStatus] = useState('');
     const [planner, setPlanner] = useState('');
     const [planners, setPlanners] = useState([]);
+    const [range, setRange] = useState({ from: '', to: '' });
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         const params = new URLSearchParams();
@@ -22,13 +24,15 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
         if (when) params.set('when', when);
         if (status) params.set('status', status);
         if (planner) params.set('planner', planner);
-        if (when === 'upcoming') params.set('sort', 'date_asc');
+        appendRange(params, range);
+        if (when === 'upcoming' || range.from || range.to) params.set('sort', 'date_asc');
         setLoading(true);
         apiFetch(`/api/casita/events?${params}`).then(({ ok, json }) => {
-            if (ok) { setEvents(json.events); setYears(json.years); }
+            if (ok) { setEvents(json.events); setYears(json.years); setError(null); }
+            else setError(json?.errors?.to?.[0] || json?.message || 'No se pudo filtrar.');
             setLoading(false);
         });
-    }, [year, when, status, planner]);
+    }, [year, when, status, planner, range]);
 
     useEffect(() => {
         apiFetch('/api/planners').then(({ ok, json }) => ok && Array.isArray(json) && setPlanners(json));
@@ -58,7 +62,7 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
                         <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente o menú…" className={`${inputCls} pl-9`} />
                     </div>
-                    <select value={year} onChange={e => setYear(e.target.value)} className={inputCls}>
+                    <select value={year} onChange={e => { setYear(e.target.value); if (e.target.value) setRange({ from: '', to: '' }); }} className={inputCls}>
                         <option value="">Todos los años</option>
                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
@@ -77,6 +81,11 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
                         <option value="none">Sin wedding planner</option>
                         {planners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
+                </div>
+
+                <div className="mb-4">
+                    <DateRange value={range} onChange={r => { setRange(r); if (r.from || r.to) setYear(''); }} />
+                    {error && <div className="text-xs font-bold text-rose-600 mt-2">{error}</div>}
                 </div>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-zinc-500 mb-3">
