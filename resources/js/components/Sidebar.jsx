@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, ChevronDown, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone, FileSpreadsheet, Home, ClipboardList, Wallet, PackageX, Tags, Upload } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, ChevronDown, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone, FileSpreadsheet, Home, ClipboardList, Wallet, PackageX, Tags, Upload, Contact } from 'lucide-react';
 
 // "La Casita" submenu: one screen per sheet of the old Excel
 const CASITA_ITEMS = [
     { id: 'casita_dashboard', label: 'Resumen', icon: LayoutDashboard },
     { id: 'casita_events', label: 'Registro de eventos', icon: ClipboardList },
+    { id: 'casita_clients', label: 'Clientes', icon: Contact },
     { id: 'casita_payments', label: 'Pagos', icon: Wallet },
     { id: 'casita_guarantees', label: 'Garantías', icon: ShieldCheck },
     { id: 'casita_losses', label: 'Pérdidas y bebidas', icon: PackageX },

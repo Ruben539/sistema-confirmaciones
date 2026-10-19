@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CasitaEvent extends Model
 {
-    protected $fillable = ['client_name', 'event_date', 'schedule', 'venue', 'menu', 'notes', 'event_id', 'created_by'];
+    protected $fillable = ['client_id', 'client_name', 'event_date', 'schedule', 'venue', 'menu', 'notes', 'event_id', 'created_by'];
 
     protected $casts = [
         'event_date' => 'date:Y-m-d',
@@ -32,6 +32,11 @@ class CasitaEvent extends Model
     public function losses()
     {
         return $this->hasMany(CasitaLoss::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function client()
+    {
+        return $this->belongsTo(CasitaClient::class, 'client_id');
     }
 
     public function event()

@@ -6,6 +6,7 @@ import CasitaPayments from './CasitaPayments';
 import CasitaLosses from './CasitaLosses';
 import CasitaCatalog from './CasitaCatalog';
 import CasitaImport from './CasitaImport';
+import CasitaClients from './CasitaClients';
 
 /**
  * "La Casita" menu: one screen per sheet of the old Excel.
@@ -39,6 +40,8 @@ export default function CasitaModule({ view, setView, systemEvents, showToast })
             ) : (
                 <CasitaEvents onOpenEvent={openEvent} onNewEvent={newEvent} />
             );
+        case 'casita_clients':
+            return <CasitaClients showToast={showToast} onOpenEvent={openEvent} onNewEvent={newEvent} />;
         case 'casita_payments':
             return <CasitaPayments key="payments" mode="payments" showToast={showToast} onOpenEvent={openEvent} />;
         case 'casita_guarantees':
@@ -48,7 +51,7 @@ export default function CasitaModule({ view, setView, systemEvents, showToast })
         case 'casita_catalog':
             return <CasitaCatalog showToast={showToast} />;
         case 'casita_import':
-            return <CasitaImport showToast={showToast} onDone={() => { setOpenEventId(null); setView('casita_events'); }} />;
+            return <CasitaImport showToast={showToast} onDone={() => setView('casita_clients')} />;
         default:
             return <CasitaDashboard onOpenEvent={openEvent} onNewEvent={newEvent} onGoImport={() => setView('casita_import')} />;
     }

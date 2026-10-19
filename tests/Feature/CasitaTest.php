@@ -121,6 +121,71 @@ class CasitaTest extends TestCase
         $this->assertSame(2000000, $events['Futuro']['balance']);
     }
 
+    public function test_events_are_grouped_by_client_ignoring_accents(): void
+    {
+        $admin = $this->admin();
+        $rows = [
+            ['date' => '2025-12-27', 'client' => 'María y Juan', 'detail' => 'Personas', 'price' => 190000, 'quantity' => 105],
+            ['date' => '2026-07-25', 'client' => 'Maria  y juan', 'detail' => 'Personas', 'price' => 200000, 'quantity' => 120],
+            ['date' => '2026-08-07', 'client' => 'Aracely y Josias', 'detail' => 'Personas', 'price' => 220000, 'quantity' => 150],
+            ['date' => '2026-08-08', 'client' => 'Araceli y Josias', 'detail' => 'Personas', 'price' => 200000, 'quantity' => 120],
+        ];
+        $res = $this->actingAs($admin)->postJson('/api/casita/events/import', ['rows' => $rows])->json();
+        $this->assertSame(3, $res['created_clients']);
+
+        $clients = collect($this->getJson('/api/casita/clients')->json())->keyBy('name');
+        $this->assertSame(2, $clients['María y Juan']['events_count']);
+        $this->assertSame(190000 * 105 + 200000 * 120, $clients['María y Juan']['budget_total']);
+
+        // Similar names are only suggested, never merged automatically
+        $pairs = $this->getJson('/api/casita/clients/duplicates')->json();
+        $this->assertCount(1, $pairs);
+
+        $merge = $this->postJson("/api/casita/clients/{$clients['Araceli y Josias']['id']}/merge", ['into_id' => $clients['Aracely y Josias']['id']])->assertOk();
+        $client = $this->getJson("/api/casita/clients/{$clients['Aracely y Josias']['id']}")->json();
+        $this->assertSame(2, $client['events_count']);
+        $this->assertSame('Aracely y Josias', $client['events'][0]['client_name']);
+        $this->assertCount(2, $this->getJson('/api/casita/clients')->json());
+    }
+
+    public function test_new_event_is_linked_to_existing_client_and_contact_can_be_edited(): void
+    {
+        $admin = $this->admin();
+        $first = $this->createEvent($admin);
+        $second = $this->postJson('/api/casita/events', ['client_name' => 'maria y michael', 'items' => []])->json('event');
+        $this->assertSame($first['client_id'], $second['client_id']);
+
+        $this->putJson("/api/casita/clients/{$first['client_id']}", ['name' => 'María y Michael', 'phone' => '0981 123456'])->assertOk();
+        $this->assertSame('0981 123456', $this->getJson("/api/casita/clients/{$first['client_id']}")->json('phone'));
+    }
+
+    public function test_command_imports_the_csv(): void
+    {
+        $csv = tempnam(sys_get_temp_dir(), 'casita') . '.csv';
+        // Same layout and encoding as the Excel export
+        file_put_contents($csv, mb_convert_encoding(implode("\r\n", [
+            ';;;;;;;;;;',
+            ';Fecha;Lugar;Cliente;Menu;Detalle;Precio;Cantidad;Total;Observación;',
+            ';07/11/2026;La Casita;María y Michael;Buffet de pastas con carne;Garantia; ₲ 1.000.000 ;1; ₲ 1.000.000 ;;',
+            ';07/11/2026;La Casita;María y Michael;Buffet de pastas con carne;Incluye un metre; ₲ -   ;1; ₲ -   ;;',
+            ';21/11/225;La Casita;Tais y Marcos;Servicio de asado;Garantia; ₲ 700.000 ;1; ₲ 700.000 ;;',
+            ';;;;;;;;;;',
+        ]), 'Windows-1252', 'UTF-8'));
+
+        $this->artisan('casita:import', ['path' => $csv, '--dry-run' => true])->assertSuccessful();
+        $this->assertSame(0, \App\Models\CasitaEvent::count());
+
+        $this->artisan('casita:import', ['path' => $csv, '--settle-past' => true])->assertSuccessful();
+        $this->assertSame(2, \App\Models\CasitaEvent::count());
+        $this->assertSame(2, \App\Models\CasitaClient::count());
+        $this->assertSame('María y Michael', \App\Models\CasitaClient::orderBy('id')->first()->name);
+        $this->assertSame('2025-11-21', \App\Models\CasitaEvent::where('client_name', 'Tais y Marcos')->first()->event_date->format('Y-m-d'));
+
+        $this->artisan('casita:import', ['path' => $csv])->assertSuccessful();
+        $this->assertSame(2, \App\Models\CasitaEvent::count());
+        unlink($csv);
+    }
+
     public function test_summary(): void
     {
         $admin = $this->admin();

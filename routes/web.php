@@ -19,6 +19,7 @@ use App\Http\Controllers\AiListController;
 use App\Http\Controllers\LiveStreamController;
 use App\Http\Controllers\CasitaController;
 use App\Http\Controllers\CasitaCatalogController;
+use App\Http\Controllers\CasitaClientController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -200,6 +201,11 @@ Route::prefix('api')->group(function () {
             Route::get('/payments', [CasitaController::class, 'payments']);
             Route::put('/payments/{paymentId}', [CasitaController::class, 'updatePayment']);
             Route::delete('/payments/{paymentId}', [CasitaController::class, 'destroyPayment']);
+            Route::get('/clients', [CasitaClientController::class, 'index']);
+            Route::get('/clients/duplicates', [CasitaClientController::class, 'duplicates']);
+            Route::get('/clients/{id}', [CasitaClientController::class, 'show']);
+            Route::put('/clients/{id}', [CasitaClientController::class, 'update']);
+            Route::post('/clients/{id}/merge', [CasitaClientController::class, 'merge']);
             Route::get('/catalog', [CasitaCatalogController::class, 'index']);
             Route::post('/catalog', [CasitaCatalogController::class, 'store']);
             Route::put('/catalog/{id}', [CasitaCatalogController::class, 'update']);

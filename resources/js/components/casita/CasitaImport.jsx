@@ -77,11 +77,11 @@ export default function CasitaImport({ showToast, onDone }) {
                         <CheckCircle2 className="w-6 h-6 text-emerald-500 shrink-0" />
                         <div className="text-xs space-y-1">
                             <p className="text-sm font-black">{result.message}</p>
-                            <p>{result.created_items} líneas de presupuesto cargadas.</p>
+                            <p>{result.created_clients} clientes nuevos y {result.created_items} líneas de presupuesto cargadas.</p>
                             {result.settled_past > 0 && <p>{result.settled_past} eventos ya realizados quedaron como pagados.</p>}
                             {result.skipped_existing > 0 &&<p>{result.skipped_existing} eventos ya estaban cargados y se saltaron.</p>}
                             {result.warnings.map(w => <p key={w} className="text-amber-600">{w}</p>)}
-                            <button onClick={onDone} className={`${btnGhost} mt-2`}>Ver el registro de eventos</button>
+                            <button onClick={onDone} className={`${btnGhost} mt-2`}>Ver los clientes</button>
                         </div>
                     </div>
                 </Card>

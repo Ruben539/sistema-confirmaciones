@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CasitaClient;
 use App\Models\CasitaEvent;
 use App\Models\CasitaLoss;
 use App\Models\CasitaPayment;
+use App\Services\CasitaImporter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +25,7 @@ class CasitaController extends Controller
 
     private function present(CasitaEvent $event): array
     {
-        return array_merge($event->only(['id', 'client_name', 'schedule', 'venue', 'menu', 'notes', 'event_id']), [
+        return array_merge($event->only(['id', 'client_id', 'client_name', 'schedule', 'venue', 'menu', 'notes', 'event_id']), [
             'event_date' => $event->event_date?->format('Y-m-d'),
             'items_count' => $event->items_count ?? null,
         ], $event->totals());
@@ -171,9 +173,10 @@ class CasitaController extends Controller
         $data = $this->validateEvent($request);
 
         $event = DB::transaction(function () use ($data, $request) {
+            $client = CasitaClient::resolve($data['client_name']);
             $event = CasitaEvent::create(array_merge(
                 collect($data)->except('items')->all(),
-                ['venue' => $data['venue'] ?? 'La Casita', 'created_by' => $request->user()->id]
+                ['client_id' => $client->id, 'client_name' => $client->name, 'venue' => $data['venue'] ?? 'La Casita', 'created_by' => $request->user()->id]
             ));
             $this->syncItems($event, $data['items'] ?? []);
             return $event;
@@ -189,7 +192,11 @@ class CasitaController extends Controller
         $data = $this->validateEvent($request);
 
         DB::transaction(function () use ($event, $data) {
-            $event->update(array_merge(collect($data)->except('items')->all(), ['venue' => $data['venue'] ?? 'La Casita']));
+            // Renaming the client in the event moves it to the client with that name (created if new)
+            $client = CasitaClient::resolve($data['client_name']);
+            $event->update(array_merge(collect($data)->except('items')->all(), [
+                'client_id' => $client->id, 'client_name' => $client->name, 'venue' => $data['venue'] ?? 'La Casita',
+            ]));
             if (array_key_exists('items', $data)) $this->syncItems($event, $data['items']);
         });
 
@@ -286,17 +293,14 @@ class CasitaController extends Controller
 
     // ───────────── Importar la hoja "Registro" del Excel ─────────────
 
-    /**
-     * Recibe las filas ya leídas en el navegador. Agrupa por fecha + cliente, junta los bloques
-     * repetidos (la planilla tiene eventos copiados 2 y 3 veces) y salta los eventos que ya existen.
-     */
-    public function import(Request $request)
+    /** Filas ya leídas en el navegador. La lógica está en CasitaImporter (la usa también `php artisan casita:import`). */
+    public function import(Request $request, CasitaImporter $importer)
     {
         $this->authorizeAdmin($request);
 
         $data = $request->validate([
             'rows' => 'required|array|max:20000',
-            'rows.*.date' => 'nullable|string|max:20',
+            'rows.*.date' => 'nullable|date_format:Y-m-d',
             'rows.*.client' => 'required|string|max:255',
             'rows.*.venue' => 'nullable|string|max:255',
             'rows.*.menu' => 'nullable|string|max:255',
@@ -304,112 +308,9 @@ class CasitaController extends Controller
             'rows.*.price' => 'required|integer|min:0',
             'rows.*.quantity' => 'required|integer|min:0',
             'rows.*.note' => 'nullable|string|max:255',
-            // The Excel has no payment history: optionally mark events that already happened as paid
             'settle_past' => 'boolean',
         ]);
 
-        $settlePast = (bool) ($data['settle_past'] ?? false);
-        $today = Carbon::today()->toDateString();
-        $settled = 0;
-        $warnings = [];
-
-        // Consecutive rows of the same date + client form a block
-        $blocks = [];
-        foreach ($data['rows'] as $row) {
-            $key = ($row['date'] ?? '') . '|' . mb_strtolower(trim(preg_replace('/\s+/u', ' ', $row['client'])));
-            $last = array_key_last($blocks);
-            if ($last !== null && $blocks[$last]['key'] === $key) {
-                $blocks[$last]['rows'][] = $row;
-            } else {
-                $blocks[] = ['key' => $key, 'rows' => [$row]];
-            }
-        }
-
-        // Same event repeated in several blocks: keep each distinct line as many times as its largest block has it
-        $events = [];
-        $duplicateBlocks = 0;
-        foreach ($blocks as $block) {
-            $counts = [];
-            foreach ($block['rows'] as $row) {
-                $sig = mb_strtolower(trim($row['detail'])) . '|' . $row['price'] . '|' . $row['quantity'];
-                $counts[$sig] ??= ['row' => $row, 'n' => 0];
-                $counts[$sig]['n']++;
-            }
-            if (isset($events[$block['key']])) {
-                $duplicateBlocks++;
-                foreach ($counts as $sig => $c) {
-                    $prev = $events[$block['key']]['lines'][$sig]['n'] ?? 0;
-                    $events[$block['key']]['lines'][$sig] = ['row' => $c['row'], 'n' => max($prev, $c['n'])];
-                }
-            } else {
-                $events[$block['key']] = ['first' => $block['rows'][0], 'lines' => $counts];
-            }
-        }
-
-        $created = 0;
-        $createdItems = 0;
-        $skipped = 0;
-
-        DB::transaction(function () use ($events, $request, $settlePast, $today, &$created, &$createdItems, &$skipped, &$settled) {
-            foreach ($events as $ev) {
-                $first = $ev['first'];
-                $client = trim(preg_replace('/\s+/u', ' ', $first['client']));
-                $date = $first['date'] ?: null;
-
-                $exists = CasitaEvent::whereRaw('LOWER(client_name) = ?', [mb_strtolower($client)])
-                    ->when($date, fn ($q) => $q->whereDate('event_date', $date), fn ($q) => $q->whereNull('event_date'))
-                    ->exists();
-                if ($exists) { $skipped++; continue; }
-
-                $menu = collect($ev['lines'])->pluck('row.menu')->filter()->first();
-                $notes = collect($ev['lines'])->pluck('row.note')->filter()->unique()->implode(' · ');
-
-                $event = CasitaEvent::create([
-                    'client_name' => $client,
-                    'event_date' => $date,
-                    'venue' => trim($first['venue'] ?? '') ?: 'La Casita',
-                    'menu' => $menu ? trim($menu) : null,
-                    'notes' => $notes ?: null,
-                    'created_by' => $request->user()->id,
-                ]);
-
-                $i = 0;
-                foreach ($ev['lines'] as $line) {
-                    for ($k = 0; $k < $line['n']; $k++) {
-                        $event->items()->create([
-                            'description' => trim($line['row']['detail']),
-                            'unit_price' => (int) $line['row']['price'],
-                            'quantity' => (int) $line['row']['quantity'],
-                            'sort_order' => $i++,
-                        ]);
-                        $createdItems++;
-                    }
-                }
-
-                $budget = (int) $event->items()->sum('total');
-                if ($settlePast && $date && $date < $today && $budget > 0) {
-                    $event->payments()->create([
-                        'paid_on' => $date,
-                        'kind' => 'pago',
-                        'amount' => $budget,
-                        'note' => 'Saldado al importar (historial del Excel)',
-                    ]);
-                    $settled++;
-                }
-                $created++;
-            }
-        });
-
-        if ($duplicateBlocks) $warnings[] = "Se juntaron {$duplicateBlocks} bloques repetidos (el mismo evento copiado más de una vez).";
-
-        return response()->json([
-            'message' => "Importación lista: {$created} eventos nuevos.",
-            'created_events' => $created,
-            'created_items' => $createdItems,
-            'skipped_existing' => $skipped,
-            'duplicate_blocks' => $duplicateBlocks,
-            'settled_past' => $settled,
-            'warnings' => $warnings,
-        ]);
+        return response()->json($importer->import($data['rows'], (bool) ($data['settle_past'] ?? false), $request->user()->id));
     }
 }

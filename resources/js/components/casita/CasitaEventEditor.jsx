@@ -20,6 +20,7 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
     const [lines, setLines] = useState([]);
     const [saved, setSaved] = useState(null); // last version from the server (totals, payments)
     const [catalog, setCatalog] = useState([]);
+    const [clientNames, setClientNames] = useState([]);
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -28,6 +29,8 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
 
     useEffect(() => {
         apiFetch('/api/casita/catalog').then(({ ok, json }) => ok && setCatalog(json.filter(i => i.is_active)));
+        // Typing an existing client's name attaches the event to that client
+        apiFetch('/api/casita/clients').then(({ ok, json }) => ok && setClientNames(json.map(c => c.name)));
     }, []);
 
     const applyServer = (ev) => {
@@ -148,7 +151,8 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
             <Card title="Datos del evento">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <Field label="Cliente" className="md:col-span-2">
-                        <input value={form.client_name} onChange={e => setField('client_name', e.target.value)} className={inputCls} placeholder="Ej: María y Michael" />
+                        <input value={form.client_name} onChange={e => setField('client_name', e.target.value)} list="casita-clients" className={inputCls} placeholder="Ej: María y Michael (o elegí un cliente existente)" />
+                        <datalist id="casita-clients">{clientNames.map(n => <option key={n} value={n} />)}</datalist>
                     </Field>
                     <Field label="Fecha del evento">
                         <DateInput value={form.event_date} onChange={v => setField('event_date', v)} className={inputCls} />
