@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, ChevronDown, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone, FileSpreadsheet, Home, ClipboardList, Wallet, PackageX, Tags, Upload, Contact } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone, FileSpreadsheet, ClipboardList, Wallet, PackageX, Tags, Upload, Contact } from 'lucide-react';
 
-// "La Casita" submenu: one screen per sheet of the old Excel
+// "Casita Quinta" menu: one screen per sheet of the old Excel
 const CASITA_ITEMS = [
     { id: 'casita_dashboard', label: 'Resumen', icon: LayoutDashboard },
     { id: 'casita_events', label: 'Registro de eventos', icon: ClipboardList },
@@ -33,8 +33,6 @@ export default function Sidebar({
 }) {
     const [collapsed, setCollapsed] = useState(false);
     const [showEventsList, setShowEventsList] = useState(false);
-    const inCasita = activeTab?.startsWith('casita_');
-    const [casitaOpen, setCasitaOpen] = useState(inCasita);
 
     const isAdmin = user?.role === 'admin';
     const isPlanner = user?.role === 'planner';
@@ -212,6 +210,35 @@ export default function Sidebar({
                         )}
                     </button>
 
+                    {/* Casita Quinta: venue administration (replaces the Excel workbook) */}
+                    {isAdmin && (
+                        <div className="pt-2 space-y-1">
+                            {!collapsed && (
+                                <div className="px-3 text-[10px] font-bold text-amber-500 uppercase tracking-wider mb-1">
+                                    Casita Quinta
+                                </div>
+                            )}
+                            {CASITA_ITEMS.map(({ id, label, icon: Icon }) => (
+                                <button
+                                    key={id}
+                                    onClick={() => setActiveTab(id)}
+                                    title={label}
+                                    className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === id ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                                >
+                                    <span className="flex items-center gap-3">
+                                        <Icon className={`w-4 h-4 shrink-0 ${activeTab === id ? 'text-white' : 'text-amber-500'}`} />
+                                        {!collapsed && <span>{label}</span>}
+                                    </span>
+                                    {!collapsed && id === 'casita_events' && pendingContracts.casita > 0 && (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm" title="Eventos sin contrato firmado">
+                                            {pendingContracts.casita}
+                                        </span>
+                                    )}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Admin Navigation Options */}
                     {isAdmin && (
                         <div className="pt-2 space-y-1">
@@ -257,44 +284,6 @@ export default function Sidebar({
                                 <Tag className={`w-4 h-4 shrink-0 ${activeTab === 'event_types' ? 'text-white' : 'text-amber-500'}`} />
                                 {!collapsed && <span>Tipos de Eventos</span>}
                             </button>
-
-                            {/* La Casita: venue administration (replaces the Excel workbook) */}
-                            <button
-                                onClick={() => {
-                                    if (!inCasita) setActiveTab('casita_dashboard');
-                                    setCasitaOpen(o => (inCasita ? !o : true));
-                                }}
-                                className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${inCasita ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
-                                title="La Casita"
-                            >
-                                <span className="flex items-center gap-3">
-                                    <Home className="w-4 h-4 shrink-0 text-amber-500" />
-                                    {!collapsed && <span>La Casita</span>}
-                                </span>
-                                <span className="flex items-center gap-2">
-                                    {!collapsed && pendingContracts.casita > 0 && (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm" title="Eventos sin contrato firmado">
-                                        {pendingContracts.casita}
-                                    </span>
-                                )}
-                                    {!collapsed && <ChevronDown className={`w-4 h-4 transition-transform ${casitaOpen ? 'rotate-180' : ''}`} />}
-                                </span>
-                            </button>
-                            {casitaOpen && (
-                                <div className={`space-y-1 ${collapsed ? '' : 'pl-3 ml-4 border-l border-amber-200 dark:border-amber-900/50'}`}>
-                                    {CASITA_ITEMS.map(({ id, label, icon: Icon }) => (
-                                        <button
-                                            key={id}
-                                            onClick={() => setActiveTab(id)}
-                                            title={label}
-                                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === id ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-md shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
-                                        >
-                                            <Icon className="w-4 h-4 shrink-0" />
-                                            {!collapsed && <span>{label}</span>}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
                         </div>
                     )}
 
