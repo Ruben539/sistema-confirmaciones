@@ -17,6 +17,8 @@ use App\Http\Controllers\SpotifyController;
 use App\Http\Controllers\WhatsAppCloudWebhookController;
 use App\Http\Controllers\AiListController;
 use App\Http\Controllers\LiveStreamController;
+use App\Http\Controllers\CasitaController;
+use App\Http\Controllers\CasitaCatalogController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -183,6 +185,26 @@ Route::prefix('api')->group(function () {
         Route::post('/events/{eventId}/timing', [TimingController::class, 'save']);
         Route::post('/events/{eventId}/timing/upload', [TimingController::class, 'upload']);
         Route::post('/events/{eventId}/timing/items/{itemId}/toggle', [TimingController::class, 'toggleItem']);
+
+        // La Casita: registro de eventos, presupuestos, pagos, garantías y pérdidas (solo admin)
+        Route::prefix('casita')->group(function () {
+            Route::get('/summary', [CasitaController::class, 'summary']);
+            Route::get('/events', [CasitaController::class, 'index']);
+            Route::post('/events', [CasitaController::class, 'store']);
+            Route::post('/events/import', [CasitaController::class, 'import']);
+            Route::get('/events/{id}', [CasitaController::class, 'show']);
+            Route::put('/events/{id}', [CasitaController::class, 'update']);
+            Route::delete('/events/{id}', [CasitaController::class, 'destroy']);
+            Route::post('/events/{id}/payments', [CasitaController::class, 'storePayment']);
+            Route::put('/events/{id}/losses', [CasitaController::class, 'saveLosses']);
+            Route::get('/payments', [CasitaController::class, 'payments']);
+            Route::put('/payments/{paymentId}', [CasitaController::class, 'updatePayment']);
+            Route::delete('/payments/{paymentId}', [CasitaController::class, 'destroyPayment']);
+            Route::get('/catalog', [CasitaCatalogController::class, 'index']);
+            Route::post('/catalog', [CasitaCatalogController::class, 'store']);
+            Route::put('/catalog/{id}', [CasitaCatalogController::class, 'update']);
+            Route::delete('/catalog/{id}', [CasitaCatalogController::class, 'destroy']);
+        });
     });
 });
 

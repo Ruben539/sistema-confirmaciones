@@ -25,6 +25,7 @@ import SendReviewModal from './components/SendReviewModal';
 import WhatsAppWeb from './components/WhatsAppWeb';
 import AiListAssistant from './components/AiListAssistant';
 import EventInteractivePanel from './components/EventInteractivePanel';
+import CasitaModule from './components/casita/CasitaModule';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
 import PublicDedicationPage from './components/PublicDedicationPage';
@@ -609,6 +610,8 @@ function Dashboard({ user, onLogout }) {
                                 setActiveTab('dashboard');
                             }}
                         />
+                    ) : activeTab.startsWith('casita_') && user?.role === 'admin' ? (
+                        <CasitaModule view={activeTab} setView={setActiveTab} systemEvents={events} showToast={showToast} />
                     ) : activeTab === 'event_types' && user?.role === 'admin' ? (
                         <EventTypesManagement
                             showToast={showToast}

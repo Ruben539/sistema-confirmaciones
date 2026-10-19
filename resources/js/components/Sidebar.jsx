@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone, FileSpreadsheet } from 'lucide-react';
+import { Heart, LayoutDashboard, Calendar, Users, Settings, Plus, LogOut, ChevronLeft, ChevronRight, ChevronDown, Sparkles, ShieldCheck, UserCheck, CheckCircle, Radio, Sun, Moon, LayoutGrid, Bot, Clock, Tag, Smartphone, MessageSquare, Phone, FileSpreadsheet, Home, ClipboardList, Wallet, PackageX, Tags, Upload } from 'lucide-react';
+
+// "La Casita" submenu: one screen per sheet of the old Excel
+const CASITA_ITEMS = [
+    { id: 'casita_dashboard', label: 'Resumen', icon: LayoutDashboard },
+    { id: 'casita_events', label: 'Registro de eventos', icon: ClipboardList },
+    { id: 'casita_payments', label: 'Pagos', icon: Wallet },
+    { id: 'casita_guarantees', label: 'Garantías', icon: ShieldCheck },
+    { id: 'casita_losses', label: 'Pérdidas y bebidas', icon: PackageX },
+    { id: 'casita_catalog', label: 'Lista de precios', icon: Tags },
+    { id: 'casita_import', label: 'Importar Excel', icon: Upload },
+];
 
 export default function Sidebar({
     user,
@@ -20,6 +31,8 @@ export default function Sidebar({
 }) {
     const [collapsed, setCollapsed] = useState(false);
     const [showEventsList, setShowEventsList] = useState(false);
+    const inCasita = activeTab?.startsWith('casita_');
+    const [casitaOpen, setCasitaOpen] = useState(inCasita);
 
     const isAdmin = user?.role === 'admin';
     const isPlanner = user?.role === 'planner';
@@ -235,6 +248,37 @@ export default function Sidebar({
                                 <Tag className={`w-4 h-4 shrink-0 ${activeTab === 'event_types' ? 'text-white' : 'text-amber-500'}`} />
                                 {!collapsed && <span>Tipos de Eventos</span>}
                             </button>
+
+                            {/* La Casita: venue administration (replaces the Excel workbook) */}
+                            <button
+                                onClick={() => {
+                                    if (!inCasita) setActiveTab('casita_dashboard');
+                                    setCasitaOpen(o => (inCasita ? !o : true));
+                                }}
+                                className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${inCasita ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                                title="La Casita"
+                            >
+                                <span className="flex items-center gap-3">
+                                    <Home className="w-4 h-4 shrink-0 text-amber-500" />
+                                    {!collapsed && <span>La Casita</span>}
+                                </span>
+                                {!collapsed && <ChevronDown className={`w-4 h-4 transition-transform ${casitaOpen ? 'rotate-180' : ''}`} />}
+                            </button>
+                            {casitaOpen && (
+                                <div className={`space-y-1 ${collapsed ? '' : 'pl-3 ml-4 border-l border-amber-200 dark:border-amber-900/50'}`}>
+                                    {CASITA_ITEMS.map(({ id, label, icon: Icon }) => (
+                                        <button
+                                            key={id}
+                                            onClick={() => setActiveTab(id)}
+                                            title={label}
+                                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === id ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-md shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                                        >
+                                            <Icon className="w-4 h-4 shrink-0" />
+                                            {!collapsed && <span>{label}</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
