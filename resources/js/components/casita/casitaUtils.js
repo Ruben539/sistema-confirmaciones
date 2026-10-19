@@ -32,6 +32,30 @@ export const todayIso = () => {
 
 export const isPast = (iso) => Boolean(iso) && iso < todayIso();
 
+// Key to match a typed detail with the price list: no accents, no case, no extra spaces
+export const catalogKey = (name) => String(name ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * Applies a change to a budget / losses line and keeps its price in sync with the price list:
+ * when the detail becomes a different list item, the price becomes that item's price.
+ * While the item stays the same, the price is kept (a saved or hand-typed price is respected).
+ * priceFor = list key the current price belongs to.
+ */
+export const applyLineChange = (line, patch, priceByKey) => {
+    const next = { ...line, ...patch };
+    const currentFor = line.priceFor ?? catalogKey(line.description);
+    if (patch.description !== undefined) {
+        const key = catalogKey(patch.description);
+        if (priceByKey.has(key) && key !== currentFor) {
+            next.unit_price = priceByKey.get(key);
+            next.priceFor = key;
+        }
+    } else if (patch.unit_price !== undefined) {
+        next.priceFor = catalogKey(next.description); // typed by hand for this item
+    }
+    return next;
+};
+
 export const KIND_LABELS = { garantia: 'Garantía', sena: 'Seña', pago: 'Pago', devolucion: 'Devolución' };
 
 export const SECTION_LABELS = {
@@ -86,6 +110,7 @@ const head = (title, event) => `
         <b>Fecha del evento:</b><span>${esc(longDate(event.event_date) || '—')}</span>
         ${event.schedule ? `<b>Horario:</b><span>${esc(event.schedule)}</span>` : ''}
         ${event.menu ? `<b>Menú:</b><span>${esc(event.menu)}</span>` : ''}
+        ${event.planner_name ? `<b>Wedding planner:</b><span>${esc(event.planner_name)}</span>` : ''}
     </div>`;
 
 /** Presupuesto / recibo (hoja "Auxiliar"). withPayments adds the payment history. */

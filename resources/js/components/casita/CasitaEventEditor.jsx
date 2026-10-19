@@ -3,10 +3,10 @@ import { ArrowLeft, Save, Printer, Receipt, Trash2, Plus, X, Wallet, PackageX } 
 import { apiFetch } from '../../api';
 import DateInput from '../DateInput';
 import ConfirmModal from '../ConfirmModal';
-import { gs, fmtDate, todayIso, KIND_LABELS, MENU_SUGGESTIONS, printBudget } from './casitaUtils';
+import { gs, fmtDate, todayIso, KIND_LABELS, MENU_SUGGESTIONS, printBudget, catalogKey, applyLineChange } from './casitaUtils';
 import { Card, Field, Kpi, Empty, BalanceBadge, MoneyInput, inputCls, btnPrimary, btnGhost, btnDanger } from './CasitaUi';
 
-const EMPTY = { client_name: '', event_date: '', schedule: '', venue: 'La Casita', menu: '', notes: 'No incluye IVA', event_id: null };
+const EMPTY = { client_name: '', event_date: '', schedule: '', venue: 'La Casita', menu: '', notes: 'No incluye IVA', planner_id: null };
 
 // Lines a new budget usually starts with (from the old Excel)
 const DEFAULT_LINES = ['Garantia', 'Apa', 'Incluye un metre', 'Mozo Adicional', 'Paquete por persona'];
@@ -14,13 +14,14 @@ const DEFAULT_LINES = ['Garantia', 'Apa', 'Incluye un metre', 'Mozo Adicional', 
 let lineKey = 0;
 const newLine = (description = '', unit_price = 0, quantity = 1) => ({ _key: ++lineKey, description, unit_price, quantity });
 
-export default function CasitaEventEditor({ eventId, systemEvents = [], showToast, onBack, onSaved, onGoLosses }) {
+export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved, onGoLosses }) {
     const isNew = eventId === 'new';
     const [form, setForm] = useState(EMPTY);
     const [lines, setLines] = useState([]);
     const [saved, setSaved] = useState(null); // last version from the server (totals, payments)
     const [catalog, setCatalog] = useState([]);
     const [clientNames, setClientNames] = useState([]);
+    const [planners, setPlanners] = useState([]);
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -31,13 +32,14 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
         apiFetch('/api/casita/catalog').then(({ ok, json }) => ok && setCatalog(json.filter(i => i.is_active)));
         // Typing an existing client's name attaches the event to that client
         apiFetch('/api/casita/clients').then(({ ok, json }) => ok && setClientNames(json.map(c => c.name)));
+        apiFetch('/api/planners').then(({ ok, json }) => ok && Array.isArray(json) && setPlanners(json));
     }, []);
 
     const applyServer = (ev) => {
         setSaved(ev);
         setForm({
             client_name: ev.client_name || '', event_date: ev.event_date || '', schedule: ev.schedule || '',
-            venue: ev.venue || 'La Casita', menu: ev.menu || '', notes: ev.notes || '', event_id: ev.event_id,
+            venue: ev.venue || 'La Casita', menu: ev.menu || '', notes: ev.notes || '', planner_id: ev.planner_id,
         });
         setLines(ev.items.map(i => newLine(i.description, i.unit_price, i.quantity)));
         setDirty(false);
@@ -62,26 +64,18 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
     useEffect(() => {
         if (isNew && lines.length === 0 && catalog.length) {
             setLines(DEFAULT_LINES.map(name => {
-                const item = catalog.find(c => c.name.toLowerCase() === name.toLowerCase());
+                const item = catalog.find(c => catalogKey(c.name) === catalogKey(name));
                 return newLine(item?.name || name, item?.price || 0, 1);
             }));
         }
     }, [isNew, catalog]);
 
-    const priceByName = useMemo(() => new Map(catalog.map(c => [c.name.toLowerCase(), c.price])), [catalog]);
+    const priceByKey = useMemo(() => new Map(catalog.map(c => [catalogKey(c.name), c.price])), [catalog]);
 
     const setField = (key, value) => { setForm(f => ({ ...f, [key]: value })); setDirty(true); };
 
     const updateLine = (key, patch) => {
-        setLines(ls => ls.map(l => {
-            if (l._key !== key) return l;
-            const next = { ...l, ...patch };
-            // Picking a catalog item fills its price
-            if (patch.description !== undefined && priceByName.has(patch.description.toLowerCase()) && !l.unit_price) {
-                next.unit_price = priceByName.get(patch.description.toLowerCase());
-            }
-            return next;
-        }));
+        setLines(ls => ls.map(l => (l._key === key ? applyLineChange(l, patch, priceByKey) : l)));
         setDirty(true);
     };
 
@@ -98,7 +92,7 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
             description: l.description.trim(), unit_price: Number(l.unit_price) || 0, quantity: Number(l.quantity) || 0,
         }));
         setSaving(true);
-        const payload = { ...form, event_date: form.event_date || null, event_id: form.event_id || null, items };
+        const payload = { ...form, event_date: form.event_date || null, planner_id: form.planner_id || null, items };
         const { ok, json } = await apiFetch(isNew ? '/api/casita/events' : `/api/casita/events/${eventId}`, {
             method: isNew ? 'POST' : 'PUT', body: JSON.stringify(payload),
         });
@@ -136,7 +130,6 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
                     {!isNew && <button onClick={() => printDoc(false)} className={btnGhost}><Printer className="w-4 h-4" /> Presupuesto</button>}
                     {!isNew && <button onClick={() => printDoc(true)} className={btnGhost}><Receipt className="w-4 h-4" /> Recibo</button>}
                     {!isNew && <button onClick={() => onGoLosses(Number(eventId))} className={btnGhost}><PackageX className="w-4 h-4" /> Pérdidas</button>}
-                    <button onClick={save} disabled={saving} className={btnPrimary}><Save className="w-4 h-4" /> {saving ? 'Guardando…' : dirty || isNew ? 'Guardar' : 'Guardado'}</button>
                 </div>
             </div>
 
@@ -167,10 +160,10 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
                         <input value={form.menu} onChange={e => setField('menu', e.target.value)} list="casita-menus" className={inputCls} />
                         <datalist id="casita-menus">{MENU_SUGGESTIONS.map(m => <option key={m} value={m} />)}</datalist>
                     </Field>
-                    <Field label="Evento de confirmaciones (opcional)" className="md:col-span-1">
-                        <select value={form.event_id || ''} onChange={e => setField('event_id', e.target.value ? Number(e.target.value) : null)} className={inputCls}>
-                            <option value="">Sin vincular</option>
-                            {systemEvents.map(ev => <option key={ev.id} value={ev.id}>{ev.couple_names || ev.title}{ev.event_date ? ` · ${fmtDate(ev.event_date)}` : ''}</option>)}
+                    <Field label="Wedding planner (opcional)">
+                        <select value={form.planner_id || ''} onChange={e => setField('planner_id', e.target.value ? Number(e.target.value) : null)} className={inputCls}>
+                            <option value="">Sin wedding planner</option>
+                            {planners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                     </Field>
                     <Field label="Observaciones" className="md:col-span-2">
@@ -208,6 +201,15 @@ export default function CasitaEventEditor({ eventId, systemEvents = [], showToas
                     </div>
                 )}
             </Card>
+
+            {/* Save right after the budget, where the editing ends */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+                {error && <span className="text-xs font-bold text-rose-600">{error}</span>}
+                {dirty && !error && <span className="text-xs text-amber-600 font-bold">Hay cambios sin guardar</span>}
+                <button onClick={save} disabled={saving} className={`${btnPrimary} px-6 py-3`}>
+                    <Save className="w-4 h-4" /> {saving ? 'Guardando…' : dirty || isNew ? 'Guardar' : 'Guardado'}
+                </button>
+            </div>
 
             {isNew ? (
                 <p className="text-xs text-zinc-500">Guardá el registro para poder cargar pagos y garantías.</p>

@@ -12,7 +12,7 @@ import CasitaClients from './CasitaClients';
  * "La Casita" menu: one screen per sheet of the old Excel.
  * view is the sidebar tab id (casita_dashboard, casita_events, …).
  */
-export default function CasitaModule({ view, setView, systemEvents, showToast }) {
+export default function CasitaModule({ view, setView, showToast }) {
     const [openEventId, setOpenEventId] = useState(null); // null = list, 'new', or an id
     const [lossesEventId, setLossesEventId] = useState(null);
 
@@ -31,7 +31,6 @@ export default function CasitaModule({ view, setView, systemEvents, showToast })
                 <CasitaEventEditor
                     key={openEventId}
                     eventId={openEventId}
-                    systemEvents={systemEvents}
                     showToast={showToast}
                     onBack={() => setOpenEventId(null)}
                     onSaved={(id) => setOpenEventId(id)}

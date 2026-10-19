@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CasitaEvent extends Model
 {
-    protected $fillable = ['client_id', 'client_name', 'event_date', 'schedule', 'venue', 'menu', 'notes', 'event_id', 'created_by'];
+    protected $fillable = ['client_id', 'client_name', 'event_date', 'schedule', 'venue', 'menu', 'notes', 'planner_id', 'created_by'];
 
     protected $casts = [
         'event_date' => 'date:Y-m-d',
@@ -39,9 +39,10 @@ class CasitaEvent extends Model
         return $this->belongsTo(CasitaClient::class, 'client_id');
     }
 
-    public function event()
+    /** Wedding planner who organizes the event (optional) */
+    public function planner()
     {
-        return $this->belongsTo(Event::class);
+        return $this->belongsTo(User::class, 'planner_id');
     }
 
     /** Adds budget_total, paid_total and balance to a query (no N+1 on lists). */

@@ -25,7 +25,8 @@ class CasitaController extends Controller
 
     private function present(CasitaEvent $event): array
     {
-        return array_merge($event->only(['id', 'client_id', 'client_name', 'schedule', 'venue', 'menu', 'notes', 'event_id']), [
+        return array_merge($event->only(['id', 'client_id', 'client_name', 'schedule', 'venue', 'menu', 'notes', 'planner_id']), [
+            'planner_name' => $event->planner?->name,
             'event_date' => $event->event_date?->format('Y-m-d'),
             'items_count' => $event->items_count ?? null,
         ], $event->totals());
@@ -49,7 +50,7 @@ class CasitaController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $events = CasitaEvent::withTotals()->orderBy('event_date')->get();
+        $events = CasitaEvent::withTotals()->with('planner:id,name')->orderBy('event_date')->get();
         $today = Carbon::today();
 
         $byYear = [];
@@ -101,7 +102,7 @@ class CasitaController extends Controller
     {
         $this->authorizeAdmin($request);
 
-        $query = CasitaEvent::withTotals()->withCount('items');
+        $query = CasitaEvent::withTotals()->withCount('items')->with('planner:id,name');
 
         if ($search = trim((string) $request->query('search'))) {
             $like = '%' . mb_strtolower($search) . '%';
@@ -110,6 +111,9 @@ class CasitaController extends Controller
         if ($year = $request->query('year')) {
             $query->whereYear('event_date', (int) $year);
         }
+        $planner = $request->query('planner');
+        if ($planner === 'none') $query->whereNull('planner_id');
+        elseif ($planner) $query->where('planner_id', (int) $planner);
         $when = $request->query('when');
         if ($when === 'upcoming') $query->whereDate('event_date', '>=', Carbon::today());
         if ($when === 'past') $query->whereDate('event_date', '<', Carbon::today());
@@ -144,7 +148,7 @@ class CasitaController extends Controller
             'venue' => 'nullable|string|max:255',
             'menu' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:5000',
-            'event_id' => 'nullable|integer|exists:events,id',
+            'planner_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('role', 'planner')],
             'items' => 'array|max:300',
             'items.*.description' => 'required|string|max:255',
             'items.*.unit_price' => 'required|integer|min:0',

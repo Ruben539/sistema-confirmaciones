@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { PackageX, Plus, X, Save, Printer } from 'lucide-react';
 import { apiFetch } from '../../api';
-import { gs, SECTION_LABELS, printSettlement } from './casitaUtils';
+import { gs, SECTION_LABELS, printSettlement, catalogKey, applyLineChange } from './casitaUtils';
 import { PageHeader, Card, Field, Kpi, Empty, MoneyInput, inputCls, btnPrimary, btnGhost } from './CasitaUi';
 import CasitaEventPicker from './CasitaEventPicker';
 
@@ -36,15 +36,10 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
         apiFetch(`/api/casita/events/${eventId}`).then(({ ok, json }) => ok && apply(json));
     }, [eventId]);
 
-    const priceOf = (name) => catalog.find(c => c.name.toLowerCase() === name.toLowerCase())?.price;
+    const priceByKey = new Map(catalog.map(c => [catalogKey(c.name), c.price]));
 
     const update = (k, patch) => {
-        setLines(ls => ls.map(l => {
-            if (l._key !== k) return l;
-            const next = { ...l, ...patch };
-            if (patch.description !== undefined && !l.unit_price && priceOf(patch.description)) next.unit_price = priceOf(patch.description);
-            return next;
-        }));
+        setLines(ls => ls.map(l => (l._key === k ? applyLineChange(l, patch, priceByKey) : l)));
         setDirty(true);
     };
 

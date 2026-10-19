@@ -18,7 +18,7 @@ class CasitaClientController extends Controller
     /** Events of each client with totals, grouped by client_id (one query). */
     private function eventsByClient(?array $clientIds = null)
     {
-        return CasitaEvent::withTotals()
+        return CasitaEvent::withTotals()->with('planner:id,name')
             ->when($clientIds !== null, fn ($q) => $q->whereIn('client_id', $clientIds))
             ->orderByDesc('event_date')
             ->get()
@@ -59,8 +59,8 @@ class CasitaClientController extends Controller
 
         return response()->json(array_merge($this->present($client, $events), [
             'events' => $events->map(fn ($e) => array_merge(
-                $e->only(['id', 'client_name', 'menu', 'venue', 'schedule']),
-                ['event_date' => $e->event_date?->format('Y-m-d')],
+                $e->only(['id', 'client_name', 'menu', 'venue', 'schedule', 'planner_id']),
+                ['event_date' => $e->event_date?->format('Y-m-d'), 'planner_name' => $e->planner?->name],
                 $e->totals()
             ))->values(),
         ]));

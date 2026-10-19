@@ -186,6 +186,29 @@ class CasitaTest extends TestCase
         unlink($csv);
     }
 
+    public function test_event_can_have_a_wedding_planner(): void
+    {
+        $admin = $this->admin();
+        $planner = User::factory()->create(['role' => 'planner', 'name' => 'Ana Planner']);
+        $event = $this->createEvent($admin);
+        $put = fn ($plannerId) => $this->putJson("/api/casita/events/{$event['id']}", [
+            'client_name' => $event['client_name'], 'planner_id' => $plannerId, 'items' => [],
+        ]);
+
+        $saved = $put($planner->id)->assertOk()->json('event');
+        $this->assertSame('Ana Planner', $saved['planner_name']);
+
+        // Only users with the planner role
+        $put($admin->id)->assertUnprocessable();
+
+        $this->postJson('/api/casita/events', ['client_name' => 'Sin planner', 'items' => []])->assertCreated();
+        $this->assertCount(1, $this->getJson("/api/casita/events?planner={$planner->id}")->json('events'));
+        $this->assertSame('Sin planner', $this->getJson('/api/casita/events?planner=none')->json('events.0.client_name'));
+
+        $put(null)->assertOk();
+        $this->assertNull($this->getJson("/api/casita/events/{$event['id']}")->json('planner_name'));
+    }
+
     public function test_summary(): void
     {
         $admin = $this->admin();

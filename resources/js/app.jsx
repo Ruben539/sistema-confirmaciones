@@ -611,7 +611,7 @@ function Dashboard({ user, onLogout }) {
                             }}
                         />
                     ) : activeTab.startsWith('casita_') && user?.role === 'admin' ? (
-                        <CasitaModule view={activeTab} setView={setActiveTab} systemEvents={events} showToast={showToast} />
+                        <CasitaModule view={activeTab} setView={setActiveTab} showToast={showToast} />
                     ) : activeTab === 'event_types' && user?.role === 'admin' ? (
                         <EventTypesManagement
                             showToast={showToast}
