@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Save, Printer, Receipt, Trash2, Plus, X, Wallet, PackageX } from 'lucide-react';
+import { ArrowLeft, Save, Printer, Receipt, Trash2, Plus, X, Wallet, PackageX, Pencil, Check } from 'lucide-react';
 import { apiFetch } from '../../api';
 import DateInput from '../DateInput';
 import ConfirmModal from '../ConfirmModal';
-import { gs, fmtDate, todayIso, KIND_LABELS, MENU_SUGGESTIONS, printBudget, catalogKey, applyLineChange } from './casitaUtils';
-import { Card, Field, Kpi, Empty, BalanceBadge, MoneyInput, inputCls, btnPrimary, btnGhost, btnDanger } from './CasitaUi';
+import { gs, fmtDate, todayIso, KIND_LABELS, printBudget, catalogKey, applyLineChange } from './casitaUtils';
+import { Card, Field, Kpi, Empty, BalanceBadge, MoneyInput, CatalogInput, CatalogItemModal, inputCls, btnPrimary, btnGhost, btnDanger } from './CasitaUi';
 
 const EMPTY = { client_name: '', event_date: '', schedule: '', venue: 'La Casita', menu: '', notes: 'No incluye IVA', planner_id: null };
 
@@ -22,6 +22,8 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
     const [catalog, setCatalog] = useState([]);
     const [clientNames, setClientNames] = useState([]);
     const [planners, setPlanners] = useState([]);
+    const [menus, setMenus] = useState([]);
+    const [itemModal, setItemModal] = useState(null); // { item } to edit, or { initialName, lineKey } to add
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -33,7 +35,25 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
         // Typing an existing client's name attaches the event to that client
         apiFetch('/api/casita/clients').then(({ ok, json }) => ok && setClientNames(json.map(c => c.name)));
         apiFetch('/api/planners').then(({ ok, json }) => ok && Array.isArray(json) && setPlanners(json));
+        apiFetch('/api/casita/options?type=menu').then(({ ok, json }) => ok && setMenus(json.map(o => o.name)));
     }, []);
+
+    // A price-list item was edited or added from the budget dropdown
+    const onCatalogSaved = (item, previous) => {
+        setCatalog(list => (previous ? list.map(c => (c.id === item.id ? item : c)) : [...list, item]).filter(c => c.is_active !== false));
+        if (previous) {
+            // Lines of that item: new name; new price only where they still had the old list price
+            const oldKey = catalogKey(previous.name);
+            setLines(ls => ls.map(l => (catalogKey(l.description) !== oldKey ? l : {
+                ...l, description: item.name, priceFor: catalogKey(item.name),
+                unit_price: Number(l.unit_price) === previous.price ? item.price : l.unit_price,
+            })));
+        } else if (itemModal?.lineKey) {
+            setLines(ls => ls.map(l => (l._key === itemModal.lineKey ? { ...l, description: item.name, unit_price: item.price, priceFor: catalogKey(item.name) } : l)));
+        }
+        setDirty(true);
+        setItemModal(null);
+    };
 
     const applyServer = (ev) => {
         setSaved(ev);
@@ -158,7 +178,7 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
                     </Field>
                     <Field label="Menú">
                         <input value={form.menu} onChange={e => setField('menu', e.target.value)} list="casita-menus" className={inputCls} />
-                        <datalist id="casita-menus">{MENU_SUGGESTIONS.map(m => <option key={m} value={m} />)}</datalist>
+                        <datalist id="casita-menus">{menus.map(m => <option key={m} value={m} />)}</datalist>
                     </Field>
                     <Field label="Wedding planner (opcional)">
                         <select value={form.planner_id || ''} onChange={e => setField('planner_id', e.target.value ? Number(e.target.value) : null)} className={inputCls}>
@@ -173,7 +193,6 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
             </Card>
 
             <Card title="Presupuesto" actions={<button onClick={addLine} className={btnGhost}><Plus className="w-4 h-4" /> Agregar línea</button>}>
-                <datalist id="casita-catalog">{catalog.map(c => <option key={c.id} value={c.name}>{gs(c.price)}</option>)}</datalist>
                 {lines.length === 0 ? <Empty>Agregá las líneas del presupuesto.</Empty> : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs min-w-[640px]">
@@ -186,7 +205,14 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
                             <tbody>
                                 {lines.map(l => (
                                     <tr key={l._key}>
-                                        <td className="py-1 pr-2"><input value={l.description} onChange={e => updateLine(l._key, { description: e.target.value })} list="casita-catalog" className={inputCls} placeholder="Buscar en la lista de precios…" /></td>
+                                        <td className="py-1 pr-2"><CatalogInput
+                                                value={l.description}
+                                                onChange={v => updateLine(l._key, { description: v })}
+                                                items={catalog}
+                                                placeholder="Buscar en la lista de precios…"
+                                                onEdit={item => setItemModal({ item })}
+                                                onCreate={name => setItemModal({ initialName: name, lineKey: l._key })}
+                                            /></td>
                                         <td className="py-1 pr-2"><MoneyInput value={l.unit_price} onChange={v => updateLine(l._key, { unit_price: v })} /></td>
                                         <td className="py-1 pr-2"><MoneyInput value={l.quantity} onChange={v => updateLine(l._key, { quantity: v })} /></td>
                                         <td className="py-1 pr-2 text-right font-black tabular-nums">{gs((Number(l.unit_price) || 0) * (Number(l.quantity) || 0))}</td>
@@ -221,6 +247,16 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
                 <div className="flex justify-end">
                     <button onClick={() => setConfirmDelete(true)} className={btnDanger}><Trash2 className="w-4 h-4" /> Eliminar evento</button>
                 </div>
+            )}
+
+            {itemModal && (
+                <CatalogItemModal
+                    item={itemModal.item}
+                    initialName={itemModal.initialName}
+                    showToast={showToast}
+                    onClose={() => setItemModal(null)}
+                    onSaved={onCatalogSaved}
+                />
             )}
 
             <ConfirmModal
@@ -258,6 +294,19 @@ export function PaymentsCard({ event, showToast, onChanged }) {
         if (ok) { showToast(json.message); onChanged(json.event); }
     };
 
+    // Correct a registered payment (date, reason, amount, detail)
+    const [editing, setEditing] = useState(null);
+    const saveEdit = async () => {
+        setError(null);
+        if (!editing.amount) { setError('Escribí el monto.'); return; }
+        const { id, paid_on, kind, amount, note } = editing;
+        const { ok, json } = await apiFetch(`/api/casita/payments/${id}`, { method: 'PUT', body: JSON.stringify({ paid_on, kind, amount, note }) });
+        if (!ok) { setError(json?.message || 'No se pudo guardar el pago.'); return; }
+        showToast(json.message);
+        onChanged(json.event);
+        setEditing(null);
+    };
+
     return (
         <Card title="Pagos y garantía" actions={<div className="flex items-center gap-2 text-xs"><span className="text-zinc-500">Saldo</span><b className="tabular-nums">{gs(event.balance)}</b><BalanceBadge balance={event.balance} /></div>}>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-4">
@@ -277,17 +326,35 @@ export function PaymentsCard({ event, showToast, onChanged }) {
                 <table className="w-full text-xs">
                     <thead>
                         <tr className="text-[10px] uppercase tracking-wider text-zinc-500 text-left">
-                            <th className="pb-2">Fecha</th><th className="pb-2">Motivo</th><th className="pb-2">Detalle</th><th className="pb-2 text-right">Monto</th><th className="w-8" />
+                            <th className="pb-2">Fecha</th><th className="pb-2">Motivo</th><th className="pb-2">Detalle</th><th className="pb-2 text-right">Monto</th><th className="w-16" />
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                        {event.payments.map(p => (
+                        {event.payments.map(p => editing?.id === p.id ? (
+                            <tr key={p.id} className="bg-rose-50/40 dark:bg-zinc-800/40">
+                                <td className="py-1.5 pr-2 w-36"><DateInput value={editing.paid_on} onChange={v => setEditing(e => ({ ...e, paid_on: v }))} className={inputCls} /></td>
+                                <td className="py-1.5 pr-2 w-32">
+                                    <select value={editing.kind} onChange={e => setEditing(x => ({ ...x, kind: e.target.value }))} className={inputCls}>
+                                        {Object.entries(KIND_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                                    </select>
+                                </td>
+                                <td className="py-1.5 pr-2"><input value={editing.note || ''} onChange={e => setEditing(x => ({ ...x, note: e.target.value }))} className={inputCls} /></td>
+                                <td className="py-1.5 pr-2 w-36"><MoneyInput value={editing.amount} onChange={v => setEditing(x => ({ ...x, amount: v }))} /></td>
+                                <td className="py-1.5 text-right whitespace-nowrap">
+                                    <button onClick={saveEdit} className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40" title="Guardar"><Check className="w-4 h-4" /></button>
+                                    <button onClick={() => { setEditing(null); setError(null); }} className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700" title="Cancelar"><X className="w-4 h-4" /></button>
+                                </td>
+                            </tr>
+                        ) : (
                             <tr key={p.id} className="tabular-nums">
                                 <td className="py-2">{fmtDate(p.paid_on)}</td>
                                 <td className="py-2 font-bold">{KIND_LABELS[p.kind] || p.kind}</td>
                                 <td className="py-2 text-zinc-500">{p.note || '—'}</td>
                                 <td className={`py-2 text-right font-black ${p.kind === 'devolucion' ? 'text-rose-600' : 'text-emerald-600'}`}>{p.kind === 'devolucion' ? '− ' : ''}{gs(p.amount)}</td>
-                                <td className="py-2 text-right"><button onClick={() => remove(p.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600" title="Eliminar pago"><Trash2 className="w-3.5 h-3.5" /></button></td>
+                                <td className="py-2 text-right whitespace-nowrap">
+                                    <button onClick={() => setEditing({ ...p })} className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-800 dark:hover:text-white" title="Editar pago"><Pencil className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => remove(p.id)} className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600" title="Eliminar pago"><Trash2 className="w-3.5 h-3.5" /></button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>

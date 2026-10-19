@@ -209,6 +209,54 @@ class CasitaTest extends TestCase
         $this->assertNull($this->getJson("/api/casita/events/{$event['id']}")->json('planner_name'));
     }
 
+    public function test_payment_can_be_corrected(): void
+    {
+        $admin = $this->admin();
+        $event = $this->createEvent($admin);
+        $paymentId = $this->postJson("/api/casita/events/{$event['id']}/payments", ['paid_on' => '2026-05-01', 'kind' => 'pago', 'amount' => 1000000])
+            ->json('event.payments.0.id');
+
+        $updated = $this->putJson("/api/casita/payments/{$paymentId}", ['paid_on' => '2026-05-02', 'kind' => 'garantia', 'amount' => 700000, 'note' => 'Transferencia'])
+            ->assertOk()->json('event');
+        $this->assertSame(700000, $updated['paid_total']);
+        $this->assertSame('garantia', $updated['payments'][0]['kind']);
+        $this->assertSame('2026-05-02', $updated['payments'][0]['paid_on']);
+        $this->assertSame(700000, $updated['settlement']['guarantee']);
+    }
+
+    public function test_catalog_item_can_change_group(): void
+    {
+        $admin = $this->admin();
+        $apa = collect($this->actingAs($admin)->getJson('/api/casita/catalog')->json())->firstWhere('name', 'Apa');
+        $this->assertSame('servicio', $apa['category']);
+
+        $saved = $this->putJson("/api/casita/catalog/{$apa['id']}", array_merge($apa, ['category' => 'personal', 'price' => 900000]))->assertOk()->json('item');
+        $this->assertSame('personal', $saved['category']);
+        $this->assertSame(900000, $saved['price']);
+    }
+
+    public function test_menus_and_usual_losses_are_editable(): void
+    {
+        $admin = $this->admin();
+        $menus = $this->actingAs($admin)->getJson('/api/casita/options?type=menu')->json();
+        $this->assertContains('Servicio de Asado', array_column($menus, 'name'));
+        $this->assertContains('Copas', array_column($this->getJson('/api/casita/options?type=perdida')->json(), 'name'));
+
+        $id = $this->postJson('/api/casita/options', ['type' => 'menu', 'name' => 'Buffet vegetariano'])->assertCreated()->json('option.id');
+        $this->postJson('/api/casita/options', ['type' => 'menu', 'name' => 'Buffet vegetariano'])->assertUnprocessable();
+        // Same name is fine in the other list
+        $this->postJson('/api/casita/options', ['type' => 'perdida', 'name' => 'Buffet vegetariano'])->assertCreated();
+
+        $this->putJson("/api/casita/options/{$id}", ['name' => 'Buffet vegano'])->assertOk();
+        $this->assertContains('Buffet vegano', array_column($this->getJson('/api/casita/options?type=menu')->json(), 'name'));
+
+        $this->deleteJson("/api/casita/options/{$id}")->assertOk();
+        $this->assertNotContains('Buffet vegano', array_column($this->getJson('/api/casita/options?type=menu')->json(), 'name'));
+
+        $planner = User::factory()->create(['role' => 'planner']);
+        $this->actingAs($planner)->postJson('/api/casita/options', ['type' => 'menu', 'name' => 'X'])->assertForbidden();
+    }
+
     public function test_summary(): void
     {
         $admin = $this->admin();

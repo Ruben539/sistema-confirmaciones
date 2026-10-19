@@ -20,6 +20,7 @@ use App\Http\Controllers\LiveStreamController;
 use App\Http\Controllers\CasitaController;
 use App\Http\Controllers\CasitaCatalogController;
 use App\Http\Controllers\CasitaClientController;
+use App\Http\Controllers\CasitaOptionController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -210,6 +211,10 @@ Route::prefix('api')->group(function () {
             Route::post('/catalog', [CasitaCatalogController::class, 'store']);
             Route::put('/catalog/{id}', [CasitaCatalogController::class, 'update']);
             Route::delete('/catalog/{id}', [CasitaCatalogController::class, 'destroy']);
+            Route::get('/options', [CasitaOptionController::class, 'index']);
+            Route::post('/options', [CasitaOptionController::class, 'store']);
+            Route::put('/options/{id}', [CasitaOptionController::class, 'update']);
+            Route::delete('/options/{id}', [CasitaOptionController::class, 'destroy']);
         });
     });
 });

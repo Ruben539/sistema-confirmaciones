@@ -2,13 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { PackageX, Plus, X, Save, Printer } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { gs, SECTION_LABELS, printSettlement, catalogKey, applyLineChange } from './casitaUtils';
-import { PageHeader, Card, Field, Kpi, Empty, MoneyInput, inputCls, btnPrimary, btnGhost } from './CasitaUi';
+import { PageHeader, Card, Field, Kpi, Empty, MoneyInput, CatalogInput, inputCls, btnPrimary, btnGhost } from './CasitaUi';
 import CasitaEventPicker from './CasitaEventPicker';
 
 const SECTIONS = ['perdida', 'agregado', 'sobrante'];
 
-// Usual lines of the old "Perdidas" sheet, as quick suggestions
-const LOSS_SUGGESTIONS = ['Servilletas hilo oscuro', 'Anillos de servilleta', 'Platos orgánicos verde', 'Vasos multiuso', 'Copas', 'Cubiertos', 'Mantel'];
 
 let key = 0;
 const line = (section, description = '', quantity = 1, unit_price = 0) => ({ _key: ++key, section, description, quantity, unit_price });
@@ -18,11 +16,13 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
     const [event, setEvent] = useState(null);
     const [lines, setLines] = useState([]);
     const [catalog, setCatalog] = useState([]);
+    const [usualLosses, setUsualLosses] = useState([]); // editable in Lista de precios
     const [dirty, setDirty] = useState(false);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         apiFetch('/api/casita/catalog').then(({ ok, json }) => ok && setCatalog(json.filter(i => i.is_active)));
+        apiFetch('/api/casita/options?type=perdida').then(({ ok, json }) => ok && setUsualLosses(json.map(o => o.name)));
     }, []);
 
     const apply = (ev) => {
@@ -37,6 +37,11 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
     }, [eventId]);
 
     const priceByKey = new Map(catalog.map(c => [catalogKey(c.name), c.price]));
+    // Suggestions: usual losses (no list price) plus drinks and glassware from the price list
+    const lossItems = [
+        ...usualLosses.map(name => ({ name, price: null })),
+        ...catalog.filter(c => c.category === 'bebida' || c.category === 'vajilla').map(c => ({ name: c.name, price: c.price })),
+    ];
 
     const update = (k, patch) => {
         setLines(ls => ls.map(l => (l._key === k ? applyLineChange(l, patch, priceByKey) : l)));
@@ -81,10 +86,6 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
                     <Kpi label={result >= 0 ? 'El cliente debe' : 'A devolver al cliente'} value={gs(Math.abs(result))} tone={result >= 0 ? 'amber' : 'emerald'} />
                 </div>
 
-                <datalist id="casita-loss-items">
-                    {LOSS_SUGGESTIONS.map(s => <option key={s} value={s} />)}
-                    {catalog.filter(c => c.category === 'bebida' || c.category === 'vajilla').map(c => <option key={c.id} value={c.name} />)}
-                </datalist>
 
                 {SECTIONS.map(section => {
                     const rows = lines.filter(l => l.section === section);
@@ -103,7 +104,7 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
                                         <tbody>
                                             {rows.map(l => (
                                                 <tr key={l._key}>
-                                                    <td className="py-1 pr-2"><input value={l.description} onChange={e => update(l._key, { description: e.target.value })} list="casita-loss-items" className={inputCls} /></td>
+                                                    <td className="py-1 pr-2"><CatalogInput value={l.description} onChange={v => update(l._key, { description: v })} items={lossItems} /></td>
                                                     <td className="py-1 pr-2"><MoneyInput value={l.quantity} onChange={v => update(l._key, { quantity: v })} /></td>
                                                     <td className="py-1 pr-2"><MoneyInput value={l.unit_price} onChange={v => update(l._key, { unit_price: v })} /></td>
                                                     <td className="py-1 pr-2 text-right font-black tabular-nums">{gs((Number(l.unit_price) || 0) * (Number(l.quantity) || 0))}</td>

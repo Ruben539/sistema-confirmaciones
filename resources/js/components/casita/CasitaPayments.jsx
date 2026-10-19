@@ -33,6 +33,9 @@ export default function CasitaPayments({ mode = 'payments', showToast, onOpenEve
         apiFetch(`/api/casita/events/${selectedId}`).then(({ ok, json }) => ok && setSelected(json));
     }, [selectedId]);
 
+    // A row of the history loads that event above, where its payments can be corrected
+    const selectEvent = (id) => { setSelectedId(id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
     const visible = useMemo(() => {
         const q = search.trim().toLowerCase();
         return q ? payments.filter(p => (p.casita_event?.client_name || '').toLowerCase().includes(q)) : payments;
@@ -68,6 +71,12 @@ export default function CasitaPayments({ mode = 'payments', showToast, onOpenEve
                 </Field>
             </Card>
 
+            {selected && (
+                <div className="flex items-center justify-between gap-3 -mb-3">
+                    <div className="text-xs text-zinc-500"><b className="text-zinc-900 dark:text-white">{selected.client_name}</b> · {fmtDate(selected.event_date)}</div>
+                    <button onClick={() => onOpenEvent(selected.id)} className="text-xs font-bold text-rose-600 hover:underline">Abrir ficha del evento →</button>
+                </div>
+            )}
             {selected && (
                 <PaymentsCard event={selected} showToast={showToast} onChanged={ev => { setSelected(ev); load(); }} />
             )}
@@ -111,7 +120,7 @@ export default function CasitaPayments({ mode = 'payments', showToast, onOpenEve
                             </thead>
                             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                 {perEvent.map(r => (
-                                    <tr key={r.id} onClick={() => onOpenEvent(r.id)} className="cursor-pointer hover:bg-rose-50/50 dark:hover:bg-zinc-800/40 tabular-nums">
+                                    <tr key={r.id} onClick={() => selectEvent(r.id)} title="Ver y editar sus pagos" className="cursor-pointer hover:bg-rose-50/50 dark:hover:bg-zinc-800/40 tabular-nums">
                                         <td className="py-2">{fmtDate(r.event?.event_date)}</td>
                                         <td className="py-2 font-black">{r.event?.client_name}</td>
                                         <td className="py-2 text-right">{gs(r.garantia)}</td>
@@ -133,7 +142,7 @@ export default function CasitaPayments({ mode = 'payments', showToast, onOpenEve
                             </thead>
                             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                                 {visible.map(p => (
-                                    <tr key={p.id} onClick={() => onOpenEvent(p.casita_event_id)} className="cursor-pointer hover:bg-rose-50/50 dark:hover:bg-zinc-800/40 tabular-nums">
+                                    <tr key={p.id} onClick={() => selectEvent(p.casita_event_id)} title="Ver y editar los pagos de este evento" className="cursor-pointer hover:bg-rose-50/50 dark:hover:bg-zinc-800/40 tabular-nums">
                                         <td className="py-2">{fmtDate(p.paid_on)}</td>
                                         <td className="py-2 font-black">{p.casita_event?.client_name}</td>
                                         <td className="py-2">{KIND_LABELS[p.kind] || p.kind}</td>

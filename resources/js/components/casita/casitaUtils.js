@@ -64,10 +64,11 @@ export const SECTION_LABELS = {
     sobrante: 'Bebidas sobrantes del evento',
 };
 
-export const MENU_SUGGESTIONS = [
-    'Buffet de pastas con carne', 'Servicio de Asado', 'Servicio de Asado Premium', 'Hamburguesas Gourmet',
-    'Parrillitas Corridas', 'Buffet frío/caliente', 'Finger Food', 'Desmechado', 'Baby Shower', 'A definir',
-];
+// Groups of the price list (the bdLista sheet had none; they only organize the screen)
+export const CATALOG_CATEGORIES = {
+    paquete: 'Paquetes', garantia: 'Garantía', servicio: 'Servicios', personal: 'Personal', comida: 'Comida',
+    bebida: 'Bebidas', mobiliario: 'Mobiliario', estructura: 'Estructuras', vajilla: 'Vajilla', otro: 'Otros',
+};
 
 // ---------------------------------------------------------------------------
 // Printable documents (same look as the Excel sheets)
