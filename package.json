@@ -16,6 +16,8 @@
         "vite": "^7.0.7"
     },
     "dependencies": {
+        "jspdf": "2.5.2",
+        "jspdf-autotable": "3.8.4",
         "lucide-react": "^1.48.0",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
