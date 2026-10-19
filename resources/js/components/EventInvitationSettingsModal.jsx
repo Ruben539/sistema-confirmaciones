@@ -1860,39 +1860,64 @@ export default function EventInvitationSettingsModal({ event, onClose, onUpdated
                                                 <div className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
                                                     Opciones (hacé clic en la letra para marcar cuál es la respuesta correcta):
                                                 </div>
-                                                {q.options.map((opt, oIdx) => (
-                                                    <div key={oIdx} className="flex items-center gap-2">
-                                                        <button
-                                                            type="button"
-                                                            title="Marcar como respuesta correcta"
-                                                            onClick={() => {
-                                                                const list = [...currentQuestions];
-                                                                list[qIdx] = { ...list[qIdx], correct: oIdx };
-                                                                updateTriviaField({ questions: list });
-                                                            }}
-                                                            className={`w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer transition-all ${
-                                                                q.correct === oIdx
-                                                                    ? 'bg-amber-400 border-amber-400 text-zinc-950 shadow-md'
-                                                                    : 'border-zinc-700 bg-zinc-950 text-zinc-400 hover:border-amber-400'
-                                                            }`}
-                                                        >
-                                                            {['A', 'B', 'C', 'D'][oIdx]}
-                                                        </button>
-                                                        <input
-                                                            type="text"
-                                                            value={opt}
-                                                            onChange={(e) => {
-                                                                const list = [...currentQuestions];
-                                                                const opts = [...list[qIdx].options];
-                                                                opts[oIdx] = e.target.value;
-                                                                list[qIdx] = { ...list[qIdx], options: opts };
-                                                                updateTriviaField({ questions: list });
-                                                            }}
-                                                            className="flex-1 text-xs rounded-xl border border-zinc-800 bg-zinc-950 text-white p-2 outline-none focus:ring-2 focus:ring-amber-500"
-                                                            placeholder={`Opción ${['A', 'B', 'C', 'D'][oIdx]}`}
-                                                        />
-                                                    </div>
-                                                ))}
+                                                {q.options.map((opt, oIdx) => {
+                                                    const isCorrect = q.correct === oIdx;
+                                                    return (
+                                                        <div key={oIdx} className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                title={isCorrect ? 'Esta es la respuesta correcta' : 'Hacé clic para marcar como correcta'}
+                                                                onClick={() => {
+                                                                    const list = [...currentQuestions];
+                                                                    list[qIdx] = { ...list[qIdx], correct: oIdx };
+                                                                    updateTriviaField({ questions: list });
+                                                                }}
+                                                                className={`w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer transition-all ${
+                                                                    isCorrect
+                                                                        ? 'bg-amber-400 border-amber-400 text-zinc-950 shadow-md font-black ring-2 ring-amber-400/30'
+                                                                        : 'border-zinc-700 bg-zinc-950 text-zinc-400 hover:border-amber-400'
+                                                                }`}
+                                                            >
+                                                                {['A', 'B', 'C', 'D'][oIdx]}
+                                                            </button>
+                                                            <input
+                                                                type="text"
+                                                                value={opt}
+                                                                onChange={(e) => {
+                                                                    const list = [...currentQuestions];
+                                                                    const opts = [...list[qIdx].options];
+                                                                    opts[oIdx] = e.target.value;
+                                                                    list[qIdx] = { ...list[qIdx], options: opts };
+                                                                    updateTriviaField({ questions: list });
+                                                                }}
+                                                                className={`flex-1 text-xs rounded-xl border p-2 outline-none transition-all ${
+                                                                    isCorrect
+                                                                        ? 'border-amber-500/60 bg-amber-950/20 text-white font-semibold'
+                                                                        : 'border-zinc-800 bg-zinc-950 text-white focus:ring-2 focus:ring-amber-500'
+                                                                }`}
+                                                                placeholder={`Opción ${['A', 'B', 'C', 'D'][oIdx]}`}
+                                                            />
+                                                            {isCorrect ? (
+                                                                <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black flex items-center gap-1 shrink-0">
+                                                                    <Check className="w-3 h-3 text-amber-400" />
+                                                                    <span>Correcta</span>
+                                                                </span>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const list = [...currentQuestions];
+                                                                        list[qIdx] = { ...list[qIdx], correct: oIdx };
+                                                                        updateTriviaField({ questions: list });
+                                                                    }}
+                                                                    className="px-2 py-1 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white text-[10px] font-bold shrink-0 cursor-pointer transition-colors"
+                                                                >
+                                                                    Marcar correcta
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     ))}
