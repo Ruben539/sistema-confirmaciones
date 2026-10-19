@@ -13,6 +13,7 @@ import { longDate } from './casitaUtils';
 const money = (n) => `Gs. ${Math.round(Number(n) || 0).toLocaleString('es-PY')}`;
 
 const ROSE = [225, 29, 72];
+const BRAND = [64, 84, 66]; // green of the Casita logo
 const DARK = [24, 24, 27];
 const MUTED = [113, 113, 122];
 const LINE = [228, 228, 231];
@@ -22,27 +23,41 @@ const LINE = [228, 228, 231];
  *         lines: [{ description, unit_price, quantity }], paid_total? }
  * Returns the jsPDF document (call .output('bloburl') to preview or .save(name) to download).
  */
-export function buildBudgetPdf(data, { draft = true } = {}) {
+export function buildBudgetPdf(data, { draft = true, logo = null } = {}) {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const W = doc.internal.pageSize.getWidth();
     const H = doc.internal.pageSize.getHeight();
     const M = 15;
     const venue = data.venue || 'La Casita';
+    const issued = `Emitido el ${new Date().toLocaleDateString('es-PY')}`;
 
     // ── Header ──
-    doc.setFillColor(...ROSE);
+    doc.setFillColor(...(logo ? BRAND : ROSE));
     doc.rect(0, 0, W, 4, 'F');
-    doc.setFont('helvetica', 'bold').setFontSize(20).setTextColor(...DARK);
-    doc.text('Presupuesto', M, 20);
-    doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...MUTED);
-    doc.text(venue, M, 26);
-    doc.setFontSize(9);
-    doc.text(`Emitido el ${new Date().toLocaleDateString('es-PY')}`, W - M, 20, { align: 'right' });
-    if (draft) {
-        doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...ROSE);
-        doc.text('BORRADOR', W - M, 26, { align: 'right' });
+    let y;
+    if (logo) {
+        // Logo on the right, title and dates on the left
+        const logoW = 62;
+        const logoH = Math.min(26, logoW * (logo.height / logo.width));
+        doc.addImage(logo.dataUrl, logo.format, W - M - logoW, 9, logoW, logoH);
+        doc.setFont('helvetica', 'bold').setFontSize(20).setTextColor(...DARK);
+        doc.text('Presupuesto', M, 18);
+        doc.setFont('helvetica', 'normal').setFontSize(9.5).setTextColor(...MUTED);
+        doc.text(`${venue} · ${issued}`, M, 24);
+        if (draft) doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...ROSE).text('BORRADOR', M, 30);
+        const lineY = Math.max(34, 9 + logoH + 3);
+        doc.setDrawColor(...DARK).setLineWidth(0.5).line(M, lineY, W - M, lineY);
+        y = lineY + 8;
+    } else {
+        doc.setFont('helvetica', 'bold').setFontSize(20).setTextColor(...DARK);
+        doc.text('Presupuesto', M, 20);
+        doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...MUTED);
+        doc.text(venue, M, 26);
+        doc.setFontSize(9).text(issued, W - M, 20, { align: 'right' });
+        if (draft) doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...ROSE).text('BORRADOR', W - M, 26, { align: 'right' });
+        doc.setDrawColor(...DARK).setLineWidth(0.5).line(M, 30, W - M, 30);
+        y = 38;
     }
-    doc.setDrawColor(...DARK).setLineWidth(0.5).line(M, 30, W - M, 30);
 
     // ── Event data (two columns) ──
     const facts = [
@@ -53,7 +68,6 @@ export function buildBudgetPdf(data, { draft = true } = {}) {
         ['Menú', data.menu],
         ['Wedding planner', data.planner_name],
     ].filter(([, v]) => v);
-    let y = 38;
     const colW = (W - 2 * M) / 2;
     facts.forEach(([label, value], i) => {
         const x = M + (i % 2) * colW;

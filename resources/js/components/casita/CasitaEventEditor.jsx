@@ -4,7 +4,7 @@ import { apiFetch } from '../../api';
 import DateInput from '../DateInput';
 import ConfirmModal from '../ConfirmModal';
 import { buildBudgetPdf, budgetFileName } from './budgetPdf';
-import { gs, fmtDate, todayIso, KIND_LABELS, printBudget, catalogKey, applyLineChange } from './casitaUtils';
+import { gs, fmtDate, todayIso, KIND_LABELS, printBudget, catalogKey, applyLineChange, loadImage, CASITA_LOGO } from './casitaUtils';
 import { Card, Field, Kpi, Empty, BalanceBadge, MoneyInput, CatalogInput, CatalogItemModal, inputCls, btnPrimary, btnGhost, btnDanger } from './CasitaUi';
 
 const EMPTY = { client_name: '', event_date: '', schedule: '', venue: 'La Casita', menu: '', notes: 'No incluye IVA', planner_id: null };
@@ -126,14 +126,15 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
     };
 
     // Draft PDF of what is on screen right now (saved or not), to download and send to the client
-    const openDraft = () => {
+    const openDraft = async () => {
+        const logo = await loadImage(CASITA_LOGO);
         const data = {
             ...form,
             planner_name: planners.find(p => p.id === form.planner_id)?.name,
             lines,
             paid_total: saved?.paid_total || 0,
         };
-        const doc = buildBudgetPdf(data);
+        const doc = buildBudgetPdf(data, { logo });
         setDraftPdf({ doc, url: doc.output('bloburl'), name: budgetFileName(data) });
     };
     const closeDraft = () => { if (draftPdf) URL.revokeObjectURL(draftPdf.url); setDraftPdf(null); };

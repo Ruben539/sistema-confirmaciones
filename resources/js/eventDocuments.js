@@ -77,13 +77,18 @@ export const printHtml = (html) => {
 
     const cleanup = () => setTimeout(() => iframe.remove(), 1000);
     iframe.contentWindow.onafterprint = cleanup;
-    // Give fonts/SVG a moment to lay out before opening the print dialog
-    setTimeout(() => {
+    // Wait for images (logos) to load, at most 3s, then give fonts/SVG a moment to lay out
+    const images = [...doc.images].filter(img => !img.complete);
+    const imagesReady = Promise.race([
+        Promise.all(images.map(img => new Promise(resolve => { img.addEventListener('load', resolve); img.addEventListener('error', resolve); }))),
+        new Promise(resolve => setTimeout(resolve, 3000)),
+    ]);
+    imagesReady.then(() => setTimeout(() => {
         iframe.contentWindow.focus();
         iframe.contentWindow.print();
         // Safari doesn't always fire onafterprint
         setTimeout(cleanup, 60000);
-    }, 300);
+    }, 300));
 };
 
 // ---------------------------------------------------------------------------

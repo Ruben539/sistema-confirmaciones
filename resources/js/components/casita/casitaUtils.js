@@ -4,6 +4,31 @@
 import * as XLSX from 'xlsx';
 import { printHtml } from '../../eventDocuments';
 
+// Logos uploaded to storage/app/public/images (served through `php artisan storage:link`)
+export const CASITA_LOGO = '/storage/images/casita.png';
+export const REAL_LOGO = '/storage/images/real.png';
+
+const imageCache = {};
+/** Loads an image as a data URL for jsPDF. Resolves null when the file is missing, so documents still work without it. */
+export const loadImage = (url) => {
+    imageCache[url] ??= fetch(url)
+        .then(r => (r.ok ? r.blob() : null))
+        .then(blob => blob && blob.type.startsWith('image/') ? new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const img = new Image();
+                img.onload = () => resolve({ dataUrl: reader.result, width: img.naturalWidth, height: img.naturalHeight, format: blob.type.includes('png') ? 'PNG' : 'JPEG' });
+                img.onerror = () => resolve(null);
+                img.src = reader.result;
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+        }) : null)
+        .catch(() => null)
+        .then(result => { if (!result) delete imageCache[url]; return result; });
+    return imageCache[url];
+};
+
 export const gs = (n) => `₲ ${Math.round(Number(n) || 0).toLocaleString('es-PY')}`;
 
 // "1.000.000", "₲ 850.000", "  -  " → integer
@@ -81,6 +106,7 @@ const CSS = `
     body{font-family:'Helvetica Neue',Arial,sans-serif;color:#18181b;margin:0;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #18181b;padding-bottom:8px;margin-bottom:14px}
     .head h1{font-size:20px;margin:0}
+    .head .logo{display:block;height:64px;margin:0 0 6px auto}
     .head .brand{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#71717a;text-align:right}
     .meta{display:grid;grid-template-columns:140px 1fr;gap:4px 10px;margin-bottom:14px}
     .meta b{color:#52525b;font-weight:600}
@@ -101,10 +127,13 @@ const CSS = `
 
 const shell = (title, body) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${CSS}</style></head><body>${body}</body></html>`;
 
-const head = (title, event) => `
+// The logo hides itself if the file is missing on the server
+const logoTag = (url) => url ? `<img class="logo" src="${esc(window.location.origin + url)}" alt="" onerror="this.remove()">` : '';
+
+const head = (title, event, logo = CASITA_LOGO) => `
     <div class="head">
         <div><h1>${esc(title)}</h1></div>
-        <div class="brand">${esc(event.venue || 'La Casita')}<br>Impreso ${new Date().toLocaleDateString('es-PY')}</div>
+        <div class="brand">${logoTag(logo)}${esc(event.venue || 'La Casita')}<br>Impreso ${new Date().toLocaleDateString('es-PY')}</div>
     </div>
     <div class="meta">
         <b>Cliente:</b><span>${esc(event.client_name)}</span>
@@ -151,7 +180,7 @@ export const printSettlement = (event) => {
     };
 
     const body = `
-        ${head('Liquidación de pérdidas y bebidas', event)}
+        ${head('Liquidación de pérdidas y bebidas', event, REAL_LOGO)}
         <table><thead><tr><th>Detalle</th><th class="n">Cantidad</th><th class="n">Precio unitario</th><th class="n">Total</th></tr></thead>
         <tbody>${section('perdida')}${section('agregado')}${section('sobrante')}</tbody></table>
         <div class="totals">
