@@ -63,9 +63,9 @@ export function buildBudgetPdf(data, { draft = true, logo = null } = {}) {
     const facts = [
         ['Cliente', data.client_name || '—'],
         ['Fecha del evento', longDate(data.event_date) || 'A confirmar'],
-        ['Horario', data.schedule],
+        ['Horario', data.schedule || '—'],
         ['Lugar', venue],
-        ['Menú', data.menu],
+        ['Menú', data.menu || '—'],
         ['Wedding planner', data.planner_name],
     ].filter(([, v]) => v);
     const colW = (W - 2 * M) / 2;
@@ -82,7 +82,7 @@ export function buildBudgetPdf(data, { draft = true, logo = null } = {}) {
     // ── Lines: shrink to fit the page ──
     const lines = (data.lines || []).filter(l => String(l.description || '').trim());
     const total = lines.reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 0), 0);
-    const footerSpace = 58; // totals + notes + signature
+    const footerSpace = 46; // totals + notes + footer note
     const available = H - y - footerSpace;
     const rowH = Math.min(8, available / (lines.length + 1));
     const fontSize = Math.max(5.5, Math.min(10, rowH * 1.35));
@@ -143,16 +143,9 @@ export function buildBudgetPdf(data, { draft = true, logo = null } = {}) {
         doc.setFont('helvetica', 'normal').text(doc.splitTextToSize(String(data.notes), W - 2 * M - 26).slice(0, 2), M + 24, y);
     }
 
-    // ── Signatures and footer ──
-    const signY = H - 22;
-    doc.setDrawColor(...DARK).setLineWidth(0.3);
-    doc.line(M + 10, signY, M + 70, signY);
-    doc.line(W - M - 70, signY, W - M - 10, signY);
-    doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...MUTED);
-    doc.text('Firma del cliente', M + 40, signY + 4, { align: 'center' });
-    doc.text(venue, W - M - 40, signY + 4, { align: 'center' });
+    // ── Footer ──
     if (draft) {
-        doc.setFontSize(7).text('Borrador de presupuesto: precios y cantidades sujetos a confirmación.', W / 2, H - 8, { align: 'center' });
+        doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...MUTED).text('Borrador de presupuesto: precios y cantidades sujetos a confirmación.', W / 2, H - 8, { align: 'center' });
     }
 
     return doc;

@@ -151,9 +151,10 @@ const head = (title, event, logo = CASITA_LOGO) => `
     </div>
     <div class="meta">
         <b>Cliente:</b><span>${esc(event.client_name)}</span>
-        <b>Fecha del evento:</b><span>${esc(longDate(event.event_date) || '—')}</span>
-        ${event.schedule ? `<b>Horario:</b><span>${esc(event.schedule)}</span>` : ''}
-        ${event.menu ? `<b>Menú:</b><span>${esc(event.menu)}</span>` : ''}
+        <b>Fecha del evento:</b><span>${esc(longDate(event.event_date) || 'A confirmar')}</span>
+        <b>Horario:</b><span>${esc(event.schedule || '—')}</span>
+        <b>Lugar:</b><span>${esc(event.venue || 'La Casita')}</span>
+        <b>Menú:</b><span>${esc(event.menu || '—')}</span>
         ${event.planner_name ? `<b>Wedding planner:</b><span>${esc(event.planner_name)}</span>` : ''}
     </div>`;
 
@@ -177,8 +178,7 @@ export const printBudget = (event, { withPayments = false } = {}) => {
             <div class="big"><span>Saldo pendiente</span><span>${gs(event.balance)}</span></div>
         </div>
         ${payments}
-        ${event.notes ? `<div class="notes"><b>Observaciones:</b> ${esc(event.notes)}</div>` : ''}
-        <div class="sign"><div>Firma del cliente</div><div>${esc(event.venue || 'La Casita')}</div></div>`;
+        ${event.notes ? `<div class="notes"><b>Observaciones:</b> ${esc(event.notes)}</div>` : ''}`;
 
     printHtml(shell(`${withPayments ? 'Recibo' : 'Presupuesto'} - ${event.client_name}`, body));
 };

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { PackageX, Plus, X, Save, Printer } from 'lucide-react';
 import { apiFetch } from '../../api';
-import { gs, SECTION_LABELS, printSettlement, catalogKey, applyLineChange } from './casitaUtils';
+import { gs, longDate, SECTION_LABELS, printSettlement, catalogKey, applyLineChange } from './casitaUtils';
 import { PageHeader, Card, Field, Kpi, Empty, MoneyInput, CatalogInput, inputCls, btnPrimary, btnGhost } from './CasitaUi';
 import { LogosButton } from './CasitaLogos';
 import CasitaEventPicker from './CasitaEventPicker';
@@ -81,6 +81,23 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
             </Card>
 
             {!event ? <Empty>Elegí un evento para cargar su liquidación.</Empty> : (<>
+                <Card>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        {[
+                            ['Cliente', event.client_name],
+                            ['Menú', event.menu],
+                            ['Fecha', longDate(event.event_date) || 'A confirmar'],
+                            ['Hora', event.schedule],
+                            ['Lugar', event.venue || 'La Casita'],
+                        ].map(([label, value]) => (
+                            <div key={label} className="min-w-0">
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{label}</div>
+                                <div className="text-sm font-black text-zinc-900 dark:text-white truncate" title={value || ''}>{value || '—'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <Kpi label="Pérdidas + agregados" value={gs(charges)} tone="rose" />
                     <Kpi label="Bebidas sobrantes" value={gs(sum('sobrante'))} />
