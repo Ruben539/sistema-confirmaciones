@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Printer, Check, Layers, Eye, Sparkles, Box, ChevronLeft, ChevronRight, Palette, Type, RotateCcw, Scissors, Upload, Trash2, Image, Flower2 } from 'lucide-react';
+import { X, Printer, Check, Layers, Eye, Sparkles, Box, ChevronLeft, ChevronRight, Palette, Type, RotateCcw, Scissors, Upload, Trash2, Image, Flower2, QrCode, Camera, Heart } from 'lucide-react';
 import { printHtml, buildTableTentsDocument } from '../eventDocuments';
 
 const FLORAL_MOTIFS = [
@@ -166,7 +166,14 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
     const [icon, setIcon] = useState('none');
     const [monogram, setMonogram] = useState('');
 
-    const [activeTab, setActiveTab] = useState('style'); // 'style' | 'text' | 'tables'
+    // QR Captura y Comparte / Fotos en Vivo
+    const [qrMode, setQrMode] = useState('back'); // 'back' (Frente Número · Dorso QR) | 'both' | 'none'
+    const [qrTarget, setQrTarget] = useState('dedication'); // 'dedication' | 'invitation'
+    const [qrTitle, setQrTitle] = useState('Captura y comparte');
+    const [qrSubtitle, setQrSubtitle] = useState('Escaneá el QR y sumá tus fotos a este recuerdo especial.');
+    const [qrThanks, setQrThanks] = useState('No hay palabras suficientes para agradecer su compañía en este día tan especial.');
+
+    const [activeTab, setActiveTab] = useState('style'); // 'style' | 'text' | 'qr' | 'tables'
     const [selectedTableIds, setSelectedTableIds] = useState(() => tables.map(t => t.id));
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState('sheet'); // 'sheet' | '3d'
@@ -193,6 +200,11 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                 if (parsed.borderStyle) setBorderStyle(parsed.borderStyle);
                 if (parsed.icon) setIcon(parsed.icon);
                 if (parsed.monogram) setMonogram(parsed.monogram);
+                if (parsed.qrMode !== undefined) setQrMode(parsed.qrMode);
+                if (parsed.qrTarget !== undefined) setQrTarget(parsed.qrTarget);
+                if (parsed.qrTitle) setQrTitle(parsed.qrTitle);
+                if (parsed.qrSubtitle) setQrSubtitle(parsed.qrSubtitle);
+                if (parsed.qrThanks !== undefined) setQrThanks(parsed.qrThanks);
             }
         } catch (e) {}
     }, [storageKey]);
@@ -204,6 +216,7 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                 title, subtitle, prefix, baseText, size, floralMotif, bgImage, bgImageOpacity,
                 fontTitle, fontNumber, primaryColor, numberColor, bgColor,
                 borderStyle, icon, monogram,
+                qrMode, qrTarget, qrTitle, qrSubtitle, qrThanks,
             };
             localStorage.setItem(storageKey, JSON.stringify(cfg));
         } catch (e) {}
@@ -297,6 +310,11 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                 borderStyle,
                 icon,
                 monogram,
+                qrMode,
+                qrTarget,
+                qrTitle,
+                qrSubtitle,
+                qrThanks,
             },
         });
 
@@ -306,6 +324,13 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
 
     const tableNumberDisplay = currentTable?.name.replace(/mesa\s+/i, '') || '4';
     const nextTableNumberDisplay = nextTable?.name.replace(/mesa\s+/i, '') || '5';
+
+    const eventPublicCode = event?.public_code;
+    const targetPath = qrTarget === 'invitation' ? 'invitacion' : 'dedicatoria';
+    const resolvedQrUrl = eventPublicCode
+        ? `${typeof window !== 'undefined' ? window.location.origin : ''}/evento/${eventPublicCode}/${targetPath}`
+        : (typeof window !== 'undefined' ? window.location.origin : '');
+    const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(resolvedQrUrl)}`;
 
     // Decorative Floral Motifs preview helper
     const renderFloralMotifPreview = () => {
@@ -408,6 +433,69 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
 
     // Render Face Preview Box
     const renderPreviewFace = (tableObj, faceLabel, isBack = false) => {
+        // Si la cara posterior tiene el modo QR activo, renderizamos la tarjeta Captura y Comparte
+        if (isBack && qrMode === 'back') {
+            return (
+                <div 
+                    className={`h-[110px] p-1.5 rounded relative overflow-hidden flex items-center justify-center text-center transition-all transform rotate-180 ${
+                        borderStyle === 'double' ? 'border-2' :
+                        borderStyle === 'single' ? 'border-2' :
+                        borderStyle === 'botanical' ? 'border border-emerald-800/20 shadow-inner' :
+                        borderStyle === 'rounded' ? 'border-2 rounded-xl' :
+                        borderStyle === 'corners' ? 'border' : 'border-0'
+                    }`}
+                    style={{ 
+                        borderColor: primaryColor,
+                        outline: borderStyle === 'double' ? `1px solid ${primaryColor}` : 'none',
+                        outlineOffset: borderStyle === 'double' ? '-3px' : '0',
+                        backgroundColor: bgColor,
+                    }}
+                >
+                    {bgImage && (
+                        <div 
+                            className="absolute inset-0 bg-cover bg-center pointer-events-none z-0" 
+                            style={{ backgroundImage: `url(${bgImage})`, opacity: bgImageOpacity }} 
+                        />
+                    )}
+
+                    {renderFloralMotifPreview()}
+
+                    <div className="relative z-10 w-full flex flex-col items-center justify-center text-center -translate-y-0.5 pointer-events-none px-1">
+                        <div 
+                            className={`truncate font-bold leading-none ${
+                                fontTitle === 'cursive' ? 'font-serif italic text-[11px]' : 'font-serif uppercase tracking-wider text-[7.5px]'
+                            }`}
+                            style={{ color: primaryColor }}
+                        >
+                            {qrTitle}
+                        </div>
+
+                        <div className="my-0.5" style={{ color: primaryColor }}>
+                            <Camera className="w-3.5 h-3.5 mx-auto" />
+                        </div>
+
+                        <div className="w-12 h-12 p-0.5 bg-white rounded border border-zinc-200 shadow-xs relative flex items-center justify-center my-0.5">
+                            <img src={qrImgSrc} alt="QR" className="w-full h-full object-contain" />
+                        </div>
+
+                        <div className="text-[5px] font-bold text-zinc-700 leading-tight max-w-[95%]">
+                            {qrSubtitle}
+                        </div>
+
+                        <div className="text-[5.5px] opacity-60 leading-none my-0.5" style={{ color: primaryColor }}>❦</div>
+
+                        {qrThanks && (
+                            <div className="text-[4px] italic text-zinc-500 leading-tight max-w-[95%] line-clamp-1">
+                                {qrThanks}
+                            </div>
+                        )}
+
+                        <div className="text-[4px] uppercase text-zinc-400 tracking-wider mt-0.5 leading-none">{faceLabel}</div>
+                    </div>
+                </div>
+            );
+        }
+
         const numDisplay = tableObj?.name.replace(/mesa\s+/i, '') || '4';
         return (
             <div 
@@ -470,6 +558,13 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                     {subtitle && (
                         <div className="text-[5px] text-zinc-500 truncate mt-0.5 leading-none max-w-[95%]">
                             {subtitle}
+                        </div>
+                    )}
+
+                    {qrMode === 'both' && (
+                        <div className="mt-1 flex flex-col items-center">
+                            <img src={qrImgSrc} alt="QR" className="w-5 h-5 rounded" />
+                            <span className="text-[4px] font-bold text-zinc-600">Subí fotos</span>
                         </div>
                     )}
 
@@ -543,6 +638,19 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                             >
                                 <Type className="w-3.5 h-3.5" />
                                 <span>Iniciales & Textos</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('qr')}
+                                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                    activeTab === 'qr' 
+                                        ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm' 
+                                        : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
+                                }`}
+                            >
+                                <QrCode className="w-3.5 h-3.5" />
+                                <span>📸 QR Fotos</span>
                             </button>
 
                             <button
@@ -948,6 +1056,154 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
                             </div>
                         )}
 
+                        {/* TAB QR: CAPTURA Y COMPARTE / FOTOS EN VIVO */}
+                        {activeTab === 'qr' && (
+                            <div className="space-y-4">
+                                <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-3">
+                                    <Camera className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                    <div>
+                                        <div className="font-bold">Muro de Fotos en Vivo / Captura y Comparte</div>
+                                        <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed">
+                                            Permite que los invitados en su mesa escaneen el código QR con su celular para subir fotos instantáneas y dedicatorias directamente a la pantalla gigante del salón y al álbum digital.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 block">
+                                        Diseño y Ubicación del Código QR
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setQrMode('back')}
+                                            className={`p-3 rounded-2xl border text-left transition-all ${
+                                                qrMode === 'back'
+                                                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20'
+                                                    : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/40 hover:border-zinc-300'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-black text-zinc-900 dark:text-white">Dorso QR Fotos</span>
+                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                                                    ★ Como en tu foto
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                                                Frente: Número de mesa · Dorso: Captura y Comparte con QR.
+                                            </p>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setQrMode('both')}
+                                            className={`p-3 rounded-2xl border text-left transition-all ${
+                                                qrMode === 'both'
+                                                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20'
+                                                    : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/40 hover:border-zinc-300'
+                                            }`}
+                                        >
+                                            <div className="text-xs font-black text-zinc-900 dark:text-white">Ambas Caras</div>
+                                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                                                Número de mesa y QR compacto visible desde ambos lados.
+                                            </p>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setQrMode('none')}
+                                            className={`p-3 rounded-2xl border text-left transition-all ${
+                                                qrMode === 'none'
+                                                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20'
+                                                    : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/40 hover:border-zinc-300'
+                                            }`}
+                                        >
+                                            <div className="text-xs font-black text-zinc-900 dark:text-white">Sin QR</div>
+                                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                                                Solo número de mesa en ambas caras (clásico).
+                                            </p>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {qrMode !== 'none' && (
+                                    <div className="p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 space-y-3">
+                                        <div>
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                                                Destino del Código QR al Escanear
+                                            </label>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQrTarget('dedication')}
+                                                    className={`p-2.5 rounded-xl border text-left text-xs transition-all ${
+                                                        qrTarget === 'dedication'
+                                                            ? 'border-emerald-500 bg-white dark:bg-zinc-800 font-bold text-emerald-700 dark:text-emerald-300 shadow-xs ring-1 ring-emerald-500/30'
+                                                            : 'border-zinc-200 dark:border-zinc-700 bg-zinc-100/60 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400'
+                                                    }`}
+                                                >
+                                                    <div className="font-black">📸 Subir Fotos & Dedicatorias</div>
+                                                    <div className="text-[10px] text-zinc-400 mt-0.5 truncate">/evento/{event?.public_code || '...'}/dedicatoria</div>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQrTarget('invitation')}
+                                                    className={`p-2.5 rounded-xl border text-left text-xs transition-all ${
+                                                        qrTarget === 'invitation'
+                                                            ? 'border-emerald-500 bg-white dark:bg-zinc-800 font-bold text-emerald-700 dark:text-emerald-300 shadow-xs ring-1 ring-emerald-500/30'
+                                                            : 'border-zinc-200 dark:border-zinc-700 bg-zinc-100/60 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400'
+                                                    }`}
+                                                >
+                                                    <div className="font-black">💌 Invitación Digital Completa</div>
+                                                    <div className="text-[10px] text-zinc-400 mt-0.5 truncate">/evento/{event?.public_code || '...'}/invitacion</div>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                                                Título del Panel QR
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={qrTitle}
+                                                onChange={e => setQrTitle(e.target.value)}
+                                                placeholder="Ej: Captura y comparte"
+                                                className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                                                Instrucción para los invitados
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={qrSubtitle}
+                                                onChange={e => setQrSubtitle(e.target.value)}
+                                                placeholder="Ej: Escaneá el QR y sumá tus fotos a este recuerdo especial."
+                                                className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 block mb-1">
+                                                Mensaje de agradecimiento (al pie del QR)
+                                            </label>
+                                            <textarea
+                                                rows={2}
+                                                value={qrThanks}
+                                                onChange={e => setQrThanks(e.target.value)}
+                                                placeholder="Ej: No hay palabras suficientes para agradecer su compañía en nuestra boda..."
+                                                className="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-xs bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white resize-none"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* TAB 3: SELECCIÓN DE MESAS */}
                         {activeTab === 'tables' && (
                             <div className="space-y-3">
@@ -1208,14 +1464,29 @@ export default function TableTentsModal({ isOpen, onClose, event, tables = [], s
 
                                             {/* Contenido Cara Derecha */}
                                             <g transform="translate(132, 115) rotate(-14)">
-                                                {prefix && <text textAnchor="middle" fontSize="6.5" fontWeight="bold" fill={primaryColor}>{prefix}</text>}
-                                                <text textAnchor="middle" y="24" fontSize="24" fontWeight="900" fill={numberColor}>
-                                                    {tableNumberDisplay}
-                                                </text>
-                                                <text textAnchor="middle" y="35" fontSize="7" fontStyle="italic" fontWeight="bold" fill={primaryColor}>
-                                                    {title}
-                                                </text>
-                                                {subtitle && <text textAnchor="middle" y="43" fontSize="4.5" fill="#71717a">{subtitle}</text>}
+                                                {qrMode === 'back' ? (
+                                                    <>
+                                                        <text textAnchor="middle" y="6" fontSize="6" fontStyle="italic" fontWeight="bold" fill={primaryColor}>Captura y comparte</text>
+                                                        {/* Mini QR box */}
+                                                        <rect x="-11" y="11" width="22" height="22" rx="2" fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.8" />
+                                                        <rect x="-8" y="14" width="6" height="6" fill="#1e293b" />
+                                                        <rect x="2" y="14" width="6" height="6" fill="#1e293b" />
+                                                        <rect x="-8" y="24" width="6" height="6" fill="#1e293b" />
+                                                        <rect x="3" y="25" width="4" height="4" fill="#1e293b" />
+                                                        <text textAnchor="middle" y="40" fontSize="4.5" fontWeight="bold" fill="#334155">Subí tus fotos</text>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {prefix && <text textAnchor="middle" fontSize="6.5" fontWeight="bold" fill={primaryColor}>{prefix}</text>}
+                                                        <text textAnchor="middle" y="24" fontSize="24" fontWeight="900" fill={numberColor}>
+                                                            {tableNumberDisplay}
+                                                        </text>
+                                                        <text textAnchor="middle" y="35" fontSize="7" fontStyle="italic" fontWeight="bold" fill={primaryColor}>
+                                                            {title}
+                                                        </text>
+                                                        {subtitle && <text textAnchor="middle" y="43" fontSize="4.5" fill="#71717a">{subtitle}</text>}
+                                                    </>
+                                                )}
                                             </g>
 
                                             {/* Punto de base de apoyo */}

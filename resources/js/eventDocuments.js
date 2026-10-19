@@ -409,9 +409,22 @@ export const buildTableTentsDocument = ({
         borderStyle: config.borderStyle ?? (style === 'botanical' ? 'botanical' : 'double'),
         icon: config.icon ?? 'none',
         monogram: config.monogram ?? '',
+        qrMode: config.qrMode ?? 'none', // 'none' | 'back' | 'both'
+        qrTarget: config.qrTarget ?? 'dedication', // 'dedication' | 'invitation'
+        qrTargetUrl: config.qrTargetUrl ?? null,
+        qrTitle: config.qrTitle ?? 'Captura y comparte',
+        qrSubtitle: config.qrSubtitle ?? 'Escaneá el QR y sumá tus fotos a este recuerdo especial.',
+        qrThanks: config.qrThanks ?? 'No hay palabras suficientes para agradecer su compañía en este día tan especial.',
     };
 
     const isStandardSize = cfg.size === 'standard';
+
+    const eventPublicCode = event?.public_code;
+    const targetPath = cfg.qrTarget === 'invitation' ? 'invitacion' : 'dedicatoria';
+    const resolvedQrUrl = cfg.qrTargetUrl || (eventPublicCode
+        ? `${typeof window !== 'undefined' ? window.location.origin : ''}/evento/${eventPublicCode}/${targetPath}`
+        : (typeof window !== 'undefined' ? window.location.origin : ''));
+    const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(resolvedQrUrl)}`;
 
     // 1. Botanical Eucalyptus Vector Artwork
     const EUCALYPTUS_SVGS = `
@@ -615,8 +628,61 @@ export const buildTableTentsDocument = ({
         return `<svg class="tent-icon" viewBox="0 0 32 20" fill="none" stroke="${cfg.primaryColor}" stroke-width="2" width="22" height="14"><circle cx="11" cy="10" r="7"/><circle cx="21" cy="10" r="7"/></svg>`;
     };
 
+    // Render QR 'Captura y comparte' face
+    const renderQrFace = () => `
+        <div class="tent-face tent-face-back border-${cfg.borderStyle}">
+            <div class="tent-inner" style="background-color:${cfg.bgColor};">
+                ${cfg.bgImage ? `
+                    <div class="custom-bg-layer" style="background-image: url('${cfg.bgImage}'); opacity: ${cfg.bgImageOpacity};"></div>
+                ` : ''}
+
+                ${renderFloralMotif(cfg.floralMotif)}
+
+                <div class="tent-content-layer">
+                    <div class="tent-center-stack qr-card-stack">
+                        <div class="qr-heading font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">
+                            ${esc(cfg.qrTitle)}
+                        </div>
+
+                        <div class="qr-camera-icon" style="color:${cfg.primaryColor};">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+                                <path d="M12 11c-.9 0-1.8.7-1.8 1.8 0 1.2 1.8 2.5 1.8 2.5s1.8-1.3 1.8-2.5c0-1.1-.9-1.8-1.8-1.8z" fill="currentColor"/>
+                            </svg>
+                        </div>
+
+                        <div class="qr-image-frame" style="border-color:${cfg.primaryColor};">
+                            <img src="${qrImgSrc}" alt="QR Fotos" class="qr-code-img" />
+                            ${cfg.monogram ? `<span class="qr-center-badge" style="color:${cfg.primaryColor};">${esc(cfg.monogram)}</span>` : ''}
+                        </div>
+
+                        <div class="qr-instruction">
+                            ${esc(cfg.qrSubtitle)}
+                        </div>
+
+                        <div class="qr-leaf-divider" style="color:${cfg.primaryColor};">❦</div>
+
+                        ${cfg.qrThanks ? `
+                            <div class="qr-thanks-note">
+                                ${esc(cfg.qrThanks)}
+                            </div>
+                        ` : ''}
+
+                        <div class="qr-couple-names" style="color:${cfg.primaryColor};">
+                            ${esc(cfg.title || '')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
     // Render a single face (front or back rotated 180deg)
     const renderFace = (table, faceType) => {
+        if (faceType === 'back' && cfg.qrMode === 'back') {
+            return renderQrFace();
+        }
+
         // Parse table title & number
         let tableHeader = cfg.prefix || '';
         let tableMain = table.name;
@@ -644,6 +710,12 @@ export const buildTableTentsDocument = ({
                             <div class="table-number font-number-${cfg.fontNumber} ${tableMain.length > 4 ? 'table-text-long' : ''}" style="color:${cfg.numberColor};">${esc(tableMain)}</div>
                             ${cfg.title ? `<div class="couple-title font-title-${cfg.fontTitle}" style="color:${cfg.primaryColor};">${esc(cfg.title)}</div>` : ''}
                             ${cfg.subtitle ? `<div class="event-date">${esc(cfg.subtitle)}</div>` : ''}
+                            ${cfg.qrMode === 'both' ? `
+                                <div class="qr-compact-wrap" style="margin-top: 1.5mm;">
+                                    <img src="${qrImgSrc}" alt="QR" style="width:19mm;height:19mm;border-radius:4px;border:1px solid rgba(0,0,0,0.1);display:block;margin:0 auto;" />
+                                    <span style="display:block;font-size:5.5pt;margin-top:1px;font-weight:700;color:${cfg.primaryColor};">📸 Subí tus fotos</span>
+                                </div>
+                            ` : ''}
                             ${(cfg.icon && cfg.icon !== 'none') ? `<div class="face-footer">${renderIconSvg()}</div>` : ''}
                         </div>
                     </div>
@@ -1091,6 +1163,92 @@ export const buildTableTentsDocument = ({
             word-wrap: break-word;
         }
 
+        /* QR Card 'Captura y Comparte' Styles */
+        .qr-card-stack {
+            width: 90%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            margin: 0 auto;
+            transform: translateY(-2mm);
+        }
+        .qr-heading {
+            font-size: 16pt;
+            line-height: 1.1;
+            margin-bottom: 1mm;
+        }
+        .qr-camera-icon {
+            margin-bottom: 1.5mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .qr-image-frame {
+            width: 28mm;
+            height: 28mm;
+            padding: 1.5mm;
+            background: #ffffff;
+            border: 1px solid #e4e4e7;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5mm;
+        }
+        .qr-code-img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            image-rendering: pixelated;
+        }
+        .qr-center-badge {
+            position: absolute;
+            background: #ffffff;
+            padding: 1px 3px;
+            border-radius: 3px;
+            font-size: 5.5pt;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            box-shadow: 0 0 3px rgba(0,0,0,0.25);
+            border: 1px solid rgba(0,0,0,0.12);
+        }
+        .qr-instruction {
+            font-size: 6.8pt;
+            font-weight: 700;
+            color: #27272a;
+            max-width: 86%;
+            line-height: 1.25;
+            margin-bottom: 1mm;
+        }
+        .qr-leaf-divider {
+            font-size: 7pt;
+            opacity: 0.6;
+            margin-bottom: 0.8mm;
+        }
+        .qr-thanks-note {
+            font-size: 5.8pt;
+            color: #52525b;
+            font-style: italic;
+            line-height: 1.25;
+            max-width: 88%;
+            margin-bottom: 1.5mm;
+        }
+        .qr-couple-names {
+            font-size: 7.5pt;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+        .qr-compact-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
         .table-tag {
             font-family: 'Montserrat', Arial, sans-serif;
             font-size: 7.5pt;
