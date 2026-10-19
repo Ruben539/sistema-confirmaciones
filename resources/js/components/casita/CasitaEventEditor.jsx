@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Save, Printer, Receipt, Trash2, Plus, X, Wallet, PackageX, Pencil, Check } from 'lucide-react';
+import { ArrowLeft, Save, Printer, Receipt, Trash2, Plus, X, Wallet, PackageX, Pencil, Check, FileText, Download } from 'lucide-react';
 import { apiFetch } from '../../api';
 import DateInput from '../DateInput';
 import ConfirmModal from '../ConfirmModal';
+import { buildBudgetPdf, budgetFileName } from './budgetPdf';
 import { gs, fmtDate, todayIso, KIND_LABELS, printBudget, catalogKey, applyLineChange } from './casitaUtils';
 import { Card, Field, Kpi, Empty, BalanceBadge, MoneyInput, CatalogInput, CatalogItemModal, inputCls, btnPrimary, btnGhost, btnDanger } from './CasitaUi';
 
@@ -24,6 +25,7 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
     const [planners, setPlanners] = useState([]);
     const [menus, setMenus] = useState([]);
     const [itemModal, setItemModal] = useState(null); // { item } to edit, or { initialName, lineKey } to add
+    const [draftPdf, setDraftPdf] = useState(null); // { url, doc, name } while the preview is open
     const [loading, setLoading] = useState(!isNew);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -122,6 +124,19 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
         applyServer(json.event);
         if (isNew) onSaved(json.event.id);
     };
+
+    // Draft PDF of what is on screen right now (saved or not), to download and send to the client
+    const openDraft = () => {
+        const data = {
+            ...form,
+            planner_name: planners.find(p => p.id === form.planner_id)?.name,
+            lines,
+            paid_total: saved?.paid_total || 0,
+        };
+        const doc = buildBudgetPdf(data);
+        setDraftPdf({ doc, url: doc.output('bloburl'), name: budgetFileName(data) });
+    };
+    const closeDraft = () => { if (draftPdf) URL.revokeObjectURL(draftPdf.url); setDraftPdf(null); };
 
     const remove = async () => {
         const { ok, json } = await apiFetch(`/api/casita/events/${eventId}`, { method: 'DELETE' });
@@ -232,6 +247,9 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
                 {error && <span className="text-xs font-bold text-rose-600">{error}</span>}
                 {dirty && !error && <span className="text-xs text-amber-600 font-bold">Hay cambios sin guardar</span>}
+                <button onClick={openDraft} className={`${btnGhost} px-5 py-3`} title="Ver el presupuesto en PDF para descargarlo y enviarlo">
+                    <FileText className="w-4 h-4" /> Borrador
+                </button>
                 <button onClick={save} disabled={saving} className={`${btnPrimary} px-6 py-3`}>
                     <Save className="w-4 h-4" /> {saving ? 'Guardando…' : dirty || isNew ? 'Guardar' : 'Guardado'}
                 </button>
@@ -246,6 +264,24 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
             {!isNew && (
                 <div className="flex justify-end">
                     <button onClick={() => setConfirmDelete(true)} className={btnDanger}><Trash2 className="w-4 h-4" /> Eliminar evento</button>
+                </div>
+            )}
+
+            {draftPdf && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-zinc-950/60" onMouseDown={closeDraft}>
+                    <div className="w-full max-w-3xl h-[90vh] bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl flex flex-col overflow-hidden" onMouseDown={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
+                            <div>
+                                <div className="text-sm font-black">Borrador del presupuesto</div>
+                                <div className="text-[11px] text-zinc-500">{dirty ? 'Incluye los cambios sin guardar.' : 'Igual a lo guardado.'}</div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => draftPdf.doc.save(draftPdf.name)} className={btnPrimary}><Download className="w-4 h-4" /> Descargar PDF</button>
+                                <button onClick={closeDraft} className={btnGhost}><X className="w-4 h-4" /></button>
+                            </div>
+                        </div>
+                        <iframe src={draftPdf.url} title="Borrador del presupuesto" className="flex-1 w-full bg-zinc-100" />
+                    </div>
                 </div>
             )}
 
