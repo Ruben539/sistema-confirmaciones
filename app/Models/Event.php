@@ -326,5 +326,10 @@ class Event extends Model
     {
         return $this->hasMany(EventDedication::class)->latest();
     }
+
+    public function triviaResponses()
+    {
+        return $this->hasMany(EventTriviaResponse::class)->orderByDesc('score')->latest();
+    }
 }
 

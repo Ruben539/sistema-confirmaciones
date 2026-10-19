@@ -1,22 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Sparkles, Music, Disc, Gift, Film, Camera, Tv, ExternalLink, Copy, Check, 
-    Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock, Radio, Cast, X 
+    Share2, Eye, QrCode, Settings, Calendar, Heart, ShieldCheck, Lock, Radio, Cast, X, Trophy
 } from 'lucide-react';
 import EventInvitationSettingsModal from './EventInvitationSettingsModal';
 import DigitalInvitationDemo from './DigitalInvitationDemo';
 import EventSongSuggestionsModal from './EventSongSuggestionsModal';
 import EventDedicationsManagerModal from './EventDedicationsManagerModal';
+import EventTriviaLeaderboardModal from './EventTriviaLeaderboardModal';
 import { apiFetch } from '../api';
 
 export default function EventInteractivePanel({ event, user, onUpdateEvent, showToast }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isSongsOpen, setIsSongsOpen] = useState(false);
     const [isDedicationsOpen, setIsDedicationsOpen] = useState(false);
+    const [isTriviaOpen, setIsTriviaOpen] = useState(false);
     const [isLiveCameraModalOpen, setIsLiveCameraModalOpen] = useState(false);
 
     const [songsCount, setSongsCount] = useState(0);
     const [dedicationsCount, setDedicationsCount] = useState(0);
+    const [triviaCount, setTriviaCount] = useState(0);
     const [copiedUrl, setCopiedUrl] = useState(null);
     const [spotifyMeta, setSpotifyMeta] = useState(null);
 
@@ -43,9 +46,10 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
 
     const fetchCounts = async () => {
         try {
-            const [songsRes, dedRes] = await Promise.all([
+            const [songsRes, dedRes, triviaRes] = await Promise.all([
                 apiFetch(`/api/events/${event.id}/song-suggestions`),
                 apiFetch(`/api/events/${event.id}/dedications`),
+                apiFetch(`/api/events/${event.id}/trivia-leaderboard`),
             ]);
 
             if (songsRes.ok && songsRes.json?.total !== undefined) {
@@ -53,6 +57,9 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
             }
             if (dedRes.ok && Array.isArray(dedRes.json)) {
                 setDedicationsCount(dedRes.json.length);
+            }
+            if (triviaRes.ok && triviaRes.json?.total !== undefined) {
+                setTriviaCount(triviaRes.json.total);
             }
         } catch (e) {
             console.error(e);
@@ -166,8 +173,8 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                 </div>
             </div>
 
-            {/* 3 CORE INTERACTIVE MODULE CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* 4 CORE INTERACTIVE MODULE CARDS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 
                 {/* 1. SPOTIFY & MUSIC SUGGESTIONS */}
                 <div className="p-6 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-shadow">
@@ -332,6 +339,40 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                         </div>
                     </div>
                 </div>
+
+                {/* 4. TRIVIA & PODIO DE GANADORES */}
+                <div className="p-6 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm flex flex-col justify-between space-y-4 hover:shadow-md transition-shadow">
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-black">
+                                <Trophy className="w-6 h-6" />
+                            </div>
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                🏆 Podio en Vivo
+                            </span>
+                        </div>
+
+                        <div>
+                            <h3 className="text-base font-black text-zinc-900 dark:text-white">
+                                Trivia & Ganadores
+                            </h3>
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                {triviaCount} {triviaCount === 1 ? 'invitado ha jugado' : 'invitados han jugado'}. Los ganadores se proyectan en pantalla gigante.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsTriviaOpen(true)}
+                            className="w-full py-2.5 px-4 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold text-xs rounded-xl border border-amber-500/30 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                            <Trophy className="w-4 h-4 text-amber-500" />
+                            <span>Ver Podio & Ranking ({triviaCount})</span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {/* DIRECT LINKS & ACCESS MANAGER */}
@@ -490,6 +531,16 @@ export default function EventInteractivePanel({ event, user, onUpdateEvent, show
                     event={event}
                     onClose={() => {
                         setIsDedicationsOpen(false);
+                        fetchCounts();
+                    }}
+                />
+            )}
+
+            {isTriviaOpen && (
+                <EventTriviaLeaderboardModal
+                    event={event}
+                    onClose={() => {
+                        setIsTriviaOpen(false);
                         fetchCounts();
                     }}
                 />

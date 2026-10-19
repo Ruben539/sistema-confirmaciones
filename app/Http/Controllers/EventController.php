@@ -677,11 +677,64 @@ class EventController extends Controller
             $dedications = [];
         }
 
+        $triviaLeaderboard = [];
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('event_trivia_responses')) {
+                $triviaLeaderboard = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+                    ->orderByDesc('score')
+                    ->orderBy('created_at')
+                    ->take(10)
+                    ->get(['id', 'participant_name', 'score', 'total_questions', 'created_at']);
+            }
+        } catch (\Throwable $e) {
+            $triviaLeaderboard = [];
+        }
+
         return response()->json([
             'event' => $event->toPublicArray(),
             'dedications' => $dedications,
+            'trivia_leaderboard' => $triviaLeaderboard,
             'upload_url' => url("/evento/{$event->public_code}/dedicatoria"),
         ]);
+    }
+
+    public function getAdminTriviaLeaderboard($id)
+    {
+        $event = Event::findOrFail($id);
+        $responses = [];
+        if (\Illuminate\Support\Facades\Schema::hasTable('event_trivia_responses')) {
+            $responses = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+                ->orderByDesc('score')
+                ->orderBy('created_at')
+                ->get();
+        }
+
+        return response()->json([
+            'responses' => $responses,
+            'total' => count($responses),
+        ]);
+    }
+
+    public function deleteTriviaResponse($id, $responseId)
+    {
+        $event = Event::findOrFail($id);
+        if (\Illuminate\Support\Facades\Schema::hasTable('event_trivia_responses')) {
+            \App\Models\EventTriviaResponse::where('event_id', $event->id)
+                ->where('id', $responseId)
+                ->delete();
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    public function resetTrivia($id)
+    {
+        $event = Event::findOrFail($id);
+        if (\Illuminate\Support\Facades\Schema::hasTable('event_trivia_responses')) {
+            \App\Models\EventTriviaResponse::where('event_id', $event->id)->delete();
+        }
+
+        return response()->json(['success' => true, 'message' => 'Ranking de trivia reiniciado']);
     }
 
     public function destroy($id)

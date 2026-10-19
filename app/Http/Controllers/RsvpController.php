@@ -1032,5 +1032,176 @@ class RsvpController extends Controller
             'song_request' => $songRequest
         ]);
     }
+
+    protected function ensureTriviaTable(): void
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('event_trivia_responses')) {
+            \Illuminate\Support\Facades\Schema::create('event_trivia_responses', function (\Illuminate\Database\Schema\Blueprint $table) {
+                $table->id();
+                $table->foreignId('event_id')->constrained()->cascadeOnDelete();
+                $table->foreignId('guest_id')->nullable()->constrained()->nullOnDelete();
+                $table->string('participant_name', 120);
+                $table->integer('score')->default(0);
+                $table->integer('total_questions')->default(0);
+                $table->integer('time_taken_seconds')->nullable();
+                $table->json('answers')->nullable();
+                $table->timestamps();
+                $table->index(['event_id', 'score']);
+            });
+        }
+    }
+
+    public function submitTrivia(Request $request, $token)
+    {
+        $guest = Guest::with('event')->where('token', $token)->firstOrFail();
+        $event = $guest->event;
+        $this->ensureTriviaTable();
+
+        $validated = $request->validate([
+            'participant_name' => 'nullable|string|max:120',
+            'score' => 'required|integer|min:0',
+            'total_questions' => 'required|integer|min:1',
+            'answers' => 'nullable|array',
+            'time_taken_seconds' => 'nullable|integer|min:0',
+        ]);
+
+        $name = trim($validated['participant_name'] ?? '') ?: ($guest->name ?: 'Invitado');
+
+        // Update if existing for this guest, or create new
+        $record = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->where('guest_id', $guest->id)
+            ->first();
+
+        if ($record) {
+            // Keep the best score
+            if ($validated['score'] >= $record->score) {
+                $record->update([
+                    'participant_name' => $name,
+                    'score' => $validated['score'],
+                    'total_questions' => $validated['total_questions'],
+                    'answers' => $validated['answers'] ?? $record->answers,
+                    'time_taken_seconds' => $validated['time_taken_seconds'] ?? $record->time_taken_seconds,
+                ]);
+            }
+        } else {
+            $record = \App\Models\EventTriviaResponse::create([
+                'event_id' => $event->id,
+                'guest_id' => $guest->id,
+                'participant_name' => $name,
+                'score' => $validated['score'],
+                'total_questions' => $validated['total_questions'],
+                'answers' => $validated['answers'] ?? null,
+                'time_taken_seconds' => $validated['time_taken_seconds'] ?? null,
+            ]);
+        }
+
+        $rank = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->where('score', '>', $record->score)
+            ->count() + 1;
+
+        $totalPlayers = \App\Models\EventTriviaResponse::where('event_id', $event->id)->count();
+
+        $top = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->orderByDesc('score')
+            ->orderBy('created_at')
+            ->take(5)
+            ->get(['id', 'participant_name', 'score', 'total_questions']);
+
+        return response()->json([
+            'success' => true,
+            'message' => '¡Tu puntaje ha sido registrado en el ranking de la fiesta! 🏆',
+            'record' => $record,
+            'rank' => $rank,
+            'total_players' => $totalPlayers,
+            'top_leaderboard' => $top,
+        ]);
+    }
+
+    public function submitPublicTrivia(Request $request, $code)
+    {
+        $event = \App\Models\Event::findByPublicCodeOrFail($code);
+        $this->ensureTriviaTable();
+
+        $validated = $request->validate([
+            'participant_name' => 'required|string|max:120',
+            'score' => 'required|integer|min:0',
+            'total_questions' => 'required|integer|min:1',
+            'answers' => 'nullable|array',
+            'time_taken_seconds' => 'nullable|integer|min:0',
+        ]);
+
+        $name = trim($validated['participant_name']);
+
+        // Check if there is already an entry for this name in this event
+        $record = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->where('participant_name', $name)
+            ->first();
+
+        if ($record) {
+            if ($validated['score'] >= $record->score) {
+                $record->update([
+                    'score' => $validated['score'],
+                    'total_questions' => $validated['total_questions'],
+                    'answers' => $validated['answers'] ?? $record->answers,
+                    'time_taken_seconds' => $validated['time_taken_seconds'] ?? $record->time_taken_seconds,
+                ]);
+            }
+        } else {
+            $record = \App\Models\EventTriviaResponse::create([
+                'event_id' => $event->id,
+                'guest_id' => null,
+                'participant_name' => $name,
+                'score' => $validated['score'],
+                'total_questions' => $validated['total_questions'],
+                'answers' => $validated['answers'] ?? null,
+                'time_taken_seconds' => $validated['time_taken_seconds'] ?? null,
+            ]);
+        }
+
+        $rank = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->where('score', '>', $record->score)
+            ->count() + 1;
+
+        $totalPlayers = \App\Models\EventTriviaResponse::where('event_id', $event->id)->count();
+
+        $top = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->orderByDesc('score')
+            ->orderBy('created_at')
+            ->take(5)
+            ->get(['id', 'participant_name', 'score', 'total_questions']);
+
+        return response()->json([
+            'success' => true,
+            'message' => '¡Tu puntaje ha sido registrado en el ranking de la fiesta! 🏆',
+            'record' => $record,
+            'rank' => $rank,
+            'total_players' => $totalPlayers,
+            'top_leaderboard' => $top,
+        ]);
+    }
+
+    public function getTriviaLeaderboard($code)
+    {
+        $event = \App\Models\Event::findByPublicCodeOrFail($code);
+        $this->ensureTriviaTable();
+
+        $leaderboard = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->orderByDesc('score')
+            ->orderBy('created_at')
+            ->take(15)
+            ->get(['id', 'participant_name', 'score', 'total_questions', 'created_at']);
+
+        $totalPlayers = \App\Models\EventTriviaResponse::where('event_id', $event->id)->count();
+        $perfectScores = \App\Models\EventTriviaResponse::where('event_id', $event->id)
+            ->whereColumn('score', 'total_questions')
+            ->count();
+
+        return response()->json([
+            'leaderboard' => $leaderboard,
+            'total_players' => $totalPlayers,
+            'perfect_scores' => $perfectScores,
+        ]);
+    }
 }
+
 

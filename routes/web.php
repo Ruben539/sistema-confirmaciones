@@ -53,6 +53,9 @@ Route::prefix('api')->group(function () {
     Route::get('/events/{code}/public-invitation', [RsvpController::class, 'publicInvitation'])->middleware('throttle:60,1');
     Route::post('/events/{code}/public-dedication', [RsvpController::class, 'uploadPublicDedication'])->middleware('throttle:20,1');
     Route::post('/events/{code}/public-song-request', [RsvpController::class, 'storePublicSongRequest'])->middleware('throttle:30,1');
+    Route::post('/rsvp/{token}/trivia-submit', [RsvpController::class, 'submitTrivia'])->middleware('throttle:30,1');
+    Route::post('/events/{code}/public-trivia-submit', [RsvpController::class, 'submitPublicTrivia'])->middleware('throttle:30,1');
+    Route::get('/events/{code}/trivia-leaderboard', [RsvpController::class, 'getTriviaLeaderboard'])->middleware('throttle:60,1');
     Route::post('/rsvp/suggest-dedication', [RsvpController::class, 'suggestDedication'])->middleware('throttle:15,1'); // IA (Gemini): tiene costo
 
     // Videos de dedicatorias en Google Drive (solo con link firmado)
@@ -175,6 +178,9 @@ Route::prefix('api')->group(function () {
         Route::get('/events/{id}/dedications', [EventController::class, 'getDedications']);
         Route::post('/events/{id}/dedications/{dedicationId}/toggle', [EventController::class, 'toggleDedicationApproval']);
         Route::delete('/events/{id}/dedications/{dedicationId}', [EventController::class, 'deleteDedication']);
+        Route::get('/events/{id}/trivia-leaderboard', [EventController::class, 'getAdminTriviaLeaderboard']);
+        Route::delete('/events/{id}/trivia-responses/{responseId}', [EventController::class, 'deleteTriviaResponse']);
+        Route::post('/events/{id}/trivia-reset', [EventController::class, 'resetTrivia']);
 
         // Acreditación en puerta (escaneo de QR)
         Route::post('/check-in/scan', [GuestController::class, 'scanQrCheckIn']);

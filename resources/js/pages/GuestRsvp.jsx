@@ -48,6 +48,11 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
     const [triviaAnswers, setTriviaAnswers] = useState({});
     const [triviaSubmitted, setTriviaSubmitted] = useState(false);
     const [triviaScore, setTriviaScore] = useState(0);
+    const [triviaPlayerName, setTriviaPlayerName] = useState('');
+    const [triviaRank, setTriviaRank] = useState(null);
+    const [triviaTotalPlayers, setTriviaTotalPlayers] = useState(0);
+    const [triviaTopLeaderboard, setTriviaTopLeaderboard] = useState([]);
+    const [triviaSubmitting, setTriviaSubmitting] = useState(false);
 
     // Countdown state
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isPast: false, isToday: false });
@@ -121,6 +126,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
                     setSongSuggestion(json.guest.song_suggestion || '');
                     setDedicationAuthor(json.guest.name || '');
                     setDjRequesterName(json.guest.name || '');
+                    setTriviaPlayerName(json.guest.name || '');
                 }
             } else {
                 setError('Enlace de invitación no encontrado o expirado.');
@@ -849,7 +855,7 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
         setTriviaAnswers(prev => ({ ...prev, [qId]: optionIdx }));
     };
 
-    const handleTriviaSubmit = (questions) => {
+    const handleTriviaSubmit = async (questions) => {
         let score = 0;
         (questions || []).forEach((q, idx) => {
             const key = q.id !== undefined ? q.id : idx;
@@ -858,13 +864,43 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
             }
         });
         setTriviaScore(score);
-        setTriviaSubmitted(true);
+        setTriviaSubmitting(true);
+
+        const nameToUse = triviaPlayerName.trim() || data?.guest?.name || dedicationAuthor.trim() || 'Invitado Especial';
+
+        try {
+            const endpoint = token
+                ? `/api/rsvp/${token}/trivia-submit`
+                : `/api/events/${event?.public_code}/public-trivia-submit`;
+
+            const { ok, json } = await apiFetch(endpoint, {
+                method: 'POST',
+                body: JSON.stringify({
+                    participant_name: nameToUse,
+                    score,
+                    total_questions: (questions || []).length,
+                    answers: triviaAnswers,
+                }),
+            });
+
+            if (ok && json) {
+                setTriviaRank(json.rank);
+                setTriviaTotalPlayers(json.total_players);
+                setTriviaTopLeaderboard(json.top_leaderboard || []);
+            }
+        } catch (err) {
+            console.error('Error submitting trivia:', err);
+        } finally {
+            setTriviaSubmitting(false);
+            setTriviaSubmitted(true);
+        }
     };
 
     const handleTriviaReset = () => {
         setTriviaAnswers({});
         setTriviaSubmitted(false);
         setTriviaScore(0);
+        setTriviaRank(null);
     };
 
     // Background Audio & Envelope Handlers
@@ -2407,7 +2443,13 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
                                         <div className="text-2xl font-black text-zinc-900 dark:text-white">
                                             ¡Puntaje: {triviaScore} de {qCount} Aciertos!
                                         </div>
-                                        <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-1 max-w-sm mx-auto">
+                                        {triviaRank && (
+                                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300 font-black text-xs mt-2 border border-amber-500/30">
+                                                <span>🏆</span>
+                                                <span>Puesto #{triviaRank} {triviaTotalPlayers > 1 ? `de ${triviaTotalPlayers} participantes` : 'del ranking'}</span>
+                                            </div>
+                                        )}
+                                        <p className="text-xs font-bold text-amber-600 dark:text-amber-400 mt-2 max-w-sm mx-auto">
                                             {triviaScore === qCount 
                                                 ? '¡Increíble! Eres un invitado de honor y conoces cada detalle ❤️'
                                                 : triviaScore >= Math.ceil(qCount / 2)
@@ -2415,6 +2457,39 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
                                                 : '¡Excelente intento! Lo más importante es celebrar juntos esta gran noche 🥳'}
                                         </p>
                                     </div>
+
+                                    {/* Mini Leaderboard preview */}
+                                    {triviaTopLeaderboard.length > 0 && (
+                                        <div className="pt-3 border-t border-amber-500/20 text-left space-y-2">
+                                            <div className="text-[11px] font-black uppercase text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                                                <span className="flex items-center gap-1">
+                                                    <Trophy className="w-3.5 h-3.5" /> Ranking en Vivo de la Fiesta
+                                                </span>
+                                                <span className="text-[10px] text-zinc-400 font-normal">Los que más saben</span>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {triviaTopLeaderboard.map((item, idx) => {
+                                                    const isMe = item.participant_name === (triviaPlayerName.trim() || data?.guest?.name);
+                                                    return (
+                                                        <div key={item.id || idx} className={`p-2 rounded-xl flex items-center justify-between text-xs font-semibold ${
+                                                            isMe
+                                                                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold'
+                                                                : 'bg-zinc-100 dark:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200'
+                                                        }`}>
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <span className="w-5 text-center text-sm">
+                                                                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                                                                </span>
+                                                                <span className="truncate">{item.participant_name} {isMe ? '(Tú)' : ''}</span>
+                                                            </div>
+                                                            <span className="shrink-0 text-amber-600 dark:text-amber-400 font-bold">{item.score}/{item.total_questions} pts</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <button
                                         type="button"
                                         onClick={handleTriviaReset}
@@ -2463,14 +2538,37 @@ export default function GuestRsvp({ token, eventId, isPublic = false, demo = nul
                                         );
                                     })}
 
+                                    {/* Name input for ranking */}
+                                    <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-700/60 space-y-1">
+                                        <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300">
+                                            Tu Nombre o Apodo (para el podio de la fiesta):
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={triviaPlayerName}
+                                            onChange={(e) => setTriviaPlayerName(e.target.value)}
+                                            placeholder={data?.guest?.name || 'Ej: Sofi, Lucas, Tía Marta...'}
+                                            className="w-full text-xs p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 font-medium"
+                                        />
+                                    </div>
+
                                     <button
                                         type="button"
                                         onClick={() => handleTriviaSubmit(triviaData.questions)}
-                                        disabled={Object.keys(triviaAnswers).length < qCount}
+                                        disabled={Object.keys(triviaAnswers).length < qCount || triviaSubmitting}
                                         className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 text-white font-black text-xs uppercase tracking-wider shadow-lg disabled:opacity-50 transition-all hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2 cursor-pointer"
                                     >
-                                        <Sparkles className="w-4 h-4" />
-                                        <span>Ver Mi Puntaje en la Trivia</span>
+                                        {triviaSubmitting ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <span>Registrando en el ranking...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-4 h-4" />
+                                                <span>Ver Mi Puntaje y Entrar al Ranking</span>
+                                            </>
+                                        )}
                                     </button>
                                 </div>
                             )}
