@@ -3,8 +3,9 @@ import { ClipboardList, Plus, Search } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { gs, fmtDate, isPast } from './casitaUtils';
 import { PageHeader, Card, Empty, BalanceBadge, btnPrimary, inputCls } from './CasitaUi';
+import { LogosButton } from './CasitaLogos';
 
-export default function CasitaEvents({ onOpenEvent, onNewEvent }) {
+export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
     const [events, setEvents] = useState([]);
     const [years, setYears] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -47,6 +48,7 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent }) {
     return (
         <div className="space-y-6">
             <PageHeader icon={ClipboardList} title="Registro de eventos" subtitle="Cada evento con su presupuesto, pagos y saldo">
+                <LogosButton showToast={showToast} />
                 <button onClick={onNewEvent} className={btnPrimary}><Plus className="w-4 h-4" /> Nuevo registro</button>
             </PageHeader>
 

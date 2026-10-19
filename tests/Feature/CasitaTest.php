@@ -265,4 +265,37 @@ class CasitaTest extends TestCase
         $this->assertSame(1, $summary['totals']['events']);
         $this->assertSame(2026, $summary['by_year'][0]['year']);
     }
+
+    public function test_logos_can_be_uploaded_shown_and_removed(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('public');
+        $admin = $this->admin();
+        $planner = User::factory()->create(['role' => 'planner']);
+        $file = fn () => \Illuminate\Http\UploadedFile::fake()->image('logo.png', 600, 200);
+
+        $this->actingAs($planner)->post('/api/casita/logos/casita', ['image' => $file()], ['Accept' => 'application/json'])->assertForbidden();
+        $this->actingAs($admin)->post('/api/casita/logos/otro', ['image' => $file()], ['Accept' => 'application/json'])->assertNotFound();
+
+        $logo = $this->actingAs($admin)->post('/api/casita/logos/real', ['image' => $file()], ['Accept' => 'application/json'])
+            ->assertOk()->json('logo');
+        $this->assertTrue($logo['exists']);
+        \Illuminate\Support\Facades\Storage::disk('public')->assertExists('images/real.png');
+
+        // Replacing with another format leaves a single file
+        $this->post('/api/casita/logos/real', ['image' => \Illuminate\Http\UploadedFile::fake()->image('logo.jpg')], ['Accept' => 'application/json'])->assertOk();
+        \Illuminate\Support\Facades\Storage::disk('public')->assertMissing('images/real.png');
+        \Illuminate\Support\Facades\Storage::disk('public')->assertExists('images/real.jpg');
+
+        $slots = collect($this->getJson('/api/casita/logos')->assertOk()->json())->keyBy('slot');
+        $this->assertTrue($slots['real']['exists']);
+        $this->assertFalse($slots['casita']['exists']);
+
+        // The image itself is public so printed pages can load it
+        $this->app['auth']->forgetGuards();
+        $this->get('/api/casita/logos/real')->assertOk();
+        $this->get('/api/casita/logos/casita')->assertNotFound();
+
+        $this->actingAs($admin)->deleteJson('/api/casita/logos/real')->assertOk()->assertJsonPath('logo.exists', false);
+        $this->get('/api/casita/logos/real')->assertNotFound();
+    }
 }

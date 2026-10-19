@@ -3,6 +3,7 @@ import { PackageX, Plus, X, Save, Printer } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { gs, SECTION_LABELS, printSettlement, catalogKey, applyLineChange } from './casitaUtils';
 import { PageHeader, Card, Field, Kpi, Empty, MoneyInput, CatalogInput, inputCls, btnPrimary, btnGhost } from './CasitaUi';
+import { LogosButton } from './CasitaLogos';
 import CasitaEventPicker from './CasitaEventPicker';
 
 const SECTIONS = ['perdida', 'agregado', 'sobrante'];
@@ -68,6 +69,7 @@ export default function CasitaLosses({ eventId, onChangeEvent, showToast }) {
     return (
         <div className="space-y-6">
             <PageHeader icon={PackageX} title="Pérdidas y bebidas" subtitle="Liquidación después del evento: pérdidas, bebidas agregadas y sobrantes contra la garantía">
+                <LogosButton showToast={showToast} focus="real" />
                 {event && <button onClick={() => (dirty ? showToast('Guardá los cambios antes de imprimir.') : printSettlement(event))} className={btnGhost}><Printer className="w-4 h-4" /> Imprimir</button>}
                 {event && <button onClick={save} disabled={saving || !dirty} className={btnPrimary}><Save className="w-4 h-4" /> {saving ? 'Guardando…' : dirty ? 'Guardar' : 'Guardado'}</button>}
             </PageHeader>

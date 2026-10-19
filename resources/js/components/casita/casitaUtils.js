@@ -4,20 +4,34 @@
 import * as XLSX from 'xlsx';
 import { printHtml } from '../../eventDocuments';
 
-// Logos uploaded to storage/app/public/images (served through `php artisan storage:link`)
-export const CASITA_LOGO = '/storage/images/casita.png';
-export const REAL_LOGO = '/storage/images/real.png';
+// Logos uploaded from "Logos" (Registro de eventos / Pérdidas), stored in storage/app/public/images
+export const CASITA_LOGO = '/api/casita/logos/casita'; // presupuestos, recibos, borrador
+export const REAL_LOGO = '/api/casita/logos/real';     // pérdidas y bebidas
 
 const imageCache = {};
-/** Loads an image as a data URL for jsPDF. Resolves null when the file is missing, so documents still work without it. */
+export const clearImageCache = () => Object.keys(imageCache).forEach(k => delete imageCache[k]);
+
+/**
+ * Loads an image as a data URL for jsPDF (PNG or JPEG; other formats are converted to PNG).
+ * Resolves null when the file is missing, so documents still work without it.
+ */
 export const loadImage = (url) => {
-    imageCache[url] ??= fetch(url)
+    imageCache[url] ??= fetch(url, { cache: 'no-cache' })
         .then(r => (r.ok ? r.blob() : null))
         .then(blob => blob && blob.type.startsWith('image/') ? new Promise(resolve => {
             const reader = new FileReader();
             reader.onload = () => {
                 const img = new Image();
-                img.onload = () => resolve({ dataUrl: reader.result, width: img.naturalWidth, height: img.naturalHeight, format: blob.type.includes('png') ? 'PNG' : 'JPEG' });
+                img.onload = () => {
+                    const width = img.naturalWidth, height = img.naturalHeight;
+                    if (/png|jpe?g/.test(blob.type)) {
+                        resolve({ dataUrl: reader.result, width, height, format: blob.type.includes('png') ? 'PNG' : 'JPEG' });
+                        return;
+                    }
+                    const canvas = Object.assign(document.createElement('canvas'), { width, height });
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                    resolve({ dataUrl: canvas.toDataURL('image/png'), width, height, format: 'PNG' });
+                };
                 img.onerror = () => resolve(null);
                 img.src = reader.result;
             };
@@ -128,7 +142,7 @@ const CSS = `
 const shell = (title, body) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${CSS}</style></head><body>${body}</body></html>`;
 
 // The logo hides itself if the file is missing on the server
-const logoTag = (url) => url ? `<img class="logo" src="${esc(window.location.origin + url)}" alt="" onerror="this.remove()">` : '';
+const logoTag = (url) => url ? `<img class="logo" src="${esc(`${window.location.origin}${url}?t=${Date.now()}`)}" alt="" onerror="this.remove()">` : '';
 
 const head = (title, event, logo = CASITA_LOGO) => `
     <div class="head">

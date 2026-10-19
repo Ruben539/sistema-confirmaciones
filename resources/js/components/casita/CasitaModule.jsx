@@ -37,7 +37,7 @@ export default function CasitaModule({ view, setView, showToast }) {
                     onGoLosses={goLosses}
                 />
             ) : (
-                <CasitaEvents onOpenEvent={openEvent} onNewEvent={newEvent} />
+                <CasitaEvents onOpenEvent={openEvent} onNewEvent={newEvent} showToast={showToast} />
             );
         case 'casita_clients':
             return <CasitaClients showToast={showToast} onOpenEvent={openEvent} onNewEvent={newEvent} />;

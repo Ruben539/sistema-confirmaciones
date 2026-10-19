@@ -21,10 +21,14 @@ use App\Http\Controllers\CasitaController;
 use App\Http\Controllers\CasitaCatalogController;
 use App\Http\Controllers\CasitaClientController;
 use App\Http\Controllers\CasitaOptionController;
+use App\Http\Controllers\CasitaLogoController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
     // ───────────── Rutas públicas (sin login) ─────────────
+
+    // Logos de La Casita (se cargan como imagen en los documentos impresos y en el PDF)
+    Route::get('/casita/logos/{slot}', [CasitaLogoController::class, 'show']);
 
     // Auth
     Route::get('/auth/user', [AuthController::class, 'user']);
@@ -215,6 +219,9 @@ Route::prefix('api')->group(function () {
             Route::post('/options', [CasitaOptionController::class, 'store']);
             Route::put('/options/{id}', [CasitaOptionController::class, 'update']);
             Route::delete('/options/{id}', [CasitaOptionController::class, 'destroy']);
+            Route::get('/logos', [CasitaLogoController::class, 'index']);
+            Route::post('/logos/{slot}', [CasitaLogoController::class, 'store']);
+            Route::delete('/logos/{slot}', [CasitaLogoController::class, 'destroy']);
         });
     });
 });
