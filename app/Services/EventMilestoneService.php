@@ -135,7 +135,7 @@ class EventMilestoneService
         }
     }
 
-    private static function formatPhone($phone): string
+    public static function formatPhone($phone): string
     {
         $digits = preg_replace('/[^\d]/', '', $phone);
         if (empty($digits)) return '';

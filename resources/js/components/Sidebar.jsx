@@ -27,6 +27,7 @@ export default function Sidebar({
     theme,
     onToggleTheme,
     pendingRequestsCount = 0,
+    pendingContracts = { event: 0, casita: 0 },
     hasAppUpdate = false,
     unreadMessages = 0
 }) {
@@ -236,10 +237,17 @@ export default function Sidebar({
 
                             <button
                                 onClick={() => setActiveTab('events_admin')}
-                                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'events_admin' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
+                                className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-2xl text-xs font-extrabold transition-all ${activeTab === 'events_admin' ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white shadow-lg shadow-amber-500/20' : 'text-zinc-600 dark:text-zinc-400 hover:bg-rose-50 dark:hover:bg-zinc-800/60'}`}
                             >
-                                <Calendar className={`w-4 h-4 shrink-0 ${activeTab === 'events_admin' ? 'text-white' : 'text-amber-500'}`} />
-                                {!collapsed && <span>Eventos & Asignaciones</span>}
+                                <span className="flex items-center gap-3">
+                                    <Calendar className={`w-4 h-4 shrink-0 ${activeTab === 'events_admin' ? 'text-white' : 'text-amber-500'}`} />
+                                    {!collapsed && <span>Eventos & Asignaciones</span>}
+                                </span>
+                                {!collapsed && pendingContracts.event > 0 && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm" title="Eventos sin contrato firmado">
+                                        {pendingContracts.event}
+                                    </span>
+                                )}
                             </button>
 
                             <button
@@ -263,7 +271,14 @@ export default function Sidebar({
                                     <Home className="w-4 h-4 shrink-0 text-amber-500" />
                                     {!collapsed && <span>La Casita</span>}
                                 </span>
-                                {!collapsed && <ChevronDown className={`w-4 h-4 transition-transform ${casitaOpen ? 'rotate-180' : ''}`} />}
+                                <span className="flex items-center gap-2">
+                                    {!collapsed && pendingContracts.casita > 0 && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-sm" title="Eventos sin contrato firmado">
+                                        {pendingContracts.casita}
+                                    </span>
+                                )}
+                                    {!collapsed && <ChevronDown className={`w-4 h-4 transition-transform ${casitaOpen ? 'rotate-180' : ''}`} />}
+                                </span>
                             </button>
                             {casitaOpen && (
                                 <div className={`space-y-1 ${collapsed ? '' : 'pl-3 ml-4 border-l border-amber-200 dark:border-amber-900/50'}`}>

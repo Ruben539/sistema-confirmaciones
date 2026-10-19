@@ -284,9 +284,10 @@ class GoogleDriveService
      * @param UploadedFile|string $file
      * @param string|null $customName
      * @param string|null $targetFolderId Optional folder ID. If null, uses root GOOGLE_DRIVE_FOLDER_ID
+     * @param bool $public false keeps the file private (e.g. contracts): only the API can read it
      * @return array{file_id: string, direct_url: string, web_view_link: string, name: string}|null
      */
-    public function uploadFile($file, ?string $customName = null, ?string $targetFolderId = null): ?array
+    public function uploadFile($file, ?string $customName = null, ?string $targetFolderId = null, bool $public = true): ?array
     {
         if (!$this->service) {
             $this->initClient();
@@ -351,14 +352,16 @@ class GoogleDriveService
             $fileId = $uploadedFile->getId();
 
             // Set public read permission so the file can be viewed publicly by guests
-            try {
-                $permission = new Permission([
-                    'type' => 'anyone',
-                    'role' => 'reader',
-                ]);
-                $this->service->permissions->create($fileId, $permission);
-            } catch (\Throwable $permError) {
-                Log::warning('Could not set public permission on Google Drive file: ' . $permError->getMessage());
+            if ($public) {
+                try {
+                    $permission = new Permission([
+                        'type' => 'anyone',
+                        'role' => 'reader',
+                    ]);
+                    $this->service->permissions->create($fileId, $permission);
+                } catch (\Throwable $permError) {
+                    Log::warning('Could not set public permission on Google Drive file: ' . $permError->getMessage());
+                }
             }
 
             // Google CDN high performance direct display URL

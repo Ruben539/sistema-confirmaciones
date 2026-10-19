@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasContract;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class CasitaEvent extends Model
 {
+    use HasContract;
+
     protected $fillable = ['client_id', 'client_name', 'event_date', 'schedule', 'venue', 'menu', 'notes', 'planner_id', 'created_by'];
 
     protected $casts = [
@@ -37,6 +40,16 @@ class CasitaEvent extends Model
     public function client()
     {
         return $this->belongsTo(CasitaClient::class, 'client_id');
+    }
+
+    public function contractType(): string
+    {
+        return 'casita';
+    }
+
+    public function contractLabel(): string
+    {
+        return $this->client_name ?: "Evento #{$this->id}";
     }
 
     /** Wedding planner who organizes the event (optional) */

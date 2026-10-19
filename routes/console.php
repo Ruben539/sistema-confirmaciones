@@ -11,3 +11,6 @@ Artisan::command('inspire', function () {
 // Recordatorio 1 día antes de la fecha límite de confirmación y auto-cancelación de pendientes al vencer.
 // Requiere el cron del servidor: * * * * * cd /var/www/sistema-confirmaciones && php artisan schedule:run
 Schedule::command('rsvp:process-deadlines')->hourly()->withoutOverlapping();
+
+// Aviso por WhatsApp a los admins de los eventos que siguen sin contrato firmado (un mensaje por día como máximo)
+Schedule::command('contracts:remind')->dailyAt('09:00')->withoutOverlapping();

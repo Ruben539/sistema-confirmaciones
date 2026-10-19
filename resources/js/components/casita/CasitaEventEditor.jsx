@@ -5,6 +5,7 @@ import DateInput from '../DateInput';
 import ConfirmModal from '../ConfirmModal';
 import { buildBudgetPdf, budgetFileName } from './budgetPdf';
 import { gs, fmtDate, todayIso, KIND_LABELS, printBudget, catalogKey, applyLineChange, loadImage, CASITA_LOGO } from './casitaUtils';
+import { ContractPanel } from '../ContractPanel';
 import { Card, Field, Kpi, Empty, BalanceBadge, MoneyInput, CatalogInput, CatalogItemModal, inputCls, btnPrimary, btnGhost, btnDanger } from './CasitaUi';
 
 const EMPTY = { client_name: '', event_date: '', schedule: '', venue: 'La Casita', menu: '', notes: 'No incluye IVA', planner_id: null };
@@ -207,6 +208,18 @@ export default function CasitaEventEditor({ eventId, showToast, onBack, onSaved,
                     </Field>
                 </div>
             </Card>
+
+            {!isNew && saved && (
+                <Card title="Contrato">
+                    <ContractPanel
+                        type="casita"
+                        id={saved.id}
+                        contract={saved.contract}
+                        onChanged={contract => setSaved(s => ({ ...s, contract }))}
+                        showToast={showToast}
+                    />
+                </Card>
+            )}
 
             <Card title="Presupuesto" actions={<button onClick={addLine} className={btnGhost}><Plus className="w-4 h-4" /> Agregar línea</button>}>
                 {lines.length === 0 ? <Empty>Agregá las líneas del presupuesto.</Empty> : (

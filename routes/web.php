@@ -22,6 +22,7 @@ use App\Http\Controllers\CasitaCatalogController;
 use App\Http\Controllers\CasitaClientController;
 use App\Http\Controllers\CasitaOptionController;
 use App\Http\Controllers\CasitaLogoController;
+use App\Http\Controllers\ContractController;
 
 // Rutas de API para el sistema de confirmaciones
 Route::prefix('api')->group(function () {
@@ -191,6 +192,13 @@ Route::prefix('api')->group(function () {
         Route::post('/events/{eventId}/timing', [TimingController::class, 'save']);
         Route::post('/events/{eventId}/timing/upload', [TimingController::class, 'upload']);
         Route::post('/events/{eventId}/timing/items/{itemId}/toggle', [TimingController::class, 'toggleItem']);
+
+        // Contratos firmados de los eventos (confirmaciones = event, La Casita = casita). Solo admin
+        Route::get('/contracts/pending', [ContractController::class, 'pending']);
+        Route::put('/contracts/{type}/{id}', [ContractController::class, 'update'])->whereIn('type', ['event', 'casita']);
+        Route::post('/contracts/{type}/{id}/file', [ContractController::class, 'upload'])->whereIn('type', ['event', 'casita']);
+        Route::get('/contracts/{type}/{id}/file', [ContractController::class, 'download'])->whereIn('type', ['event', 'casita']);
+        Route::delete('/contracts/{type}/{id}/file', [ContractController::class, 'destroyFile'])->whereIn('type', ['event', 'casita']);
 
         // La Casita: registro de eventos, presupuestos, pagos, garantías y pérdidas (solo admin)
         Route::prefix('casita')->group(function () {

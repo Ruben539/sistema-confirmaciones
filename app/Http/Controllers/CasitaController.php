@@ -29,6 +29,7 @@ class CasitaController extends Controller
             'planner_name' => $event->planner?->name,
             'event_date' => $event->event_date?->format('Y-m-d'),
             'items_count' => $event->items_count ?? null,
+            'contract' => $event->contractSummary(),
         ], $event->totals());
     }
 
@@ -227,6 +228,8 @@ class CasitaController extends Controller
         $planner = $request->query('planner');
         if ($planner === 'none') $query->whereNull('planner_id');
         elseif ($planner) $query->where('planner_id', (int) $planner);
+        if ($request->query('contract') === 'missing') $query->whereIn('contract_status', CasitaEvent::CONTRACT_OPEN);
+        if ($request->query('contract') === 'signed') $query->where('contract_status', 'signed');
         $when = $request->query('when');
         if ($when === 'upcoming') $query->whereDate('event_date', '>=', Carbon::today());
         if ($when === 'past') $query->whereDate('event_date', '<', Carbon::today());

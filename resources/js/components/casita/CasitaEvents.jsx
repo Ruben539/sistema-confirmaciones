@@ -4,6 +4,7 @@ import { apiFetch } from '../../api';
 import { gs, fmtDate, isPast } from './casitaUtils';
 import { PageHeader, Card, Empty, BalanceBadge, DateRange, appendRange, btnPrimary, inputCls } from './CasitaUi';
 import { LogosButton } from './CasitaLogos';
+import { ContractBadge, PendingContractsBanner } from '../ContractPanel';
 
 export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
     const [events, setEvents] = useState([]);
@@ -14,6 +15,7 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
     const [when, setWhen] = useState('');
     const [status, setStatus] = useState('');
     const [planner, setPlanner] = useState('');
+    const [contract, setContract] = useState('');
     const [planners, setPlanners] = useState([]);
     const [range, setRange] = useState({ from: '', to: '' });
     const [error, setError] = useState(null);
@@ -24,6 +26,7 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
         if (when) params.set('when', when);
         if (status) params.set('status', status);
         if (planner) params.set('planner', planner);
+        if (contract) params.set('contract', contract);
         appendRange(params, range);
         if (when === 'upcoming' || range.from || range.to) params.set('sort', 'date_asc');
         setLoading(true);
@@ -32,7 +35,7 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
             else setError(json?.errors?.to?.[0] || json?.message || 'No se pudo filtrar.');
             setLoading(false);
         });
-    }, [year, when, status, planner, range]);
+    }, [year, when, status, planner, contract, range]);
 
     useEffect(() => {
         apiFetch('/api/planners').then(({ ok, json }) => ok && Array.isArray(json) && setPlanners(json));
@@ -56,8 +59,10 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
                 <button onClick={onNewEvent} className={btnPrimary}><Plus className="w-4 h-4" /> Nuevo registro</button>
             </PageHeader>
 
+            <PendingContractsBanner type="casita" onOpen={item => onOpenEvent(item.id)} />
+
             <Card>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
                     <div className="relative md:col-span-1">
                         <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar cliente o menú…" className={`${inputCls} pl-9`} />
@@ -81,6 +86,11 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
                         <option value="none">Sin wedding planner</option>
                         {planners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
+                    <select value={contract} onChange={e => setContract(e.target.value)} className={inputCls}>
+                        <option value="">Con o sin contrato</option>
+                        <option value="missing">Sin contrato firmado</option>
+                        <option value="signed">Contrato firmado</option>
+                    </select>
                 </div>
 
                 <div className="mb-4">
@@ -102,7 +112,7 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
                                 <tr className="text-[10px] uppercase tracking-wider text-zinc-500 text-left border-b border-zinc-100 dark:border-zinc-800">
                                     <th className="py-2 pr-3">Fecha</th><th className="py-2 pr-3">Cliente</th><th className="py-2 pr-3">Menú</th><th className="py-2 pr-3">Wedding planner</th>
                                     <th className="py-2 pr-3 text-right">Presupuesto</th><th className="py-2 pr-3 text-right">Cobrado</th>
-                                    <th className="py-2 pr-3 text-right">Saldo</th><th className="py-2">Estado</th>
+                                    <th className="py-2 pr-3 text-right">Saldo</th><th className="py-2 pr-3">Estado</th><th className="py-2">Contrato</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -115,7 +125,8 @@ export default function CasitaEvents({ onOpenEvent, onNewEvent, showToast }) {
                                         <td className="py-2.5 pr-3 text-right">{gs(ev.budget_total)}</td>
                                         <td className="py-2.5 pr-3 text-right text-emerald-600">{gs(ev.paid_total)}</td>
                                         <td className="py-2.5 pr-3 text-right font-black">{gs(ev.balance)}</td>
-                                        <td className="py-2.5"><BalanceBadge balance={ev.balance} /></td>
+                                        <td className="py-2.5 pr-3"><BalanceBadge balance={ev.balance} /></td>
+                                        <td className="py-2.5"><ContractBadge contract={ev.contract} /></td>
                                     </tr>
                                 ))}
                             </tbody>

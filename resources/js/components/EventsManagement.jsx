@@ -6,6 +6,7 @@ import EventSongSuggestionsModal from './EventSongSuggestionsModal';
 import EventDedicationsManagerModal from './EventDedicationsManagerModal';
 import { apiFetch } from '../api';
 import { getPlanLabel } from '../plans';
+import { ContractPanel, PendingContractsBanner } from './ContractPanel';
 
 export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onEditEvent, onDeleteEvent }) {
     const [events, setEvents] = useState([]);
@@ -65,6 +66,19 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
         } finally {
             setUpdatingId(null);
         }
+    };
+
+    const setEventContract = (eventId, contract) => {
+        setEvents(list => list.map(e => (e.id === eventId ? { ...e, contract } : e)));
+    };
+
+    // From the reminder banner: scroll to that event's card
+    const scrollToEvent = (item) => {
+        const card = document.getElementById(`event-card-${item.id}`);
+        if (!card) return;
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.classList.add('ring-2', 'ring-rose-400');
+        setTimeout(() => card.classList.remove('ring-2', 'ring-rose-400'), 2000);
     };
 
     const handleDelete = (ev) => {
@@ -143,6 +157,8 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                 </button>
             </div>
 
+            <PendingContractsBanner type="event" onOpen={scrollToEvent} />
+
             {/* Notification */}
             {successMsg && (
                 <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-between shadow-md">
@@ -166,6 +182,7 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                     {events.map((ev) => (
                         <div
                             key={ev.id}
+                            id={`event-card-${ev.id}`}
                             className="bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:border-amber-500/30 transition-all space-y-4 flex flex-col justify-between"
                         >
                             <div className="space-y-3">
@@ -246,6 +263,16 @@ export default function EventsManagement({ onOpenCreateEvent, onSelectEvent, onE
                             </div>
 
                             <div className="space-y-3 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
+                                {/* Signed contract (the admin gets WhatsApp reminders while it is missing) */}
+                                <ContractPanel
+                                    type="event"
+                                    id={ev.id}
+                                    contract={ev.contract}
+                                    onChanged={(contract) => setEventContract(ev.id, contract)}
+                                    showToast={setSuccessMsg}
+                                    compact
+                                />
+
                                 {/* Reassignment Selector */}
                                 <div className="bg-zinc-50/60 dark:bg-zinc-800/30 p-3.5 rounded-2xl space-y-2 border border-zinc-200/50 dark:border-zinc-800/50">
                                     <label className="block text-[11px] font-black text-zinc-700 dark:text-zinc-300 uppercase tracking-wider">

@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class Event extends Model
 {
-    use HasFactory;
+    use HasFactory, HasContract;
 
     /**
      * Guest capacity per plan. 'custom' has no fixed cap: max_guests is set by hand.
@@ -112,7 +113,22 @@ class Event extends Model
         'invitation_styles' => 'array',
     ];
 
-    protected $appends = ['is_active', 'has_digital_invitation', 'rsvp_deadline_effective', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
+    protected $appends = ['contract', 'is_active', 'has_digital_invitation', 'rsvp_deadline_effective', 'cover_photo_url', 'background_music_url', 'google_drive_folder_url'];
+
+    public function contractType(): string
+    {
+        return 'event';
+    }
+
+    public function contractLabel(): string
+    {
+        return $this->couple_names ?: ($this->title ?: "Evento #{$this->id}");
+    }
+
+    public function getContractAttribute(): array
+    {
+        return $this->contractSummary();
+    }
 
     public function getGoogleDriveFolderUrlAttribute(): ?string
     {

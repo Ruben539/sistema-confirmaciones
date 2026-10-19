@@ -26,6 +26,7 @@ import WhatsAppWeb from './components/WhatsAppWeb';
 import AiListAssistant from './components/AiListAssistant';
 import EventInteractivePanel from './components/EventInteractivePanel';
 import CasitaModule from './components/casita/CasitaModule';
+import { usePendingContracts } from './components/ContractPanel';
 import { buildDemoInvitation } from './demoInvitation';
 import LiveProjectionScreen from './components/LiveProjectionScreen';
 import PublicDedicationPage from './components/PublicDedicationPage';
@@ -103,6 +104,8 @@ function Dashboard({ user, onLogout }) {
     const [toastMessage, setToastMessage] = useState(null);
     const [preselectedPlannerId, setPreselectedPlannerId] = useState(null);
     const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+    // Upcoming events without a signed contract (admin only): counters in the sidebar
+    const pendingContracts = usePendingContracts(user?.role === 'admin');
 
     // Modals
     const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
@@ -474,6 +477,10 @@ function Dashboard({ user, onLogout }) {
                 theme={theme}
                 onToggleTheme={handleToggleTheme}
                 pendingRequestsCount={pendingRequestsCount}
+                pendingContracts={{
+                    event: pendingContracts.items.filter(i => i.type === 'event').length,
+                    casita: pendingContracts.items.filter(i => i.type === 'casita').length,
+                }}
                 hasAppUpdate={appUpdate.has_update}
                 unreadMessages={unreadMessages}
             />
